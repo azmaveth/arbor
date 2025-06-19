@@ -11,7 +11,7 @@ Welcome to the comprehensive documentation for **Arbor**, the distributed AI age
 
 ### 🏛️ Architecture & Design
 - **[System Architecture](architecture.md)** - Complete architectural overview and design principles
-- **[CI/CD Pipeline](../.github/README.md)** - Automated workflows and deployment processes
+- **[CI/CD Pipeline](../.github/CI_CD.md)** - Automated workflows and deployment processes
 - **[Development Scripts](../scripts/README.md)** - Automation scripts for common tasks
 
 ### 🔧 Development Resources
@@ -35,7 +35,7 @@ Comprehensive technical documentation for understanding the system.
 | Document | Purpose | Audience |
 |----------|---------|----------|
 | [architecture.md](architecture.md) | System design and architecture | Architects, Senior Developers |
-| [CI/CD README](../.github/README.md) | Deployment and automation | DevOps, Maintainers |
+| [CI/CD Pipeline](../.github/CI_CD.md) | Deployment and automation | DevOps, Maintainers |
 | [Scripts README](../scripts/README.md) | Development automation | Developers |
 
 ### 📝 Reference
@@ -90,14 +90,14 @@ Configuration and style guides for consistent development.
 - **Installation & Setup**: [Development Guide](development.md#quick-start)
 - **System Architecture**: [Architecture Overview](architecture.md#architectural-overview)
 - **Contributing**: [Contributing Guidelines](../CONTRIBUTING.md)
-- **CI/CD & Deployment**: [CI/CD Documentation](../.github/README.md)
+- **CI/CD & Deployment**: [CI/CD Documentation](../.github/CI_CD.md)
 - **Scripts & Automation**: [Scripts Reference](../scripts/README.md)
 
 ### By User Type
 - **New Users**: [README](../README.md) → [Development Guide](development.md)
 - **Contributors**: [Contributing Guidelines](../CONTRIBUTING.md)
 - **Architects**: [System Architecture](architecture.md)
-- **DevOps Engineers**: [CI/CD Documentation](../.github/README.md)
+- **DevOps Engineers**: [CI/CD Documentation](../.github/CI_CD.md)
 - **Developers**: [Development Guide](development.md) + [Architecture](architecture.md)
 
 ## 🛠️ Documentation Maintenance

@@ -328,7 +328,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 ### Architecture & Design
 - [System Architecture](docs/architecture.md) - Comprehensive system design
 - [Development Guide](docs/development.md) - Detailed development setup
-- [CI/CD Pipeline](.github/README.md) - Automated workflows
+- [CI/CD Pipeline](.github/CI_CD.md) - Automated workflows
 - [Scripts Reference](scripts/README.md) - Development automation
 
 ### API Documentation
