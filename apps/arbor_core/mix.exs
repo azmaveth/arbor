@@ -18,8 +18,14 @@ defmodule Arbor.Core.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
-      mod: {Arbor.Core.Application, []}
+      mod: {Arbor.Core.Application, []},
+      extra_applications: [
+        :logger,
+        :runtime_tools,
+        :phoenix_pubsub,
+        :telemetry,
+        :telemetry_poller
+      ]
     ]
   end
 
