@@ -354,7 +354,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 - **Documentation**: [Complete docs](docs/)
 - **Issues**: [GitHub Issues](https://github.com/azmaveth/arbor/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/azmaveth/arbor/discussions)
-- **Email**: [azmaveth@example.com](mailto:azmaveth@example.com)
+- **Email**: [hysun@hysun.com](mailto:hysun@hysun.com)
 
 ---
 

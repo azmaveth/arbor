@@ -404,7 +404,7 @@ During alpha development (v0.x.x):
 - **GitHub Discussions**: General questions and community discussion
 - **GitHub Issues**: Bug reports and feature requests
 - **Discord**: Real-time community chat (coming soon)
-- **Email**: [azmaveth@example.com](mailto:azmaveth@example.com) for sensitive issues
+- **Email**: [hysun@hysun.com](mailto:hysun@hysun.com) for sensitive issues
 
 ### Development Help
 
@@ -478,7 +478,7 @@ Project maintainers are responsible for clarifying the standards of acceptable b
 
 ### Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [azmaveth@example.com](mailto:azmaveth@example.com). All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [hysun@hysun.com](mailto:hysun@hysun.com). All complaints will be reviewed and investigated promptly and fairly.
 
 ---
 
