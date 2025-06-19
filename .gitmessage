@@ -1,0 +1,22 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# Type: feat, fix, docs, style, refactor, test, chore
+# Scope: core, persistence, security, contracts, telemetry, deps
+# Subject: imperative mood, max 50 chars
+# Body: explain what and why, not how
+# Footer: breaking changes, issues closed
+#
+# Examples:
+# feat(core): add agent capability delegation
+# fix(security): resolve capability leak in handoff
+# docs(contracts): update Message contract spec
+# chore(deps): bump dialyxir to v1.4.5
+#
+# Breaking change example:
+# feat(core)!: redesign agent lifecycle API
+#
+# BREAKING CHANGE: Agent.start_link now requires :name option
