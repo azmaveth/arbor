@@ -9,6 +9,7 @@ defmodule Arbor.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
+      releases: releases(),
       test_coverage: [tool: ExCoveralls],
       docs: docs(),
       preferred_cli_env: [
@@ -54,6 +55,22 @@ defmodule Arbor.MixProject do
       "test.ci": ["test --cover --export-coverage default", "credo --strict"],
       docs: ["docs"],
       quality: ["format", "credo --strict", "dialyzer"]
+    ]
+  end
+
+  # Release configuration
+  defp releases do
+    [
+      arbor: [
+        applications: [
+          arbor_contracts: :permanent,
+          arbor_security: :permanent,
+          arbor_persistence: :permanent,
+          arbor_core: :permanent
+        ],
+        include_executables_for: [:unix],
+        steps: [:assemble, :tar]
+      ]
     ]
   end
 

@@ -22,10 +22,17 @@ WORKDIR /app
 RUN mix local.hex --force && \
     mix local.rebar --force
 
-# Copy dependency files
+# Copy dependency files  
 COPY mix.exs mix.lock ./
-COPY apps/*/mix.exs apps/*/
-COPY config/config.exs config/prod.exs config/
+
+# Create apps directory structure and copy mix.exs files
+RUN mkdir -p apps/arbor_core apps/arbor_contracts apps/arbor_persistence apps/arbor_security
+COPY apps/arbor_core/mix.exs apps/arbor_core/
+COPY apps/arbor_contracts/mix.exs apps/arbor_contracts/
+COPY apps/arbor_persistence/mix.exs apps/arbor_persistence/  
+COPY apps/arbor_security/mix.exs apps/arbor_security/
+
+COPY config/ config/
 
 # Install and compile dependencies
 RUN mix deps.get --only=prod && \

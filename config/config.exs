@@ -9,10 +9,42 @@
 # move said applications out of the umbrella.
 import Config
 
-# Sample configuration:
-#
-#     config :logger, :console,
-#       level: :info,
-#       format: "$date $time [$level] $metadata$message\n",
-#       metadata: [:user_id]
-#
+# Configures Elixir's Logger
+config :logger, :console,
+  format: "$time $metadata[$level] $message\n",
+  metadata: [
+    # Request tracking
+    :request_id,
+    :trace_id,
+
+    # Core identifiers
+    :session_id,
+    :execution_id,
+    :capability_id,
+    :agent_id,
+    :message_id,
+
+    # Context data
+    :command,
+    :reason,
+    :resource_uri,
+    :created_by,
+    :from,
+    :subscriber,
+
+    # Metrics
+    :idle_seconds,
+    :timeout,
+    :uptime_seconds,
+    :duration_seconds,
+    :events_count,
+
+    # Generic fields
+    :opts,
+    :metadata,
+    :message,
+    :event,
+    :measurements,
+    :ref,
+    :result
+  ]

@@ -20,6 +20,9 @@ services:
       - PROMETHEUS_METRICS_PORT=9464
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:14250
       - OTEL_SERVICE_NAME=arbor-dev
+      # Security keys for development (DO NOT use in production)
+      - CAPABILITY_SIGNING_KEY=dev_signing_key_change_in_production_32_chars
+      - ENCRYPTION_KEY=dev_encryption_key_change_in_production_32_bytes
     volumes:
       - arbor_data:/app/data
       - arbor_logs:/app/log

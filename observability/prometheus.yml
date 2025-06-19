@@ -25,32 +25,32 @@ scrape_configs:
   - job_name: 'arbor'
     static_configs:
       - targets: ['arbor:9464']
+        labels:
+          service: 'arbor'
+          environment: 'development'
     scrape_interval: 5s
     metrics_path: '/metrics'
-    labels:
-      service: 'arbor'
-      environment: 'development'
 
   # Node exporter for system metrics (if available)
   - job_name: 'node'
     static_configs:
       - targets: ['host.docker.internal:9100']
+        labels:
+          service: 'node-exporter'
     scrape_interval: 15s
-    labels:
-      service: 'node-exporter'
 
   # Redis metrics (if redis_exporter is available)
   - job_name: 'redis'
     static_configs:
       - targets: ['redis:6379']
+        labels:
+          service: 'redis'
     scrape_interval: 30s
-    labels:
-      service: 'redis'
 
   # PostgreSQL metrics (if postgres_exporter is available)
   - job_name: 'postgres'
     static_configs:
       - targets: ['postgres:5432']
+        labels:
+          service: 'postgres'
     scrape_interval: 30s
-    labels:
-      service: 'postgres'
