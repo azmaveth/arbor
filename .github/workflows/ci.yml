@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: Test (Elixir ${{ matrix.elixir }} OTP ${{ matrix.otp }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: '1.15.7'
+            otp: '26.1'
+          - elixir: '1.16.0'
+            otp: '26.2'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir and OTP
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
+
+    - name: Cache PLT files
+      uses: actions/cache@v4
+      id: plt-cache
+      with:
+        path: priv/plts
+        key: plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile dependencies
+      run: mix deps.compile
+
+    - name: Compile project
+      run: mix compile --warnings-as-errors
+
+    - name: Check code formatting
+      run: mix format --check-formatted
+
+    - name: Run Credo static analysis
+      run: mix credo --strict
+
+    - name: Create PLT directory
+      run: mkdir -p priv/plts
+
+    - name: Generate PLT files
+      if: steps.plt-cache.outputs.cache-hit != 'true'
+      run: mix dialyzer --plt
+
+    - name: Run Dialyzer type checking
+      run: mix dialyzer --format github
+
+    - name: Run tests with coverage
+      run: mix test.ci
+
+    - name: Generate coverage report
+      run: mix coveralls.json
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./cover/excoveralls.json
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.elixir }}-${{ matrix.otp }}
+        path: |
+          cover/
+          _build/test/lib/*/ebin/
+        retention-days: 7
+
+  security:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15.7'
+        otp-version: '26.1'
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-26.1-1.15.7-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile for security analysis
+      run: mix compile
+
+    - name: Run dependency audit
+      run: mix deps.audit
+
+    - name: Check for known vulnerabilities
+      run: |
+        if mix help sobelow >/dev/null 2>&1; then
+          mix sobelow --verbose
+        else
+          echo "Sobelow not configured, skipping security scan"
+        fi
+
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15.7'
+        otp-version: '26.1'
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-26.1-1.15.7-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile project
+      run: mix compile
+
+    - name: Generate documentation
+      run: mix docs
+
+    - name: Check for unused dependencies
+      run: mix deps.unlock --check-unused
+
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: documentation
+        path: doc/
+        retention-days: 30

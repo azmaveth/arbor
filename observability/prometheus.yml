@@ -1,0 +1,56 @@
+# Prometheus configuration for Arbor monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules once and periodically evaluate them
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# Scrape configuration
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Arbor application metrics
+  - job_name: 'arbor'
+    static_configs:
+      - targets: ['arbor:9464']
+    scrape_interval: 5s
+    metrics_path: '/metrics'
+    labels:
+      service: 'arbor'
+      environment: 'development'
+
+  # Node exporter for system metrics (if available)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+    scrape_interval: 15s
+    labels:
+      service: 'node-exporter'
+
+  # Redis metrics (if redis_exporter is available)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+    labels:
+      service: 'redis'
+
+  # PostgreSQL metrics (if postgres_exporter is available)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    scrape_interval: 30s
+    labels:
+      service: 'postgres'

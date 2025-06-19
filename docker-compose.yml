@@ -1,0 +1,173 @@
+# Arbor Development Environment with Observability Stack
+version: '3.8'
+
+services:
+  # Main Arbor application
+  arbor:
+    build: 
+      context: .
+      target: debug
+    ports:
+      - "4000:4000"    # HTTP interface
+      - "9001:9001"    # BEAM distribution
+      - "9464:9464"    # Prometheus metrics
+    environment:
+      - MIX_ENV=prod
+      - PORT=4000
+      - BEAM_PORT=9001
+      - NODE_NAME=arbor@arbor.local
+      - ERLANG_COOKIE=arbor_cluster_cookie
+      - PROMETHEUS_METRICS_PORT=9464
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:14250
+      - OTEL_SERVICE_NAME=arbor-dev
+    volumes:
+      - arbor_data:/app/data
+      - arbor_logs:/app/log
+    depends_on:
+      - prometheus
+      - jaeger
+    networks:
+      - arbor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "./bin/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    networks:
+      - arbor_network
+    restart: unless-stopped
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC endpoint
+      - "14268:14268"  # HTTP endpoint
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - jaeger_data:/badger
+    networks:
+      - arbor_network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - arbor_network
+    restart: unless-stopped
+
+  # Redis for distributed state (if needed)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - arbor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL for persistence (if needed)
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=arbor_dev
+      - POSTGRES_USER=arbor
+      - POSTGRES_PASSWORD=arbor_dev_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./observability/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - arbor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arbor -d arbor_dev"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Elasticsearch for log aggregation (optional)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - arbor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  arbor_data:
+    driver: local
+  arbor_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  jaeger_data:
+    driver: local
+  grafana_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  arbor_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,309 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+env:
+  MIX_ENV: test
+
+jobs:
+  comprehensive-test:
+    name: Comprehensive Testing Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      matrix:
+        include:
+          - elixir: '1.15.7'
+            otp: '26.1'
+            test_env: 'test'
+          - elixir: '1.15.7'
+            otp: '26.1'
+            test_env: 'prod'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir and OTP
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: nightly-deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-
+
+    - name: Cache PLT files
+      uses: actions/cache@v4
+      with:
+        path: priv/plts
+        key: nightly-plt-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: |
+        mix deps.get
+        mix deps.compile
+
+    - name: Set environment
+      run: export MIX_ENV=${{ matrix.test_env }}
+
+    - name: Compile project
+      run: mix compile --warnings-as-errors
+
+    - name: Run comprehensive test suite
+      run: |
+        echo "Running comprehensive test suite for ${{ matrix.test_env }} environment"
+        mix test --cover --slowest 10
+        
+    - name: Generate detailed coverage
+      run: mix coveralls.html --umbrella
+
+    - name: Run dialyzer with full analysis
+      run: |
+        mkdir -p priv/plts
+        mix dialyzer --plt
+        mix dialyzer --format github
+
+    - name: Run property-based tests (if available)
+      run: |
+        if grep -r "use ExUnitProperties" test/; then
+          echo "Running property-based tests"
+          mix test --only property
+        else
+          echo "No property-based tests found"
+        fi
+
+    - name: Performance benchmarks
+      run: |
+        if [ -f "scripts/benchmark.sh" ]; then
+          scripts/benchmark.sh --save --format json
+        else
+          echo "Benchmark script not found"
+        fi
+
+    - name: Upload comprehensive results
+      uses: actions/upload-artifact@v4
+      with:
+        name: nightly-results-${{ matrix.test_env }}-${{ matrix.elixir }}-${{ matrix.otp }}
+        path: |
+          cover/
+          benchmarks/results/
+          doc/
+        retention-days: 30
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15.7'
+        otp-version: '26.1'
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: security-deps-${{ runner.os }}-26.1-1.15.7-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile for security analysis
+      run: mix compile
+
+    - name: Install security audit tools
+      run: |
+        mix archive.install --force hex mix_audit
+        # Add sobelow if not already present
+        if ! grep -q "sobelow" mix.exs; then
+          echo "Adding sobelow for security analysis"
+          # Note: In real implementation, sobelow should be added to mix.exs
+        fi
+
+    - name: Run dependency vulnerability audit
+      run: mix deps.audit
+
+    - name: Security analysis with Sobelow
+      run: |
+        if command -v sobelow &> /dev/null; then
+          sobelow --format=json --out=security_report.json .
+        else
+          echo "Sobelow not available, skipping Phoenix security analysis"
+          echo '{"findings": [], "message": "Sobelow not configured"}' > security_report.json
+        fi
+
+    - name: Check for hardcoded secrets
+      run: |
+        echo "Checking for potential secrets in codebase"
+        # Check for common secret patterns
+        grep -r -i -n \
+          -E "(password|secret|key|token|api_key|private_key)" \
+          --include="*.ex" \
+          --include="*.exs" \
+          --exclude-dir=_build \
+          --exclude-dir=deps \
+          . || echo "No hardcoded secrets found"
+
+    - name: Dependency license check
+      run: |
+        echo "Checking dependency licenses"
+        mix deps.tree --format=json > deps_tree.json
+        # In a real implementation, you'd want to parse this and check for license compatibility
+        echo "Dependencies and licenses saved to deps_tree.json"
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          security_report.json
+          deps_tree.json
+        retention-days: 90
+
+  dependency-updates:
+    name: Check Dependency Updates
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15.7'
+        otp-version: '26.1'
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Check for outdated dependencies
+      run: |
+        echo "Checking for outdated dependencies..."
+        mix hex.outdated || true
+        
+    - name: Check for retired dependencies
+      run: |
+        echo "Checking for retired packages..."
+        mix hex.audit || true
+
+    - name: Generate dependency report
+      run: |
+        echo "# Dependency Status Report" > dependency_report.md
+        echo "Generated on: $(date)" >> dependency_report.md
+        echo "" >> dependency_report.md
+        echo "## Outdated Dependencies" >> dependency_report.md
+        mix hex.outdated --format=csv >> dependency_report.md || true
+        echo "" >> dependency_report.md
+        echo "## Security Audit" >> dependency_report.md
+        mix hex.audit >> dependency_report.md || true
+
+    - name: Upload dependency report
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-report
+        path: dependency_report.md
+        retention-days: 30
+
+  build-matrix:
+    name: Extended Build Matrix
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        elixir: ['1.15.7', '1.16.0', '1.17.0']
+        otp: ['26.1', '26.2', '27.0']
+        exclude:
+          # Exclude incompatible combinations
+          - elixir: '1.15.7'
+            otp: '27.0'
+            
+    continue-on-error: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Elixir and OTP
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: matrix-deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install and test
+      run: |
+        mix deps.get
+        mix compile
+        mix test --max-failures=1
+
+  notify:
+    name: Nightly Build Notification
+    runs-on: ubuntu-latest
+    needs: [comprehensive-test, security-audit, dependency-updates]
+    if: always()
+
+    steps:
+    - name: Determine overall status
+      id: status
+      run: |
+        if [[ "${{ needs.comprehensive-test.result }}" == "success" && 
+              "${{ needs.security-audit.result }}" == "success" && 
+              "${{ needs.dependency-updates.result }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "message=✅ Nightly build completed successfully" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "message=❌ Nightly build had failures" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create summary
+      run: |
+        echo "## Nightly Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Comprehensive Test**: ${{ needs.comprehensive-test.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Security Audit**: ${{ needs.security-audit.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Dependency Updates**: ${{ needs.dependency-updates.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+
+    - name: Report to external systems
+      if: failure()
+      run: |
+        echo "Nightly build failed - would notify external monitoring systems"
+        echo "Status: ${{ steps.status.outputs.status }}"
+        echo "Message: ${{ steps.status.outputs.message }}"
+        # In production, this would integrate with:
+        # - Slack notifications
+        # - PagerDuty (for critical failures)
+        # - Metrics collection
+        # - Dashboard updates

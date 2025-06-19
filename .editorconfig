@@ -1,0 +1,119 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# Top-most EditorConfig file
+root = true
+
+# All files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Elixir files
+[*.{ex,exs}]
+indent_style = space
+indent_size = 2
+max_line_length = 98
+
+# Erlang files
+[*.{erl,hrl}]
+indent_style = space
+indent_size = 2
+max_line_length = 98
+
+# Mix configuration files
+[mix.{exs,lock}]
+indent_style = space
+indent_size = 2
+
+# Configuration files
+[config/*.exs]
+indent_style = space
+indent_size = 2
+
+# Test files
+[test/**/*.{ex,exs}]
+indent_style = space
+indent_size = 2
+
+# Markdown files
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = 80
+
+# YAML files (for CI/CD, Docker Compose)
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_style = space
+indent_size = 2
+
+# JavaScript/TypeScript (if used for tooling)
+[*.{js,ts}]
+indent_style = space
+indent_size = 2
+
+# Shell scripts
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# Dockerfile
+[Dockerfile*]
+indent_style = space
+indent_size = 2
+
+# Docker Compose files
+[docker-compose*.yml]
+indent_style = space
+indent_size = 2
+
+# Git configuration
+[.gitconfig]
+indent_style = tab
+tab_width = 4
+
+# Makefile
+[Makefile]
+indent_style = tab
+tab_width = 4
+
+# Phoenix/HTML templates (if used)
+[*.{eex,heex,leex}]
+indent_style = space
+indent_size = 2
+
+# CSS/SCSS (if used)
+[*.{css,scss}]
+indent_style = space
+indent_size = 2
+
+# SQL files
+[*.sql]
+indent_style = space
+indent_size = 2
+
+# XML files
+[*.xml]
+indent_style = space
+indent_size = 2
+
+# Protocol Buffer files (if used)
+[*.proto]
+indent_style = space
+indent_size = 2
+
+# TOML files
+[*.toml]
+indent_style = space
+indent_size = 2
+
+# Batch files (Windows)
+[*.bat]
+end_of_line = crlf

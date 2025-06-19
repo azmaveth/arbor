@@ -1,0 +1,77 @@
+# Arbor Docker build exclusions
+
+# Build artifacts
+_build/
+deps/
+*.beam
+*.plt
+*.tar.gz
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+
+# Test files
+cover/
+.coverage
+test_results/
+
+# Local configuration
+.env
+.env.local
+config/*.secret.exs
+
+# Documentation
+doc/
+docs/
+*.md
+!README.md
+
+# Development tools
+.credo.exs
+.dialyzer_ignore.exs
+mix.lock.backup
+
+# Benchmarks and profiling
+benchmarks/
+priv/fprof/
+*.trace
+
+# Editor files
+*~
+\#*
+.\#*
+.*.swp
+.*.swo
+*.orig
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Observability stack
+observability/
+jaeger_data/
+prometheus_data/
+grafana_data/
+
+# Scripts that aren't needed in container
+scripts/dev.sh
+scripts/console.sh
+scripts/benchmark.sh
+scripts/setup.sh
