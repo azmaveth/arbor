@@ -286,7 +286,9 @@ defmodule Arbor.Contracts.Security.AuditEvent do
 
     details = if event.operation, do: ["Operation: #{event.operation}" | details], else: details
     details = if event.decision, do: ["Decision: #{event.decision}" | details], else: details
-    details = if event.reason, do: ["Reason: #{event.reason}" | details], else: details
+
+    details =
+      if event.reason, do: ["Reason: #{format_reason(event.reason)}" | details], else: details
 
     if details == [] do
       base
@@ -348,4 +350,13 @@ defmodule Arbor.Contracts.Security.AuditEvent do
   defp validate_operation(%{operation: op}) do
     {:error, {:invalid_operation, op}}
   end
+
+  defp format_reason(reason) when is_atom(reason), do: reason
+  defp format_reason(reason) when is_binary(reason), do: reason
+
+  defp format_reason({:authorization_denied, sub_reason}),
+    do: "authorization_denied(#{sub_reason})"
+
+  defp format_reason(reason) when is_tuple(reason), do: inspect(reason)
+  defp format_reason(reason), do: inspect(reason)
 end
