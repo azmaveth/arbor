@@ -1,9 +1,9 @@
 defmodule Arbor.Persistence.StoreTest do
   use ExUnit.Case, async: true
 
-  alias Arbor.Persistence.Store
   alias Arbor.Contracts.Events.Event, as: ContractEvent
   alias Arbor.Contracts.Persistence.Snapshot
+  alias Arbor.Persistence.Store
 
   # Use in-memory mock for unit testing
   @moduletag persistence: :mock

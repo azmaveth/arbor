@@ -180,26 +180,24 @@ defmodule Arbor.Persistence.EventJournal do
   # Private functions
 
   defp flush_session_buffer(session_id, events, state) do
-    try do
-      write_events_to_disk(session_id, events, state.data_dir)
+    write_events_to_disk(session_id, events, state.data_dir)
 
-      # Remove flushed events from buffer
-      updated_buffers = Map.delete(state.buffers, session_id)
+    # Remove flushed events from buffer
+    updated_buffers = Map.delete(state.buffers, session_id)
 
-      new_state = %{
-        state
-        | buffers: updated_buffers,
-          last_flush: :erlang.monotonic_time(:millisecond)
-      }
+    new_state = %{
+      state
+      | buffers: updated_buffers,
+        last_flush: :erlang.monotonic_time(:millisecond)
+    }
 
-      {:noreply, new_state}
-    rescue
-      error ->
-        # Log error but don't crash the process
-        # In production, would use proper logging
-        IO.puts("Failed to write journal for session #{session_id}: #{inspect(error)}")
-        {:noreply, state}
-    end
+    {:noreply, new_state}
+  rescue
+    error ->
+      # Log error but don't crash the process
+      # In production, would use proper logging
+      IO.puts("Failed to write journal for session #{session_id}: #{inspect(error)}")
+      {:noreply, state}
   end
 
   defp flush_all_buffers(state) do
@@ -254,16 +252,14 @@ defmodule Arbor.Persistence.EventJournal do
   end
 
   defp read_journal_file(journal_file, since_timestamp) do
-    try do
-      events =
-        File.open!(journal_file, [:read, :binary], fn file ->
-          read_all_events(file, since_timestamp, [])
-        end)
+    events =
+      File.open!(journal_file, [:read, :binary], fn file ->
+        read_all_events(file, since_timestamp, [])
+      end)
 
-      {:ok, events}
-    rescue
-      error -> {:error, error}
-    end
+    {:ok, events}
+  rescue
+    error -> {:error, error}
   end
 
   defp read_all_events(file, since_timestamp, acc) do

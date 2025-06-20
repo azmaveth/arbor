@@ -68,15 +68,13 @@ defmodule Arbor.Persistence.Store do
   @impl true
   def append_events(stream_id, events, expected_version, %{backend: :in_memory} = state) do
     # MOCK: Delegate to in-memory implementation
-    with {:ok, contract_events} <- validate_and_convert_events(events),
-         {:ok, version} <-
-           InMemoryPersistence.append_events(
-             stream_id,
-             contract_events,
-             expected_version,
-             state.backend_state
-           ) do
-      {:ok, version}
+    with {:ok, contract_events} <- validate_and_convert_events(events) do
+      InMemoryPersistence.append_events(
+        stream_id,
+        contract_events,
+        expected_version,
+        state.backend_state
+      )
     end
   end
 
@@ -93,23 +91,20 @@ defmodule Arbor.Persistence.Store do
   @impl true
   def read_events(stream_id, from_version, to_version, %{backend: :in_memory} = state) do
     # MOCK: Delegate to in-memory implementation
-    with :ok <- validate_version_range(from_version, to_version),
-         {:ok, contract_events} <-
-           InMemoryPersistence.read_events(
-             stream_id,
-             from_version,
-             to_version,
-             state.backend_state
-           ) do
-      {:ok, contract_events}
+    with :ok <- validate_version_range(from_version, to_version) do
+      InMemoryPersistence.read_events(
+        stream_id,
+        from_version,
+        to_version,
+        state.backend_state
+      )
     end
   end
 
   @impl true
   def read_events(stream_id, from_version, to_version, %{backend: :postgresql} = state) do
-    with :ok <- validate_version_range(from_version, to_version),
-         {:ok, events} <- read_events_from_cache_or_db(stream_id, from_version, to_version, state) do
-      {:ok, events}
+    with :ok <- validate_version_range(from_version, to_version) do
+      read_events_from_cache_or_db(stream_id, from_version, to_version, state)
     end
   end
 
@@ -281,36 +276,44 @@ defmodule Arbor.Persistence.Store do
 
   defp append_events_to_postgresql(stream_id, events, expected_version) do
     Repo.transaction(fn ->
-      # Check current version for optimistic locking
-      current_version = get_current_stream_version(stream_id)
-
-      if expected_version != -1 and current_version != expected_version do
-        Repo.rollback(:version_conflict)
-      else
-        # Convert events to database format and insert
-        db_event_maps =
-          events
-          |> Enum.with_index(current_version + 1)
-          |> Enum.map(fn {event, version} ->
-            event
-            |> set_stream_info(stream_id, version)
-            |> Event.to_map()
-          end)
-
-        # Insert all events
-        {count, _} = Repo.insert_all(Event, db_event_maps, returning: [:stream_version])
-
-        if count == length(events) do
-          current_version + count
-        else
-          Repo.rollback(:insert_failed)
-        end
-      end
+      do_append_events_transaction(stream_id, events, expected_version)
     end)
     |> case do
       {:ok, final_version} -> {:ok, final_version}
       {:error, :version_conflict} -> {:error, :version_conflict}
       {:error, _reason} -> {:error, :database_error}
+    end
+  end
+
+  defp do_append_events_transaction(stream_id, events, expected_version) do
+    # Check current version for optimistic locking
+    current_version = get_current_stream_version(stream_id)
+
+    if expected_version != -1 and current_version != expected_version do
+      Repo.rollback(:version_conflict)
+    else
+      do_insert_events(stream_id, events, current_version)
+    end
+  end
+
+  defp do_insert_events(stream_id, events, current_version) do
+    # Convert events to database format and insert
+    db_event_maps =
+      events
+      |> Enum.with_index(current_version + 1)
+      |> Enum.map(fn {event, version} ->
+        event
+        |> set_stream_info(stream_id, version)
+        |> Event.to_map()
+      end)
+
+    # Insert all events
+    {count, _} = Repo.insert_all(Event, db_event_maps, returning: [:stream_version])
+
+    if count == length(events) do
+      current_version + count
+    else
+      Repo.rollback(:insert_failed)
     end
   end
 
@@ -367,23 +370,18 @@ defmodule Arbor.Persistence.Store do
     # Invalidate relevant cache entries
     # For simplicity, we'll clear all cache entries for this stream
     # In production, could be more granular
-    case HotCache.list_keys(state.cache) do
-      {:ok, keys} ->
-        stream_keys =
-          Enum.filter(keys, fn key ->
-            String.starts_with?(to_string(key), "events:#{stream_id}:")
-          end)
+    {:ok, keys} = HotCache.list_keys(state.cache)
 
-        Enum.each(stream_keys, fn key ->
-          HotCache.delete(state.cache, key)
-        end)
+    stream_keys =
+      Enum.filter(keys, fn key ->
+        String.starts_with?(to_string(key), "events:#{stream_id}:")
+      end)
 
-        :ok
+    Enum.each(stream_keys, fn key ->
+      HotCache.delete(state.cache, key)
+    end)
 
-      # Cache operation failed, but don't fail the append
-      {:error, _} ->
-        :ok
-    end
+    :ok
   end
 
   defp apply_event_filters(query, opts) do
