@@ -88,8 +88,8 @@ defmodule Arbor.Contracts.Core.CapabilityTest do
     end
 
     test "returns false for expired capability" do
-      # Create a capability that will expire
-      future = DateTime.add(DateTime.utc_now(), 1, :millisecond)
+      # Create a capability that will expire in 10ms
+      future = DateTime.add(DateTime.utc_now(), 10, :millisecond)
 
       {:ok, cap} =
         Capability.new(
@@ -99,7 +99,7 @@ defmodule Arbor.Contracts.Core.CapabilityTest do
         )
 
       # Wait for it to expire
-      Process.sleep(5)
+      Process.sleep(15)
 
       refute Capability.valid?(cap)
     end
