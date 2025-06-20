@@ -36,6 +36,7 @@ defmodule Arbor.Core.MixProject do
       {:arbor_security, in_umbrella: true},
       {:arbor_persistence, in_umbrella: true},
       {:horde, "~> 0.8"},
+      {:libcluster, "~> 3.3"},
       {:phoenix_pubsub, "~> 2.1"},
       {:telemetry, "~> 1.0"}
     ]

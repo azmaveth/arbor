@@ -392,7 +392,7 @@ defmodule Arbor.Contracts.Cluster.Registry do
 
   @doc """
   Stop the distributed registry and clean up resources.
-  
+
   This handles registry component shutdown and is distinct from GenServer.terminate/2.
   Should gracefully clean up all registry resources and state.
   """

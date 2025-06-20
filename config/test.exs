@@ -38,3 +38,23 @@ config :arbor_security, :use_mock_db, true
 
 # Configure security app for test environment
 config :arbor_security, :env, :test
+
+# Configure libcluster for test environment
+# Using Epmd strategy for predictable test clustering
+config :libcluster,
+  topologies: [
+    arbor_test: [
+      strategy: Cluster.Strategy.Epmd,
+      config: [
+        hosts: [:"arbor1@127.0.0.1", :"arbor2@127.0.0.1", :"arbor3@127.0.0.1"]
+      ],
+      child_spec: [restart: :transient]
+    ]
+  ]
+
+# For most tests, we'll use the mock implementations
+config :arbor_core,
+  env: :test,
+  registry_impl: :mock,
+  supervisor_impl: :mock,
+  coordinator_impl: :mock

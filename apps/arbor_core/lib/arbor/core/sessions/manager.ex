@@ -48,6 +48,7 @@ defmodule Arbor.Core.Sessions.Manager do
   require Logger
 
   alias Arbor.Core.Sessions.Session
+  alias Arbor.Core.ClusterSupervisor
   alias Arbor.Types
 
   @table :arbor_sessions
@@ -199,6 +200,55 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   @doc """
+  Get detailed session information.
+
+  Returns comprehensive information about a specific session including
+  its metadata, active agents, and current state.
+
+  ## Parameters
+
+  - `session_id` - Session identifier
+
+  ## Returns
+
+  - `{:ok, info}` - Session information
+  - `{:error, :not_found}` - Session does not exist
+
+  ## Examples
+
+      {:ok, info} = Manager.get_session_info(session_id)
+      IO.puts("Active agents: \#{length(info.active_agents)}")
+  """
+  @spec get_session_info(Types.session_id()) :: {:ok, map()} | {:error, :not_found}
+  def get_session_info(session_id) do
+    case get_session(session_id) do
+      {:ok, pid, metadata} ->
+        # Get additional info from the session process
+        case Arbor.Core.Sessions.Session.get_state(pid) do
+          {:ok, session_state} ->
+            {:ok,
+             Map.merge(session_state, %{
+               pid: pid,
+               metadata: metadata
+             })}
+
+          _ ->
+            # Fallback if we can't get session state
+            {:ok,
+             %{
+               id: session_id,
+               pid: pid,
+               metadata: metadata,
+               active_agents: []
+             }}
+        end
+
+      {:error, :not_found} = error ->
+        error
+    end
+  end
+
+  @doc """
   Get session statistics.
 
   Returns aggregate information about session usage and performance.
@@ -228,7 +278,7 @@ defmodule Arbor.Core.Sessions.Manager do
     :ets.new(@table, [:named_table, :public, read_concurrency: true])
 
     # Subscribe to session events
-    Phoenix.PubSub.subscribe(Arbor.PubSub, "sessions")
+    Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "sessions")
 
     # Initialize telemetry
     :telemetry.execute([:arbor, :session_manager, :start], %{count: 1}, %{node: Node.self()})
@@ -250,17 +300,25 @@ defmodule Arbor.Core.Sessions.Manager do
     # 1 hour default
     timeout = opts[:timeout] || 3_600_000
 
-    # Start session under Horde supervisor for clustering
-    case Horde.DynamicSupervisor.start_child(
-           Arbor.Core.AgentSupervisor,
-           {Session,
-            [
-              session_id: session_id,
-              created_by: opts[:created_by],
-              metadata: opts[:metadata] || %{},
-              timeout: timeout
-            ]}
-         ) do
+    # Start session under cluster supervisor for distributed management
+    session_spec = %{
+      id: session_id,
+      module: Session,
+      args: [
+        session_id: session_id,
+        created_by: opts[:created_by],
+        metadata: opts[:metadata] || %{},
+        timeout: timeout
+      ],
+      metadata: %{
+        type: :session,
+        created_by: opts[:created_by],
+        client_metadata: opts[:metadata] || %{}
+      },
+      restart_strategy: :transient
+    }
+
+    case ClusterSupervisor.start_agent(session_spec) do
       {:ok, pid} ->
         # Store in ETS for fast lookups
         session_metadata = %{
@@ -288,7 +346,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
         # Broadcast event
         Phoenix.PubSub.broadcast(
-          Arbor.PubSub,
+          Arbor.Core.PubSub,
           "sessions",
           {:session_created, session_id, session_metadata}
         )
@@ -324,9 +382,9 @@ defmodule Arbor.Core.Sessions.Manager do
   @impl true
   def handle_call({:end_session, session_id}, _from, state) do
     case get_session(session_id) do
-      {:ok, pid, _metadata} ->
-        # Gracefully stop the session
-        DynamicSupervisor.terminate_child(Arbor.Core.AgentSupervisor, pid)
+      {:ok, _pid, _metadata} ->
+        # Gracefully stop the session using cluster supervisor
+        ClusterSupervisor.stop_agent(session_id)
 
         # Remove from ETS (will be handled by :DOWN message as well)
         :ets.delete(@table, session_id)
@@ -369,7 +427,11 @@ defmodule Arbor.Core.Sessions.Manager do
         new_stats = Map.update!(state.stats, :total_ended, &(&1 + 1))
 
         # Broadcast event
-        Phoenix.PubSub.broadcast(Arbor.PubSub, "sessions", {:session_ended, session_id, reason})
+        Phoenix.PubSub.broadcast(
+          Arbor.Core.PubSub,
+          "sessions",
+          {:session_ended, session_id, reason}
+        )
 
         # Emit telemetry
         :telemetry.execute(

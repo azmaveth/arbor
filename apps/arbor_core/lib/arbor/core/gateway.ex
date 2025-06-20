@@ -43,8 +43,7 @@ defmodule Arbor.Core.Gateway do
   use GenServer
   require Logger
 
-  alias Arbor.Contracts.Core.{Capability, Message}
-  alias Arbor.Core.{Security, Sessions}
+  alias Arbor.Core.{Sessions, ClusterRegistry}
   alias Arbor.Types
 
   @typedoc "Information about an available capability"
@@ -193,7 +192,7 @@ defmodule Arbor.Core.Gateway do
   """
   @spec subscribe_execution(Types.execution_id()) :: :ok | {:error, term()}
   def subscribe_execution(execution_id) do
-    Phoenix.PubSub.subscribe(Arbor.PubSub, "execution:#{execution_id}")
+    Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "execution:#{execution_id}")
   end
 
   @doc """
@@ -210,7 +209,7 @@ defmodule Arbor.Core.Gateway do
   """
   @spec subscribe_session(Types.session_id()) :: :ok | {:error, term()}
   def subscribe_session(session_id) do
-    Phoenix.PubSub.subscribe(Arbor.PubSub, "session:#{session_id}")
+    Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "session:#{session_id}")
   end
 
   @doc """
@@ -251,7 +250,7 @@ defmodule Arbor.Core.Gateway do
     Logger.info("Starting Arbor Gateway", opts: opts)
 
     # Subscribe to system events
-    Phoenix.PubSub.subscribe(Arbor.PubSub, "system")
+    Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "system")
 
     # Initialize telemetry
     :telemetry.execute([:arbor, :gateway, :start], %{count: 1}, %{node: Node.self()})
@@ -617,16 +616,50 @@ defmodule Arbor.Core.Gateway do
     end
   end
 
-  defp simulate_agent_query(_params) do
-    {:ok,
-     %{
-       agents: [
-         %{id: "agent_001", type: :coordinator, status: :active, tasks: 2},
-         %{id: "agent_002", type: :tool_executor, status: :active, tasks: 1},
-         %{id: "agent_003", type: :llm, status: :idle, tasks: 0}
-       ],
-       total_agents: 3
-     }}
+  defp simulate_agent_query(params) do
+    # Use the distributed registry to query agents
+    filter = params["filter"] || params[:filter] || %{}
+
+    # Get all agents from the registry
+    case ClusterRegistry.list_all_agents() do
+      {:ok, all_agents} ->
+        # Filter agents based on the provided filter
+        filtered_agents = filter_agents(all_agents, filter)
+
+        # Transform to response format
+        agent_info =
+          Enum.map(filtered_agents, fn {agent_id, _pid, metadata} ->
+            %{
+              id: agent_id,
+              type: metadata[:type] || :unknown,
+              # All registered agents are active
+              status: :active,
+              capabilities: metadata[:capabilities] || [],
+              node: metadata[:node] || node()
+            }
+          end)
+
+        {:ok,
+         %{
+           agents: agent_info,
+           total_agents: length(agent_info)
+         }}
+
+      {:error, reason} ->
+        Logger.error("Failed to query agents from registry", reason: reason)
+        # Return empty result on error
+        {:ok, %{agents: [], total_agents: 0}}
+    end
+  end
+
+  defp filter_agents(agents, filter) when map_size(filter) == 0, do: agents
+
+  defp filter_agents(agents, filter) do
+    Enum.filter(agents, fn {_agent_id, _pid, metadata} ->
+      Enum.all?(filter, fn {key, value} ->
+        metadata[key] == value
+      end)
+    end)
   end
 
   defp broadcast_execution_event(
@@ -649,8 +682,17 @@ defmodule Arbor.Core.Gateway do
       timestamp: DateTime.utc_now()
     }
 
-    Phoenix.PubSub.broadcast(Arbor.PubSub, "execution:#{execution_id}", {:execution_event, event})
-    Phoenix.PubSub.broadcast(Arbor.PubSub, "session:#{session_id}", {:execution_event, event})
+    Phoenix.PubSub.broadcast(
+      Arbor.Core.PubSub,
+      "execution:#{execution_id}",
+      {:execution_event, event}
+    )
+
+    Phoenix.PubSub.broadcast(
+      Arbor.Core.PubSub,
+      "session:#{session_id}",
+      {:execution_event, event}
+    )
   end
 
   defp find_execution_by_task_ref(ref, executions) do

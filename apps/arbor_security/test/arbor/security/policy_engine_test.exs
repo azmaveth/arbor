@@ -90,7 +90,11 @@ defmodule Arbor.Security.PolicyEngineTest do
     end
 
     test "allows external API calls with permission" do
-      context = %{principal_id: "agent_api_test_002", external_api_allowed: true, security_level: 3}
+      context = %{
+        principal_id: "agent_api_test_002",
+        external_api_allowed: true,
+        security_level: 3
+      }
 
       assert :ok =
                PolicyEngine.check_policies(

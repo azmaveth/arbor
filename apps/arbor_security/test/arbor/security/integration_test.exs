@@ -16,7 +16,8 @@ defmodule Arbor.Security.IntegrationTest do
   use ExUnit.Case, async: false
 
   alias Arbor.Contracts.Core.Capability
-  alias Arbor.Security.{AuditLogger, CapabilityStore, Kernel}
+  alias Arbor.Security.{AuditLogger, CapabilityStore, Kernel, Repo}
+  alias Ecto.Migrator
 
   # These tests require real PostgreSQL database for full integration testing
   @moduletag integration: true
@@ -236,7 +237,7 @@ defmodule Arbor.Security.IntegrationTest do
 
       # Verify capability works
       context = %{
-        agent_id: "agent_monitored_004", 
+        agent_id: "agent_monitored_004",
         session_id: "session_monitor",
         security_level: 3,
         mfa_verified: true,
@@ -352,8 +353,10 @@ defmodule Arbor.Security.IntegrationTest do
 
     test "performance under concurrent load" do
       # Test concurrent capability operations with rate limiting awareness
-      agent_count = 5  # Reduced to avoid rate limiting
-      operations_per_agent = 3  # Reduced to avoid rate limiting
+      # Reduced to avoid rate limiting
+      agent_count = 5
+      # Reduced to avoid rate limiting
+      operations_per_agent = 3
 
       # Create agents concurrently
       tasks =
@@ -362,40 +365,43 @@ defmodule Arbor.Security.IntegrationTest do
             agent_id = "agent_load_#{agent_num}"
 
             # Each agent performs multiple operations
-            results = for op_num <- 1..operations_per_agent do
-              # Grant capability
-              case Kernel.grant_capability(
-                  principal_id: agent_id,
-                  resource_uri: "arbor://fs/read/load_test/data_#{op_num}",
-                  constraints: %{max_uses: 1},
-                  granter_id: "load_test_admin",
-                  metadata: %{load_test: true}
-                ) do
-                {:ok, capability} ->
-                  # Authorize
-                  context = %{agent_id: agent_id, session_id: "session_#{op_num}"}
+            results =
+              for op_num <- 1..operations_per_agent do
+                # Grant capability
+                case Kernel.grant_capability(
+                       principal_id: agent_id,
+                       resource_uri: "arbor://fs/read/load_test/data_#{op_num}",
+                       constraints: %{max_uses: 1},
+                       granter_id: "load_test_admin",
+                       metadata: %{load_test: true}
+                     ) do
+                  {:ok, capability} ->
+                    # Authorize
+                    context = %{agent_id: agent_id, session_id: "session_#{op_num}"}
 
-                  auth_result = Kernel.authorize(
-                    capability: capability,
-                    resource_uri: "arbor://fs/read/load_test/data_#{op_num}",
-                    operation: :read,
-                    context: context
-                  )
+                    auth_result =
+                      Kernel.authorize(
+                        capability: capability,
+                        resource_uri: "arbor://fs/read/load_test/data_#{op_num}",
+                        operation: :read,
+                        context: context
+                      )
 
-                  # Revoke
-                  :ok = Kernel.revoke_capability(
-                    capability_id: capability.id,
-                    reason: :load_test_cleanup,
-                    revoker_id: "load_test_admin",
-                    cascade: false
-                  )
+                    # Revoke
+                    :ok =
+                      Kernel.revoke_capability(
+                        capability_id: capability.id,
+                        reason: :load_test_cleanup,
+                        revoker_id: "load_test_admin",
+                        cascade: false
+                      )
 
-                  auth_result
+                    auth_result
 
-                {:error, _reason} = error ->
-                  error
+                  {:error, _reason} = error ->
+                    error
+                end
               end
-            end
 
             # Count successful operations
             successful = Enum.count(results, &match?({:ok, :authorized}, &1))
@@ -409,8 +415,10 @@ defmodule Arbor.Security.IntegrationTest do
       # Verify that most operations completed successfully
       # Some may fail due to rate limiting, which is expected
       total_operations = agent_count * operations_per_agent
-      successful_operations = Enum.sum(Enum.map(results, fn {_id, successful, _total} -> successful end))
-      
+
+      successful_operations =
+        Enum.sum(Enum.map(results, fn {_id, successful, _total} -> successful end))
+
       # At least 50% should succeed (rate limiting may block some)
       assert successful_operations >= total_operations * 0.5
 
@@ -431,8 +439,9 @@ defmodule Arbor.Security.IntegrationTest do
       # Note: Some operations may be rate limited and generate fewer events
       # Each successful operation generates at least 2 events (grant + authorize)
       min_expected_events = successful_operations * 2
+
       assert length(all_events) >= min_expected_events,
-        "Expected at least #{min_expected_events} events for #{successful_operations} successful operations, got #{length(all_events)}"
+             "Expected at least #{min_expected_events} events for #{successful_operations} successful operations, got #{length(all_events)}"
     end
   end
 
@@ -499,35 +508,49 @@ defmodule Arbor.Security.IntegrationTest do
 
   defp stop_if_running(process_name) do
     case Process.whereis(process_name) do
-      nil -> 
+      nil ->
         :ok
-      pid when is_pid(pid) -> 
-        # First try graceful shutdown
-        if Process.alive?(pid) do
-          case GenServer.stop(pid, :normal, 1000) do
-            :ok -> :ok
-            {:error, _} ->
-              # Force kill if graceful shutdown fails
-              Process.exit(pid, :kill)
-              Process.sleep(50)
-          end
-        end
+
+      pid when is_pid(pid) ->
+        stop_process_gracefully(pid)
     end
   rescue
     # Handle cases where the process name doesn't support GenServer.stop
     _ ->
-      case Process.whereis(process_name) do
-        nil -> :ok
-        pid -> 
+      force_kill_process(process_name)
+  end
+
+  defp stop_process_gracefully(pid) do
+    # First try graceful shutdown
+    if Process.alive?(pid) do
+      case GenServer.stop(pid, :normal, 1000) do
+        :ok ->
+          :ok
+
+        {:error, _} ->
+          # Force kill if graceful shutdown fails
           Process.exit(pid, :kill)
           Process.sleep(50)
       end
+    end
+  end
+
+  defp force_kill_process(process_name) do
+    case Process.whereis(process_name) do
+      nil ->
+        :ok
+
+      pid ->
+        Process.exit(pid, :kill)
+        Process.sleep(50)
+    end
   end
 
   defp start_supervised_if_needed(module, opts) do
     case Process.whereis(module) do
       nil ->
         start_supervised({module, opts})
+
       pid ->
         {:ok, pid}
     end
@@ -535,15 +558,15 @@ defmodule Arbor.Security.IntegrationTest do
 
   defp ensure_database_ready do
     # Start the repo temporarily to run migrations
-    case Arbor.Security.Repo.start_link([]) do
+    case Repo.start_link([]) do
       {:ok, _pid} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
 
     # Run migrations to ensure tables exist
     path = Application.app_dir(:arbor_security, "priv/repo/migrations")
-    Ecto.Migrator.run(Arbor.Security.Repo, path, :up, all: true)
-    
+    Migrator.run(Repo, path, :up, all: true)
+
     :ok
   rescue
     # If anything fails, continue - the database might not be available
@@ -553,15 +576,17 @@ defmodule Arbor.Security.IntegrationTest do
 
   defp clean_database_tables do
     # Clean capabilities table
-    case Arbor.Security.Repo.query("DELETE FROM capabilities") do
+    case Repo.query("DELETE FROM capabilities") do
       {:ok, _} -> :ok
-      {:error, _} -> :ok  # Table might not exist yet
+      # Table might not exist yet
+      {:error, _} -> :ok
     end
 
     # Clean audit_events table
-    case Arbor.Security.Repo.query("DELETE FROM audit_events") do
+    case Repo.query("DELETE FROM audit_events") do
       {:ok, _} -> :ok
-      {:error, _} -> :ok  # Table might not exist yet
+      # Table might not exist yet
+      {:error, _} -> :ok
     end
   end
 

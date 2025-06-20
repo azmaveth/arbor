@@ -79,9 +79,15 @@ defmodule Arbor.Core.Sessions.Session do
   def start_link(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
 
-    GenServer.start_link(__MODULE__, opts,
-      name: {:via, Horde.Registry, {Arbor.Core.Registry, session_id}}
-    )
+    # For testing, use regular Registry instead of Horde
+    name =
+      if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+        {:via, Registry, {Arbor.Core.Registry, session_id}}
+      else
+        {:via, Horde.Registry, {Arbor.Core.Registry, session_id}}
+      end
+
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   @doc """
@@ -200,7 +206,7 @@ defmodule Arbor.Core.Sessions.Session do
     )
 
     # Subscribe to session-specific events
-    Phoenix.PubSub.subscribe(Arbor.PubSub, "session:#{session_id}")
+    Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "session:#{session_id}")
 
     # Set timeout for session cleanup
     if timeout > 0 do
@@ -506,6 +512,6 @@ defmodule Arbor.Core.Sessions.Session do
       timestamp: DateTime.utc_now()
     }
 
-    Phoenix.PubSub.broadcast(Arbor.PubSub, "session:#{session_id}", {:session_event, event})
+    Phoenix.PubSub.broadcast(Arbor.Core.PubSub, "session:#{session_id}", {:session_event, event})
   end
 end

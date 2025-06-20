@@ -496,10 +496,11 @@ defmodule Arbor.Security.Kernel do
         case Process.whereis(CapabilityStore.PostgresDB) do
           nil ->
             {:ok, _db_pid} = CapabilityStore.PostgresDB.start_link([])
+
           _pid ->
             :ok
         end
-        
+
         CapabilityStore.start_link([])
 
       pid ->
@@ -515,10 +516,11 @@ defmodule Arbor.Security.Kernel do
         case Process.whereis(AuditLogger.PostgresDB) do
           nil ->
             {:ok, _db_pid} = AuditLogger.PostgresDB.start_link([])
+
           _pid ->
             :ok
         end
-        
+
         AuditLogger.start_link([])
 
       pid ->

@@ -62,3 +62,34 @@ config :arbor_security,
 config :arbor_persistence,
   # Database settings will be configured in runtime.exs
   enable_metrics: true
+
+# Configure libcluster for production
+# Using Kubernetes strategy for cloud deployments
+config :libcluster,
+  topologies: [
+    arbor_prod: [
+      strategy: Elixir.Cluster.Strategy.Kubernetes,
+      config: [
+        mode: :hostname,
+        kubernetes_node_basename: "arbor",
+        kubernetes_selector: "app=arbor,tier=backend",
+        kubernetes_namespace: "default",
+        polling_interval: 10_000
+      ]
+    ]
+  ]
+
+# Configure distributed Erlang for production (only for releases)
+if System.get_env("RELEASE_MODE") do
+  config :kernel,
+    inet_dist_listen_min: 9100,
+    inet_dist_listen_max: 9200,
+    # Use TLS for distribution in production
+    inet_dist_use_interface: {:system, "POD_IP"}
+end
+
+# Use production Horde implementations
+config :arbor_core,
+  registry_impl: :horde,
+  supervisor_impl: :horde,
+  coordinator_impl: :horde

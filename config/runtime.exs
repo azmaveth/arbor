@@ -42,18 +42,63 @@ if node_name = System.get_env("NODE_NAME") do
   config :arbor_core,
     clustering: [
       node_name: String.to_atom(node_name),
-      cookie: String.to_atom(System.get_env("ERLANG_COOKIE", "arbor_cluster_cookie")),
-      topology: [
-        arbor: [
-          strategy: Cluster.Strategy.Epmd,
-          config: [
-            hosts:
-              System.get_env("CLUSTER_HOSTS", "")
-              |> String.split(",")
-              |> Enum.reject(&(&1 == ""))
-              |> Enum.map(&String.to_atom/1)
-          ]
+      cookie: String.to_atom(System.get_env("ERLANG_COOKIE", "arbor_cluster_cookie"))
+    ]
+end
+
+# Dynamic libcluster configuration based on environment
+if System.get_env("CLUSTER_STRATEGY") do
+  strategy =
+    case System.get_env("CLUSTER_STRATEGY") do
+      "kubernetes" -> Elixir.Cluster.Strategy.Kubernetes
+      "gossip" -> Cluster.Strategy.Gossip
+      "epmd" -> Cluster.Strategy.Epmd
+      "dns" -> Cluster.Strategy.DNSPoll
+      _ -> Cluster.Strategy.Epmd
+    end
+
+  topology_config =
+    case System.get_env("CLUSTER_STRATEGY") do
+      "kubernetes" ->
+        [
+          mode: :hostname,
+          kubernetes_node_basename: System.get_env("K8S_NODE_BASENAME", "arbor"),
+          kubernetes_selector: System.get_env("K8S_SELECTOR", "app=arbor"),
+          kubernetes_namespace: System.get_env("K8S_NAMESPACE", "default"),
+          polling_interval: String.to_integer(System.get_env("K8S_POLL_INTERVAL", "10000"))
         ]
+
+      "gossip" ->
+        [
+          port: String.to_integer(System.get_env("GOSSIP_PORT", "45892")),
+          if_addr: System.get_env("GOSSIP_INTERFACE", "0.0.0.0"),
+          multicast_addr: System.get_env("GOSSIP_MULTICAST", "255.255.255.255"),
+          multicast_ttl: String.to_integer(System.get_env("GOSSIP_TTL", "1")),
+          secret: System.get_env("GOSSIP_SECRET", "arbor_cluster_secret")
+        ]
+
+      "dns" ->
+        [
+          query: System.get_env("DNS_QUERY", "arbor.local"),
+          node_basename: System.get_env("DNS_NODE_BASENAME", "arbor")
+        ]
+
+      _ ->
+        # Default EPMD config
+        [
+          hosts:
+            System.get_env("CLUSTER_HOSTS", "")
+            |> String.split(",")
+            |> Enum.reject(&(&1 == ""))
+            |> Enum.map(&String.to_atom/1)
+        ]
+    end
+
+  config :libcluster,
+    topologies: [
+      arbor: [
+        strategy: strategy,
+        config: topology_config
       ]
     ]
 end

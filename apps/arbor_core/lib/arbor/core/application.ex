@@ -22,15 +22,20 @@ defmodule Arbor.Core.Application do
 
     # Get topology configuration for libcluster
     topologies = Application.get_env(:libcluster, :topologies, [])
-    
+
     # Check if we should use Horde or mocks
-    use_horde = case Application.get_env(:arbor_core, :registry_impl, :auto) do
-      :mock -> false
-      :horde -> true
-      :auto -> 
-        # Check if we're in test environment
-        Application.get_env(:arbor_core, :env, :prod) != :test
-    end
+    use_horde =
+      case Application.get_env(:arbor_core, :registry_impl, :auto) do
+        :mock ->
+          false
+
+        :horde ->
+          true
+
+        :auto ->
+          # Check if we're in test environment
+          Application.get_env(:arbor_core, :env, :prod) != :test
+      end
 
     # Base children that always start
     base_children = [
@@ -47,38 +52,39 @@ defmodule Arbor.Core.Application do
       # Telemetry (placeholder for now)
       {Task, fn -> setup_telemetry() end}
     ]
-    
+
     # Distributed components (only in production/dev with Horde)
-    distributed_children = if use_horde do
-      [
-        # Cluster formation (must be first)
-        {Cluster.Supervisor, [topologies, [name: Arbor.ClusterSupervisor]]},
-        
-        # Cluster management (coordinates Horde components)
-        Arbor.Core.ClusterManager,
-        
-        # Distributed process management infrastructure
-        %{
-          id: Arbor.Core.HordeRegistry,
-          start: {Arbor.Core.HordeRegistry, :start_registry, []},
-          type: :supervisor
-        },
-        %{
-          id: Arbor.Core.HordeSupervisor,
-          start: {Arbor.Core.HordeSupervisor, :start_supervisor, []},
-          type: :supervisor
-        },
-        # HordeCoordinator with its own registry
-        %{
-          id: Arbor.Core.CoordinationSupervisor,
-          start: {Arbor.Core.HordeCoordinator, :start_coordination, []},
-          type: :supervisor
-        }
-      ]
-    else
-      []
-    end
-    
+    distributed_children =
+      if use_horde do
+        [
+          # Cluster formation (must be first)
+          {Cluster.Supervisor, [topologies, [name: Arbor.ClusterSupervisor]]},
+
+          # Cluster management (coordinates Horde components)
+          Arbor.Core.ClusterManager,
+
+          # Distributed process management infrastructure
+          %{
+            id: Arbor.Core.HordeRegistry,
+            start: {Arbor.Core.HordeRegistry, :start_registry, []},
+            type: :supervisor
+          },
+          %{
+            id: Arbor.Core.HordeSupervisor,
+            start: {Arbor.Core.HordeSupervisor, :start_supervisor, []},
+            type: :supervisor
+          },
+          # HordeCoordinator with its own registry
+          %{
+            id: Arbor.Core.CoordinationSupervisor,
+            start: {Arbor.Core.HordeCoordinator, :start_coordination, []},
+            type: :supervisor
+          }
+        ]
+      else
+        []
+      end
+
     children = distributed_children ++ base_children
 
     opts = [strategy: :one_for_one, name: Arbor.Core.Supervisor]
