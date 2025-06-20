@@ -26,7 +26,10 @@ defmodule Arbor.Persistence.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:arbor_contracts, in_umbrella: true}
+      {:arbor_contracts, in_umbrella: true},
+      {:ecto_sql, "~> 3.11"},
+      {:postgrex, "~> 0.17"},
+      {:jason, "~> 1.4"}
     ]
   end
 end
