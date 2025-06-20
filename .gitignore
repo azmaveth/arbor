@@ -84,8 +84,8 @@ _rel/
 *.tar.gz
 
 # Escript executables
-arbor
-arbor.exe
+/arbor
+/arbor.exe
 
 # OS generated files
 Thumbs.db
