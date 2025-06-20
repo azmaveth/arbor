@@ -99,3 +99,7 @@ Desktop.ini
 
 # Mix lock file in development (uncomment if needed)
 # mix.lock
+
+.goose/
+.venv/
+venv/
