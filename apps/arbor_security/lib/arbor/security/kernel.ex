@@ -492,8 +492,14 @@ defmodule Arbor.Security.Kernel do
     # Start the capability store if it's not already running
     case Process.whereis(CapabilityStore) do
       nil ->
-        # Also start the database module
-        {:ok, _db_pid} = CapabilityStore.PostgresDB.start_link([])
+        # Start the database module if not already running
+        case Process.whereis(CapabilityStore.PostgresDB) do
+          nil ->
+            {:ok, _db_pid} = CapabilityStore.PostgresDB.start_link([])
+          _pid ->
+            :ok
+        end
+        
         CapabilityStore.start_link([])
 
       pid ->
@@ -505,8 +511,14 @@ defmodule Arbor.Security.Kernel do
     # Start the audit logger if it's not already running
     case Process.whereis(AuditLogger) do
       nil ->
-        # Also start the database module
-        {:ok, _db_pid} = AuditLogger.PostgresDB.start_link([])
+        # Start the database module if not already running
+        case Process.whereis(AuditLogger.PostgresDB) do
+          nil ->
+            {:ok, _db_pid} = AuditLogger.PostgresDB.start_link([])
+          _pid ->
+            :ok
+        end
+        
         AuditLogger.start_link([])
 
       pid ->

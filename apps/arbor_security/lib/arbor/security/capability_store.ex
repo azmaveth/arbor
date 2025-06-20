@@ -112,7 +112,7 @@ defmodule Arbor.Security.CapabilityStore do
     # Use real PostgreSQL repo by default, mock for testing
     db_module =
       opts[:db_module] ||
-        (Application.get_env(:arbor_security, :env, :dev) == :test && opts[:use_mock] == true &&
+        (Application.get_env(:arbor_security, :env, :dev) == :test && opts[:use_mock] &&
            __MODULE__.PostgresDB) ||
         Arbor.Security.Persistence.CapabilityRepo
 

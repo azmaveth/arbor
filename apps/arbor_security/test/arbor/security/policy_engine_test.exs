@@ -43,7 +43,7 @@ defmodule Arbor.Security.PolicyEngineTest do
   describe "time-based restrictions" do
     test "allows access during business hours" do
       # Mock a business hours time (Tuesday 10 AM UTC)
-      context = %{principal_id: "agent_time_test_001"}
+      context = %{principal_id: "agent_time_test_001", security_level: 2}
 
       # This test would need time mocking to be reliable
       # For now, we'll just verify the function exists
@@ -52,7 +52,7 @@ defmodule Arbor.Security.PolicyEngineTest do
     end
 
     test "denies access to financial data outside business hours" do
-      context = %{principal_id: "agent_time_test_002"}
+      context = %{principal_id: "agent_time_test_002", security_level: 2}
 
       # Financial resources have time restrictions
       result =
@@ -72,7 +72,7 @@ defmodule Arbor.Security.PolicyEngineTest do
     end
 
     test "allows writes to non-system directories" do
-      context = %{principal_id: "agent_resource_test_002"}
+      context = %{principal_id: "agent_resource_test_002", security_level: 2}
 
       assert :ok = PolicyEngine.check_policies(:write, "arbor://fs/write/user/data", context, %{})
     end
@@ -90,7 +90,7 @@ defmodule Arbor.Security.PolicyEngineTest do
     end
 
     test "allows external API calls with permission" do
-      context = %{principal_id: "agent_api_test_002", external_api_allowed: true}
+      context = %{principal_id: "agent_api_test_002", external_api_allowed: true, security_level: 3}
 
       assert :ok =
                PolicyEngine.check_policies(

@@ -32,3 +32,9 @@ config :arbor_security, Arbor.Security.Repo,
   pool_size: String.to_integer(System.get_env("DB_POOL_SIZE", "10")),
   # Disable query logging in tests for cleaner output
   log: false
+
+# Tell security application to use mock databases for most tests
+config :arbor_security, :use_mock_db, true
+
+# Configure security app for test environment
+config :arbor_security, :env, :test

@@ -22,13 +22,11 @@ defmodule Arbor.Security.Application do
     # Different children for test vs dev/prod
     children =
       if Application.get_env(:arbor_security, :use_mock_db, false) do
-        # Test mode - don't start real repo
+        # Test mode - minimal services, let tests control everything
         [
-          # Start policy services
-          RateLimiter,
-          # Start telemetry monitoring
+          # Only start telemetry monitoring
           Telemetry
-          # Security kernel and services will be started by tests
+          # All other services (kernel, stores, rate limiter) will be started by tests
         ]
       else
         # Dev/prod mode - start everything including repo
