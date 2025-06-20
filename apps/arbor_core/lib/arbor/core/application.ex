@@ -20,17 +20,22 @@ defmodule Arbor.Core.Application do
   def start(_type, _args) do
     Logger.info("Starting Arbor Core Application")
 
-    children = [
-      # Distributed process management
-      {Horde.Registry, [name: Arbor.Core.Registry, keys: :unique]},
-      {Horde.DynamicSupervisor,
-       [
-         name: Arbor.Core.AgentSupervisor,
-         strategy: :one_for_one
-       ]},
+    # Get topology configuration for libcluster
+    topologies = Application.get_env(:libcluster, :topologies, [])
+    
+    # Check if we should use Horde or mocks
+    use_horde = case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock -> false
+      :horde -> true
+      :auto -> 
+        # Check if we're in test environment
+        Application.get_env(:arbor_core, :env, :prod) != :test
+    end
 
-      # Event broadcasting
-      {Phoenix.PubSub, name: Arbor.PubSub},
+    # Base children that always start
+    base_children = [
+      # Phoenix PubSub (needed by coordination)
+      {Phoenix.PubSub, name: Arbor.Core.PubSub},
 
       # Task supervision for async operations
       {Task.Supervisor, name: Arbor.TaskSupervisor},
@@ -42,6 +47,39 @@ defmodule Arbor.Core.Application do
       # Telemetry (placeholder for now)
       {Task, fn -> setup_telemetry() end}
     ]
+    
+    # Distributed components (only in production/dev with Horde)
+    distributed_children = if use_horde do
+      [
+        # Cluster formation (must be first)
+        {Cluster.Supervisor, [topologies, [name: Arbor.ClusterSupervisor]]},
+        
+        # Cluster management (coordinates Horde components)
+        Arbor.Core.ClusterManager,
+        
+        # Distributed process management infrastructure
+        %{
+          id: Arbor.Core.HordeRegistry,
+          start: {Arbor.Core.HordeRegistry, :start_registry, []},
+          type: :supervisor
+        },
+        %{
+          id: Arbor.Core.HordeSupervisor,
+          start: {Arbor.Core.HordeSupervisor, :start_supervisor, []},
+          type: :supervisor
+        },
+        # HordeCoordinator with its own registry
+        %{
+          id: Arbor.Core.CoordinationSupervisor,
+          start: {Arbor.Core.HordeCoordinator, :start_coordination, []},
+          type: :supervisor
+        }
+      ]
+    else
+      []
+    end
+    
+    children = distributed_children ++ base_children
 
     opts = [strategy: :one_for_one, name: Arbor.Core.Supervisor]
 

@@ -302,9 +302,10 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
             ) :: :ok | {:error, term()}
 
   @doc """
-  Initialize the distributed supervisor.
+  Start the distributed supervisor infrastructure.
 
-  Sets up the Horde supervisor infrastructure.
+  Sets up the Horde supervisor infrastructure including CRDT components.
+  This is distinct from GenServer.init/1 and manages the supervisor component lifecycle.
 
   ## Options
 
@@ -318,7 +319,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `{:ok, state}` - Supervisor initialized
   - `{:error, reason}` - Initialization failed
   """
-  @callback init(opts :: keyword()) :: {:ok, state()} | {:error, term()}
+  @callback start_supervisor(opts :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
   Handle agent state handoff during migration.
@@ -342,9 +343,10 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
             ) :: {:ok, any()} | {:error, term()}
 
   @doc """
-  Clean up resources when shutting down.
+  Stop the distributed supervisor and clean up resources.
 
-  Should gracefully stop all agents and cleanup resources.
+  This handles supervisor component shutdown and is distinct from GenServer.terminate/2.
+  Should gracefully stop all agents and cleanup supervisor resources.
   """
-  @callback terminate(reason :: term(), state()) :: :ok
+  @callback stop_supervisor(reason :: term(), state()) :: :ok
 end

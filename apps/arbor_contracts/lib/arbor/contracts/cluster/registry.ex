@@ -356,9 +356,10 @@ defmodule Arbor.Contracts.Cluster.Registry do
   @callback health_check(state()) :: {:ok, map()} | {:error, registry_error()}
 
   @doc """
-  Initialize the registry.
+  Start the distributed registry infrastructure.
 
-  Sets up the distributed registry infrastructure.
+  Sets up the distributed registry infrastructure including Horde components.
+  This is distinct from GenServer.init/1 and manages the registry component lifecycle.
 
   ## Options
 
@@ -371,7 +372,7 @@ defmodule Arbor.Contracts.Cluster.Registry do
   - `{:ok, state}` - Registry initialized
   - `{:error, reason}` - Initialization failed
   """
-  @callback init(opts :: keyword()) :: {:ok, state()} | {:error, term()}
+  @callback start_registry(opts :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
   Handle node joining the cluster.
@@ -390,7 +391,10 @@ defmodule Arbor.Contracts.Cluster.Registry do
   @callback handle_node_down(node :: node(), state()) :: {:ok, state()}
 
   @doc """
-  Clean up resources when shutting down.
+  Stop the distributed registry and clean up resources.
+  
+  This handles registry component shutdown and is distinct from GenServer.terminate/2.
+  Should gracefully clean up all registry resources and state.
   """
-  @callback terminate(reason :: term(), state()) :: :ok
+  @callback stop_registry(reason :: term(), state()) :: :ok
 end
