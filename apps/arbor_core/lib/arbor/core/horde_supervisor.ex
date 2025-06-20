@@ -181,7 +181,8 @@ defmodule Arbor.Core.HordeSupervisor do
        [
          name: @supervisor_name,
          strategy: :one_for_one,
-         distribution_strategy: Horde.UniformQuorumDistribution,
+         distribution_strategy: Horde.UniformRandomDistribution,
+         process_redistribution: :active,
          members: :auto,
          delta_crdt_options: [sync_interval: 100]
        ]},
@@ -330,7 +331,7 @@ defmodule Arbor.Core.HordeSupervisor do
 
             {:reply, {:ok, agent_info}, state}
 
-          {:error, :not_found} ->
+          {:error, :not_registered} ->
             {:reply, {:error, :not_found}, state}
         end
     end
@@ -352,7 +353,7 @@ defmodule Arbor.Core.HordeSupervisor do
               started_at: metadata.started_at
             }
 
-          {:error, :not_found} ->
+          {:error, :not_registered} ->
             nil
         end
       end)
@@ -378,7 +379,7 @@ defmodule Arbor.Core.HordeSupervisor do
               metadata: Map.merge(metadata.metadata, registry_metadata)
             }
 
-          {:error, :not_found} ->
+          {:error, :not_registered} ->
             nil
         end
       end)
@@ -436,7 +437,7 @@ defmodule Arbor.Core.HordeSupervisor do
             {:reply, {:ok, %{metadata: metadata}}, state}
         end
 
-      {:error, :not_found} ->
+      {:error, :not_registered} ->
         {:reply, {:error, :not_found}, state}
     end
   end
@@ -459,8 +460,81 @@ defmodule Arbor.Core.HordeSupervisor do
             {:reply, {:error, {:restore_failed, reason}}, state}
         end
 
-      {:error, :not_found} ->
+      {:error, :not_registered} ->
         {:reply, {:error, :not_found}, state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call(:health_metrics, _from, state) do
+    metrics = %{
+      total_agents: map_size(state.agent_metadata),
+      active_agents: length(Horde.DynamicSupervisor.which_children(@supervisor_name)),
+      nodes: Map.values(state.health_metrics),
+      cluster_members: Horde.Cluster.members(@supervisor_name)
+    }
+
+    {:reply, {:ok, metrics}, state}
+  end
+
+  @impl GenServer
+  def handle_call({:set_event_handler, event_type, callback}, _from, state) do
+    # Store event handler for the specified event type
+    # This is a simplified implementation - in production you might want more sophisticated handler management
+    Logger.info("Event handler registered for #{event_type}")
+    {:reply, :ok, state}
+  end
+
+  @impl GenServer
+  def handle_call({:handle_agent_handoff, agent_id, operation, state_data}, _from, state) do
+    # Handle agent handoff operations during migration
+    case operation do
+      :extract_state ->
+        case HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, pid, _metadata} ->
+            case extract_agent_state_internal(pid) do
+              {:ok, extracted_state} ->
+                {:reply, {:ok, extracted_state}, state}
+
+              {:error, reason} ->
+                {:reply, {:error, reason}, state}
+            end
+
+          {:error, :not_registered} ->
+            {:reply, {:error, :agent_not_found}, state}
+        end
+
+      :restore_state ->
+        case HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, pid, _metadata} ->
+            case restore_agent_state_internal(pid, state_data) do
+              :ok ->
+                {:reply, :ok, state}
+
+              {:error, reason} ->
+                {:reply, {:error, reason}, state}
+            end
+
+          {:error, :not_registered} ->
+            {:reply, {:error, :agent_not_found}, state}
+        end
+
+      _ ->
+        {:reply, {:error, :unknown_operation}, state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:update_agent_spec, agent_id, updates}, _from, state) do
+    case Map.get(state.agent_metadata, agent_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      metadata ->
+        updated_metadata = Map.merge(metadata, updates)
+        new_agent_metadata = Map.put(state.agent_metadata, agent_id, updated_metadata)
+        new_state = %{state | agent_metadata: new_agent_metadata}
+        {:reply, :ok, new_state}
     end
   end
 
@@ -503,7 +577,7 @@ defmodule Arbor.Core.HordeSupervisor do
       {:ok, _pid, _metadata} ->
         {:error, :already_exists}
 
-      {:error, :not_found} ->
+      {:error, :not_registered} ->
         # Prepare agent metadata
         metadata = %{
           id: agent_id,
@@ -516,33 +590,44 @@ defmodule Arbor.Core.HordeSupervisor do
           migrations: 0
         }
 
+        # Include agent_id and metadata in the args for self-registration
+        enhanced_args =
+          Keyword.merge(
+            agent_spec.args,
+            agent_id: agent_id,
+            agent_metadata: metadata.metadata,
+            restart_strategy: metadata.restart_strategy
+          )
+
         # Start agent via Horde supervisor
         child_spec = %{
           id: agent_id,
-          start: {agent_spec.module, :start_link, [agent_spec.args]},
+          start: {agent_spec.module, :start_link, [enhanced_args]},
           restart: metadata.restart_strategy,
           type: :worker
         }
 
         case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
           {:ok, pid} ->
-            # Register in distributed registry
-            registry_metadata =
-              Map.merge(metadata.metadata, %{
-                module: agent_spec.module,
-                restart_strategy: metadata.restart_strategy
-              })
+            # Agent will self-register in its init callback
+            # We just need to update our local metadata
+            updated_metadata = Map.put(state.agent_metadata, agent_id, metadata)
+            updated_state = %{state | agent_metadata: updated_metadata}
 
-            case HordeRegistry.register_name(agent_id, pid, registry_metadata) do
-              :ok ->
-                updated_metadata = Map.put(state.agent_metadata, agent_id, metadata)
-                updated_state = %{state | agent_metadata: updated_metadata}
+            # Wait briefly for agent to self-register
+            # This ensures registry is updated before we return
+            Process.sleep(50)
+
+            # Verify registration succeeded
+            case HordeRegistry.lookup_agent_name(agent_id) do
+              {:ok, ^pid, _reg_metadata} ->
                 {:ok, pid, updated_state}
 
-              {:error, reason} ->
-                # Cleanup on registration failure
+              _ ->
+                # Agent failed to self-register, clean up
+                Logger.error("Agent failed to self-register", agent_id: agent_id)
                 Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
-                {:error, {:registration_failed, reason}}
+                {:error, :registration_failed}
             end
 
           {:error, reason} ->
@@ -551,7 +636,7 @@ defmodule Arbor.Core.HordeSupervisor do
     end
   end
 
-  defp do_stop_agent(agent_id, timeout, state) do
+  defp do_stop_agent(agent_id, _timeout, state) do
     case HordeRegistry.lookup_agent_name(agent_id) do
       {:ok, pid, _metadata} ->
         # Unregister from registry first
@@ -568,7 +653,7 @@ defmodule Arbor.Core.HordeSupervisor do
             {:error, reason}
         end
 
-      {:error, :not_found} ->
+      {:error, :not_registered} ->
         {:error, :not_found}
     end
   end
@@ -581,7 +666,7 @@ defmodule Arbor.Core.HordeSupervisor do
       metadata ->
         # Stop existing agent if running
         case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, _registry_metadata} ->
+          {:ok, _pid, _registry_metadata} ->
             case do_stop_agent(agent_id, 5000, state) do
               {:ok, intermediate_state} ->
                 # Start agent again with original spec
@@ -599,7 +684,7 @@ defmodule Arbor.Core.HordeSupervisor do
                 {:error, reason}
             end
 
-          {:error, :not_found} ->
+          {:error, :not_registered} ->
             # Agent not running, just start it
             agent_spec = %{
               id: agent_id,
@@ -622,56 +707,60 @@ defmodule Arbor.Core.HordeSupervisor do
         if current_node == target_node do
           {:ok, current_pid, state}
         else
-          # Extract agent state (this function always returns {:ok, state})
-          {:ok, agent_state} = extract_agent_state_internal(current_pid)
+          # Extract agent state
+          case extract_agent_state_internal(current_pid) do
+            {:ok, agent_state} ->
+              # Get agent metadata
+              case Map.get(state.agent_metadata, agent_id) do
+                nil ->
+                  {:error, :metadata_not_found}
 
-          # Get agent metadata
-          case Map.get(state.agent_metadata, agent_id) do
-            nil ->
-              {:error, :metadata_not_found}
+                metadata ->
+                  # Stop current agent
+                  case do_stop_agent(agent_id, 5000, state) do
+                    {:ok, intermediate_state} ->
+                      # Start agent on target node
+                      agent_spec = %{
+                        id: agent_id,
+                        module: metadata.module,
+                        args: metadata.args,
+                        restart_strategy: metadata.restart_strategy,
+                        metadata: metadata.metadata
+                      }
 
-            metadata ->
-              # Stop current agent
-              case do_stop_agent(agent_id, 5000, state) do
-                {:ok, intermediate_state} ->
-                  # Start agent on target node
-                  agent_spec = %{
-                    id: agent_id,
-                    module: metadata.module,
-                    args: metadata.args,
-                    restart_strategy: metadata.restart_strategy,
-                    metadata: metadata.metadata
-                  }
+                      case do_start_agent(agent_spec, intermediate_state) do
+                        {:ok, new_pid, updated_state} ->
+                          # Restore agent state
+                          case restore_agent_state_internal(new_pid, agent_state) do
+                            :ok ->
+                              # Update migration count
+                              updated_metadata =
+                                Map.update!(updated_state.agent_metadata, agent_id, fn meta ->
+                                  %{meta | migrations: meta.migrations + 1, node: target_node}
+                                end)
 
-                  case do_start_agent(agent_spec, intermediate_state) do
-                    {:ok, new_pid, updated_state} ->
-                      # Restore agent state
-                      case restore_agent_state_internal(new_pid, agent_state) do
-                        :ok ->
-                          # Update migration count
-                          updated_metadata =
-                            Map.update!(updated_state.agent_metadata, agent_id, fn meta ->
-                              %{meta | migrations: meta.migrations + 1, node: target_node}
-                            end)
+                              final_state = %{updated_state | agent_metadata: updated_metadata}
+                              {:ok, new_pid, final_state}
 
-                          final_state = %{updated_state | agent_metadata: updated_metadata}
-                          {:ok, new_pid, final_state}
+                            {:error, reason} ->
+                              {:error, {:state_restore_failed, reason}}
+                          end
 
                         {:error, reason} ->
-                          {:error, {:state_restore_failed, reason}}
+                          {:error, {:restart_failed, reason}}
                       end
 
                     {:error, reason} ->
-                      {:error, {:restart_failed, reason}}
+                      {:error, {:stop_failed, reason}}
                   end
-
-                {:error, reason} ->
-                  {:error, {:stop_failed, reason}}
               end
+              
+            {:error, reason} ->
+              {:error, {:state_extraction_failed, reason}}
           end
         end
 
-      {:error, :not_found} ->
+      {:error, :not_registered} ->
         {:error, :not_found}
     end
   end
@@ -686,8 +775,19 @@ defmodule Arbor.Core.HordeSupervisor do
           {:ok, %{}}
       end
     catch
-      _, _ ->
-        {:ok, %{}}
+      :exit, {:timeout, _} ->
+        {:error, :extract_timeout}
+        
+      :exit, {:noproc, _} ->
+        {:error, :process_not_found}
+        
+      kind, reason ->
+        Logger.error("Failed to extract agent state",
+          pid: inspect(pid),
+          kind: kind,
+          reason: inspect(reason)
+        )
+        {:error, {:extract_failed, {kind, reason}}}
     end
   end
 
@@ -725,8 +825,40 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   defp monitor_supervisor_events() do
-    # Set up monitoring for supervisor events
-    # This would typically involve subscribing to supervisor events
+    # Monitor supervisor events via telemetry
+    # Horde emits telemetry events for child lifecycle
+    :telemetry.attach_many(
+      "arbor-horde-supervisor-events",
+      [
+        [:horde, :supervisor, :start_child],
+        [:horde, :supervisor, :terminate_child],
+        [:horde, :supervisor, :restart_child],
+        [:horde, :supervisor, :shutdown]
+      ],
+      &handle_telemetry_event/4,
+      nil
+    )
+
+    Logger.info("Monitoring supervisor events enabled")
     :ok
+  end
+
+  defp handle_telemetry_event(event, measurements, metadata, _config) do
+    Logger.info("Supervisor event",
+      event: event,
+      measurements: inspect(measurements),
+      metadata: inspect(metadata)
+    )
+
+    # Send internal message to update state if needed
+    case event do
+      [:horde, :supervisor, :restart_child] ->
+        if agent_id = Map.get(metadata, :child_id) do
+          GenServer.cast(__MODULE__, {:agent_event, agent_id, :restarted, metadata})
+        end
+
+      _ ->
+        :ok
+    end
   end
 end
