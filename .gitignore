@@ -69,9 +69,6 @@ logs/
 coverage.xml
 coverage/
 
-# Generated documentation (ExDoc output)
-/doc/
-
 # LiveBook notebooks
 *.livemd
 
