@@ -51,7 +51,7 @@ defmodule Arbor.Core.ClusterManager do
   use GenServer
   require Logger
 
-  alias Arbor.Core.{HordeRegistry, HordeSupervisor, HordeCoordinator}
+  alias Arbor.Core.{HordeRegistry, HordeSupervisor, HordeCoordinator, ClusterCoordinator}
 
   @type topology :: atom()
   @type node_event :: :nodeup | :nodedown
@@ -61,7 +61,10 @@ defmodule Arbor.Core.ClusterManager do
     :connected_nodes,
     :node_monitors,
     :startup_time,
-    :event_handlers
+    :event_handlers,
+    :node_health_data,
+    :health_check_timer,
+    :last_health_check
   ]
 
   # Client API
@@ -139,6 +142,36 @@ defmodule Arbor.Core.ClusterManager do
     GenServer.call(__MODULE__, :reform_cluster)
   end
 
+  @doc """
+  Get detailed health information for all cluster nodes.
+
+  Returns comprehensive health data including:
+  - Node connectivity status
+  - Horde component health per node
+  - Resource utilization metrics
+  - Last health check timestamps
+  """
+  @spec get_cluster_health() :: {:ok, map()} | {:error, term()}
+  def get_cluster_health() do
+    GenServer.call(__MODULE__, :get_cluster_health)
+  end
+
+  @doc """
+  Get health information for a specific node.
+  """
+  @spec get_node_health(node()) :: {:ok, map()} | {:error, term()}
+  def get_node_health(node) do
+    GenServer.call(__MODULE__, {:get_node_health, node})
+  end
+
+  @doc """
+  Force a health check across all cluster nodes.
+  """
+  @spec perform_health_check() :: :ok
+  def perform_health_check() do
+    GenServer.call(__MODULE__, :perform_health_check)
+  end
+
   # GenServer callbacks
 
   @impl GenServer
@@ -157,7 +190,10 @@ defmodule Arbor.Core.ClusterManager do
       connected_nodes: [],
       node_monitors: %{},
       startup_time: System.system_time(:second),
-      event_handlers: []
+      event_handlers: [],
+      node_health_data: %{},
+      health_check_timer: nil,
+      last_health_check: nil
     }
 
     # Give libcluster time to discover nodes
@@ -175,7 +211,7 @@ defmodule Arbor.Core.ClusterManager do
       components: %{
         registry: check_component_health(&HordeRegistry.get_registry_status/0),
         supervisor: check_component_health(&HordeSupervisor.get_supervisor_status/0),
-        coordinator: check_component_health(fn -> {:ok, :up} end)
+        coordinator: check_component_health(&ClusterCoordinator.perform_health_check/0)
       },
       uptime: System.system_time(:second) - state.startup_time
     }
@@ -225,6 +261,28 @@ defmodule Arbor.Core.ClusterManager do
   end
 
   @impl GenServer
+  def handle_call(:get_cluster_health, _from, state) do
+    health_data = collect_cluster_health_data(state)
+    {:reply, {:ok, health_data}, state}
+  end
+
+  @impl GenServer
+  def handle_call({:get_node_health, target_node}, _from, state) do
+    case Map.get(state.node_health_data, target_node) do
+      nil ->
+        {:reply, {:error, :node_not_found}, state}
+      health_data ->
+        {:reply, {:ok, health_data}, state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call(:perform_health_check, _from, state) do
+    new_state = perform_cluster_health_check(state)
+    {:reply, :ok, new_state}
+  end
+
+  @impl GenServer
   def handle_info(:initialize_cluster, state) do
     Logger.info("Initializing Arbor cluster formation")
 
@@ -241,7 +299,18 @@ defmodule Arbor.Core.ClusterManager do
       Logger.info("No other nodes found, starting as single-node cluster")
     end
 
-    {:noreply, %{state | connected_nodes: connected}}
+    # Start periodic health checks
+    health_timer = schedule_health_check()
+    
+    new_state = %{state | 
+      connected_nodes: connected, 
+      health_check_timer: health_timer
+    }
+    
+    # Perform initial health check
+    updated_state = perform_cluster_health_check(new_state)
+    
+    {:noreply, updated_state}
   end
 
   @impl GenServer
@@ -282,10 +351,24 @@ defmodule Arbor.Core.ClusterManager do
 
       # Update state
       updated_nodes = List.delete(state.connected_nodes, node)
-      {:noreply, %{state | connected_nodes: updated_nodes}}
+      
+      # Remove node from health data
+      updated_health_data = Map.delete(state.node_health_data, node)
+      
+      {:noreply, %{state | connected_nodes: updated_nodes, node_health_data: updated_health_data}}
     else
       {:noreply, state}
     end
+  end
+
+  @impl GenServer
+  def handle_info(:health_check, state) do
+    # Perform health check and schedule the next one
+    updated_state = perform_cluster_health_check(state)
+    health_timer = schedule_health_check()
+    
+    final_state = %{updated_state | health_check_timer: health_timer}
+    {:noreply, final_state}
   end
 
   @impl GenServer
@@ -354,6 +437,111 @@ defmodule Arbor.Core.ClusterManager do
       :test -> :arbor_test
       :prod -> :arbor_prod
       _ -> :arbor
+    end
+  end
+
+  # Health monitoring functions
+
+  defp schedule_health_check() do
+    # Schedule health check every 30 seconds
+    health_interval = Application.get_env(:arbor_core, :health_check_interval, 30_000)
+    Process.send_after(self(), :health_check, health_interval)
+  end
+
+  defp perform_cluster_health_check(state) do
+    timestamp = System.system_time(:millisecond)
+    Logger.debug("Performing cluster health check")
+
+    # Collect health data for all nodes (current + connected)
+    all_nodes = [node() | state.connected_nodes] |> Enum.uniq()
+    
+    new_health_data = 
+      all_nodes
+      |> Enum.map(fn node_name -> 
+        {node_name, collect_node_health(node_name)}
+      end)
+      |> Map.new()
+
+    %{state | 
+      node_health_data: new_health_data, 
+      last_health_check: timestamp
+    }
+  end
+
+  defp collect_cluster_health_data(state) do
+    %{
+      timestamp: System.system_time(:millisecond),
+      last_check: state.last_health_check,
+      nodes: state.node_health_data,
+      cluster_summary: %{
+        total_nodes: length([node() | state.connected_nodes]),
+        healthy_nodes: count_healthy_nodes(state.node_health_data),
+        topology: state.topology,
+        uptime: System.system_time(:second) - state.startup_time
+      }
+    }
+  end
+
+  defp collect_node_health(node_name) do
+    timestamp = System.system_time(:millisecond)
+    
+    base_health = %{
+      node: node_name,
+      timestamp: timestamp,
+      connected: node_name == node() or node_name in Node.list(),
+      last_seen: timestamp
+    }
+
+    # If it's the current node, collect detailed health
+    if node_name == node() do
+      detailed_health = %{
+        components: %{
+          registry: check_component_health(&HordeRegistry.get_registry_status/0),
+          supervisor: check_component_health(&HordeSupervisor.get_supervisor_status/0),
+          coordinator: check_component_health(&ClusterCoordinator.perform_health_check/0)
+        },
+        resources: %{
+          memory: :erlang.memory(),
+          process_count: :erlang.system_info(:process_count),
+          port_count: :erlang.system_info(:port_count),
+          load_average: get_load_average(),
+          atom_count: :erlang.system_info(:atom_count)
+        }
+      }
+      
+      Map.merge(base_health, detailed_health)
+    else
+      # For remote nodes, try to ping and get basic status
+      ping_result = case Node.ping(node_name) do
+        :pong -> :reachable
+        :pang -> :unreachable
+      end
+      
+      Map.put(base_health, :ping_status, ping_result)
+    end
+  end
+
+  defp count_healthy_nodes(health_data) do
+    health_data
+    |> Enum.count(fn {_node, data} -> 
+      data.connected and not Map.has_key?(data, :ping_status) or data[:ping_status] == :reachable
+    end)
+  end
+
+  defp get_load_average() do
+    try do
+      # Check if :cpu_sup module is available (part of :os_mon application)
+      case Application.ensure_all_started(:os_mon) do
+        {:ok, _} ->
+          case :cpu_sup.avg1() do
+            {:ok, load} -> load / 256  # Convert to standard load average format
+            _ -> :unavailable
+          end
+        _ -> 
+          :unavailable
+      end
+    rescue
+      _ -> :unavailable
     end
   end
 end
