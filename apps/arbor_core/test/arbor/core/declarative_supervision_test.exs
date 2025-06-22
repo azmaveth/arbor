@@ -942,10 +942,12 @@ defmodule TestFailoverAgent do
 
   alias Arbor.Core.HordeRegistry
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map()}
   def init(args) do
     agent_id = Keyword.get(args, :agent_id)
 
@@ -968,15 +970,18 @@ defmodule TestFailoverAgent do
     {:ok, state}
   end
 
+  @spec handle_call({:store_state, any()}, GenServer.from(), map()) :: {:reply, :ok, map()}
   def handle_call({:store_state, data}, _from, state) do
     new_state = %{state | internal_state: data}
     {:reply, :ok, new_state}
   end
 
+  @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
 
+  @spec terminate(any(), map()) :: :ok
   def terminate(_reason, state) do
     if state.agent_id do
       HordeRegistry.unregister_agent_name(state.agent_id)

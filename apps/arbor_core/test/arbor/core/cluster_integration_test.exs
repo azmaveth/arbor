@@ -593,6 +593,8 @@ defmodule TestCoordinatorAgent do
     {:ok, state}
   end
 
+  @spec handle_call({:delegate_task, String.t(), map()}, GenServer.from(), map()) ::
+          {:reply, :ok, map()}
   def handle_call({:delegate_task, worker_id, task_spec}, _from, state) do
     # Simulate task delegation
     send(self(), {:task_delegated, worker_id, task_spec})
@@ -692,18 +694,22 @@ defmodule TestResilientAgent do
     end
   end
 
+  @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
 
+  @spec handle_call(:extract_state, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:extract_state, _from, state) do
     {:reply, state, state}
   end
 
+  @spec handle_call(:prepare_checkpoint, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:prepare_checkpoint, _from, state) do
     {:reply, state, state}
   end
 
+  @spec handle_call({:restore_state, map()}, GenServer.from(), map()) :: {:reply, :ok, map()}
   def handle_call({:restore_state, new_state}, _from, _state) do
     {:reply, :ok, new_state}
   end

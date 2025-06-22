@@ -397,6 +397,7 @@ defmodule TestAgent do
     {:ok, state}
   end
 
+  @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end

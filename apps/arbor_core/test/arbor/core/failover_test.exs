@@ -20,6 +20,7 @@ defmodule Arbor.Core.FailoverTest do
     use Arbor.Core.AgentBehavior
     require Logger
 
+    @spec start_link(keyword()) :: GenServer.on_start()
     def start_link(args) do
       GenServer.start_link(__MODULE__, args)
     end
@@ -51,6 +52,7 @@ defmodule Arbor.Core.FailoverTest do
       end
     end
 
+    @spec increment(pid()) :: {:ok, integer()}
     def increment(pid) do
       GenServer.call(pid, :increment)
     end

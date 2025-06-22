@@ -142,7 +142,7 @@ defmodule Arbor.Core.CliIntegrationTest do
   describe "CLI to Agent Steel Thread" do
     test "validates complete CLI to agent steel thread" do
       # Use a UUID to ensure uniqueness
-      agent_id = "cli-test-#{:crypto.strong_rand_bytes(8) |> Base.encode16()}"
+      agent_id = "cli-test-#{Base.encode16(:crypto.strong_rand_bytes(8))}"
       agent_type = :code_analyzer
 
       # 1. Spawn an agent via the CLI command module. This travels through the Gateway.

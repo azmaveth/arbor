@@ -629,6 +629,7 @@ defmodule Arbor.Security.IntegrationTest do
       {:ok, %{agent_id: agent_id}}
     end
 
+    @spec handle_call(:get_id, GenServer.from(), map()) :: {:reply, String.t(), map()}
     def handle_call(:get_id, _from, state) do
       {:reply, state.agent_id, state}
     end
