@@ -46,20 +46,21 @@ defmodule Arbor.Core.Application do
       end
 
     # Base children that always start
-    base_children = [
-      # Phoenix PubSub (needed by coordination)
-      {Phoenix.PubSub, name: Arbor.Core.PubSub},
+    base_children =
+      [
+        # Phoenix PubSub (needed by coordination)
+        {Phoenix.PubSub, name: Arbor.Core.PubSub},
 
-      # Task supervision for async operations
-      {Task.Supervisor, name: Arbor.TaskSupervisor},
+        # Task supervision for async operations
+        {Task.Supervisor, name: Arbor.TaskSupervisor},
 
-      # Core services
-      Arbor.Core.Sessions.Manager,
-      Arbor.Core.Gateway,
+        # Core services
+        Arbor.Core.Sessions.Manager,
+        Arbor.Core.Gateway,
 
-      # Telemetry (placeholder for now)
-      {Task, fn -> setup_telemetry() end}
-    ] ++ session_registry_children
+        # Telemetry (placeholder for now)
+        {Task, fn -> setup_telemetry() end}
+      ] ++ session_registry_children
 
     # Distributed components (only in production/dev with Horde)
     distributed_children =

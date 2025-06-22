@@ -27,7 +27,7 @@ defmodule Arbor.Contracts.Gateway.API do
 
       defmodule MyGateway do
         @behaviour Arbor.Contracts.Gateway.API
-        
+
         @impl true
         def execute_command(command, context, state) do
           with :ok <- validate_command(command),
@@ -111,7 +111,7 @@ defmodule Arbor.Contracts.Gateway.API do
         params: %{agent_type: :llm, model: "gpt-4"},
         options: %{timeout: 30_000}
       }
-      
+
       {:ok, ref} = Gateway.execute_command(command, context, state)
   """
   @callback execute_command(

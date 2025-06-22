@@ -28,7 +28,7 @@ defmodule ArborCli.GatewayClient do
   use GenServer
   require Logger
 
-  alias ArborCli.GatewayClient.{Session, Connection, EventStream}
+  alias ArborCli.GatewayClient.{Connection, EventStream, Session}
 
   @typedoc "Client configuration"
   @type config :: %{
@@ -171,7 +171,7 @@ defmodule ArborCli.GatewayClient do
           active_executions: %{}
         }
 
-        Logger.info("Gateway client started", 
+        Logger.info("Gateway client started",
           endpoint: full_config.gateway_endpoint,
           pool_size: full_config.connection_pool_size
         )
@@ -191,7 +191,7 @@ defmodule ArborCli.GatewayClient do
         new_sessions = Map.put(state.active_sessions, session_info.session_id, session_info)
         {:reply, {:ok, session_info}, %{state | active_sessions: new_sessions}}
 
-      {:error, reason} = error ->
+      {:error, _reason} = error ->
         {:reply, error, state}
     end
   end
@@ -203,7 +203,7 @@ defmodule ArborCli.GatewayClient do
         new_sessions = Map.delete(state.active_sessions, session_id)
         {:reply, :ok, %{state | active_sessions: new_sessions}}
 
-      {:error, reason} = error ->
+      {:error, _reason} = error ->
         {:reply, error, state}
     end
   end
@@ -225,11 +225,11 @@ defmodule ArborCli.GatewayClient do
           status: :executing,
           started_at: DateTime.utc_now()
         }
-        
+
         new_executions = Map.put(state.active_executions, execution_id, execution_info)
         {:reply, {:ok, execution_id}, %{state | active_executions: new_executions}}
 
-      {:error, reason} = error ->
+      {:error, _reason} = error ->
         {:reply, error, state}
     end
   end
@@ -243,7 +243,7 @@ defmodule ArborCli.GatewayClient do
   @impl GenServer
   def handle_call({:wait_for_completion, execution_id}, _from, state) do
     result = Session.wait_for_completion(state.connection_pool, execution_id)
-    
+
     # Clean up from active executions when complete
     new_executions = Map.delete(state.active_executions, execution_id)
     {:reply, result, %{state | active_executions: new_executions}}
@@ -252,7 +252,7 @@ defmodule ArborCli.GatewayClient do
   @impl GenServer
   def handle_call({:cancel_execution, execution_id, reason}, _from, state) do
     result = Session.cancel_execution(state.connection_pool, execution_id, reason)
-    
+
     # Clean up from active executions
     new_executions = Map.delete(state.active_executions, execution_id)
     {:reply, result, %{state | active_executions: new_executions}}
@@ -260,6 +260,7 @@ defmodule ArborCli.GatewayClient do
 
   # Private functions
 
+  @spec default_config() :: config()
   defp default_config do
     %{
       gateway_endpoint: ArborCli.default_gateway_endpoint(),

@@ -21,13 +21,13 @@ defmodule Arbor.Core.ClusterCoordinator do
       # Monitor cluster events
       ClusterCoordinator.set_event_handler(:node_join, &handle_node_join/1)
       ClusterCoordinator.set_event_handler(:node_failure, &handle_node_failure/1)
-      
+
       # Get cluster status
       {:ok, cluster_info} = ClusterCoordinator.get_cluster_info()
-      
+
       # Request agent redistribution
       {:ok, plan} = ClusterCoordinator.suggest_redistribution()
-      
+
       # Monitor cluster health
       {:ok, health} = ClusterCoordinator.get_cluster_health()
 
@@ -561,7 +561,7 @@ defmodule Arbor.Core.ClusterCoordinator do
         Arbor.Core.HordeCoordinator
 
       :auto ->
-        if Mix.env() == :test do
+        if Application.get_env(:arbor_core, :env) == :test do
           Arbor.Test.Mocks.LocalCoordinator
         else
           Arbor.Core.HordeCoordinator

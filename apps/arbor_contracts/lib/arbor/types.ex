@@ -10,7 +10,7 @@ defmodule Arbor.Types do
 
   ### Identifiers
   - `agent_id` - Unique agent identifier
-  - `session_id` - Session identifier  
+  - `session_id` - Session identifier
   - `capability_id` - Security capability identifier
   - `trace_id` - Distributed tracing identifier
   - `execution_id` - Execution context identifier
@@ -34,7 +34,7 @@ defmodule Arbor.Types do
   Format: `arbor://{resource_type}/{operation}/{path}`
   Example: `arbor://fs/read/home/user/documents`
 
-  ### Agent URIs  
+  ### Agent URIs
   Format: `arbor://agent/{agent_id}`
   Example: `arbor://agent/agent_abc123def456`
   """

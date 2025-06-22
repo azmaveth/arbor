@@ -3,7 +3,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   Unit tests for distributed agent supervision logic using local mocks.
 
   These tests use MOCK implementations to test supervision logic without
-  requiring actual distributed clustering. The real Horde-based 
+  requiring actual distributed clustering. The real Horde-based
   implementation will be tested in integration tests.
   """
 
@@ -348,7 +348,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       # Should receive start event
       assert_receive {:event_received, {:agent_started, "event-test-agent", _details}}, 1000
 
-      # Stop agent - should trigger event  
+      # Stop agent - should trigger event
       :ok = ClusterSupervisor.stop_agent(agent_spec.id, 5000)
 
       # Should receive stop event

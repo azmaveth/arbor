@@ -15,6 +15,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Insert a capability into the database.
   """
+  @spec insert_capability(CoreCapability.t()) :: :ok | {:error, any()}
   def insert_capability(%CoreCapability{} = capability) do
     attrs = capability_to_attrs(capability)
 
@@ -30,6 +31,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Get a capability by ID.
   """
+  @spec get_capability(String.t()) :: {:ok, CoreCapability.t()} | {:error, atom()}
   def get_capability(capability_id) do
     case Repo.get(SchemaCapability, capability_id) do
       nil ->
@@ -48,6 +50,8 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Delete (revoke) a capability.
   """
+  @spec delete_capability(String.t(), atom() | String.t(), String.t()) ::
+          {:ok, any()} | {:error, atom()}
   def delete_capability(capability_id, reason, revoker_id) do
     case Repo.get(SchemaCapability, capability_id) do
       nil ->
@@ -74,6 +78,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   List capabilities for a principal.
   """
+  @spec list_capabilities(String.t(), keyword()) :: {:ok, [CoreCapability.t()]}
   def list_capabilities(principal_id, filters \\ []) do
     query =
       from(c in SchemaCapability,
@@ -94,6 +99,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Get capabilities delegated from a parent.
   """
+  @spec get_delegated_capabilities(String.t()) :: {:ok, [CoreCapability.t()]}
   def get_delegated_capabilities(parent_capability_id) do
     capabilities =
       from(c in SchemaCapability,
@@ -109,6 +115,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Clear all capabilities (for testing).
   """
+  @spec clear_all() :: :ok
   def clear_all do
     Repo.delete_all(SchemaCapability)
     :ok

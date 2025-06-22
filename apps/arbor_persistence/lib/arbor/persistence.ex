@@ -12,6 +12,7 @@ defmodule Arbor.Persistence do
       :world
 
   """
+  @spec hello() :: :world
   def hello do
     :world
   end

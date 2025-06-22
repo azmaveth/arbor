@@ -124,8 +124,8 @@ env_overrides =
 
 if env_overrides != [] do
   config :arbor_core,
-    :agent_retry,
-    Keyword.merge(agent_retry_config, env_overrides)
+         :agent_retry,
+         Keyword.merge(agent_retry_config, env_overrides)
 end
 
 # Telemetry and observability configuration

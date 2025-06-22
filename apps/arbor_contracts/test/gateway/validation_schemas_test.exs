@@ -71,7 +71,6 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemasTest do
       assert reason =~ "required field missing"
     end
 
-
     test "rejects invalid command type" do
       invalid_command = %{
         type: :invalid_command,

@@ -55,6 +55,7 @@ defmodule Arbor.Security.Schemas.AuditEvent do
   @doc """
   Create a changeset for a new audit event.
   """
+  @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
   def changeset(audit_event, attrs) do
     audit_event
     |> cast(attrs, @required_fields ++ @optional_fields)

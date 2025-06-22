@@ -13,17 +13,17 @@ defmodule Arbor.Persistence.Repo.Migrations.CreateSnapshotsTable do
       add :snapshot_version, :string, null: false, size: 50
       add :metadata, :map, null: false, default: %{}
       add :created_at_snapshot, :utc_datetime_usec, null: false
-      
+
       timestamps(type: :utc_datetime_usec)
     end
-    
+
     # One snapshot per stream - unique constraint
-    create unique_index(:snapshots, [:stream_id], 
+    create unique_index(:snapshots, [:stream_id],
                        name: :snapshots_stream_id_index)
-    
+
     # Index for querying by aggregate
     create index(:snapshots, [:aggregate_id, :aggregate_type])
-    
+
     # Index for temporal queries
     create index(:snapshots, [:created_at_snapshot])
   end

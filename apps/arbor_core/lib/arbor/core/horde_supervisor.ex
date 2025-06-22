@@ -1,69 +1,71 @@
 defmodule Arbor.Core.HordeSupervisor do
   @moduledoc """
   Stateless wrapper around Horde.DynamicSupervisor for distributed agent management.
-  
+
   This module provides the same API as the stateful HordeSupervisor but stores all
   agent metadata in the distributed Horde.Registry instead of local GenServer state.
   This eliminates the single point of failure while maintaining fault tolerance.
-  
+
   ## Agent Process Lifecycle and Restart Strategy
-  
-  This system employs a two-tiered strategy to ensure both rapid recovery from 
+
+  This system employs a two-tiered strategy to ensure both rapid recovery from
   transient faults and long-term consistency with the desired state.
-  
+
   ### Tier 1: HordeSupervisor - Immediate Liveness
-  
+
   The HordeSupervisor is responsible for the immediate liveness of agent processes.
-  
+
   - **Strategy:** `:one_for_one`
   - **Responsibility:** If an agent process exits, HordeSupervisor will restart it
     according to its defined `restart_strategy` (`:permanent`, `:transient`, or `:temporary`).
   - **Scope:** Handles local process failures with millisecond-level recovery time.
   - **Limitation:** Unaware of global desired state, node failures, or config changes.
-  
+
   ### Tier 2: AgentReconciler - Global State Reconciliation
-  
-  The AgentReconciler is a cluster-wide singleton responsible for ensuring the 
+
+  The AgentReconciler is a cluster-wide singleton responsible for ensuring the
   entire population of agents matches the centrally defined configuration.
-  
+
   - **Strategy:** Periodically scans all running agents vs desired specifications
   - **Responsibility:** Handles coarse-grained, systemic changes including:
     - **Node Failures:** Redistributing agents from failed nodes to healthy nodes
     - **Specification Changes:** Rolling restarts when agent configuration updates
     - **Scaling:** Starting new agents when specs added, stopping when removed
     - **Consistency Audits:** Correcting drift from desired state
-  
+
   ### Separation of Responsibilities
-  
+
   | Concern | HordeSupervisor (Local) | AgentReconciler (Global) |
   |---------|-------------------------|--------------------------|
   | **Trigger** | Abnormal process exit | Periodic timer, node events, spec changes |
   | **Action** | Immediately restart failed process | Start/stop/move processes to match desired state |
   | **Recovery Time** | Milliseconds | Seconds to minutes (reconciliation interval) |
   | **Example** | Agent crashes due to bug | Node disconnects from cluster |
-  
+
   ## Design
-  
+
   - Agent specs are stored as persistent entries in Horde.Registry
   - Agent PIDs are registered separately for runtime lookups
   - AgentReconciler (singleton) ensures desired state matches actual state
   - No local state means no single point of failure
-  
+
   ## Registry Key Structure
-  
+
   - `{:agent, agent_id}` - Live agent PID and runtime metadata
   - `{:agent_spec, agent_id}` - Persistent agent specification for restarts
   """
 
+  @behaviour Arbor.Contracts.Cluster.Supervisor
+  @behaviour Arbor.Contracts.Agent.Lifecycle
+
   use GenServer
+
   alias Arbor.Contracts.Agent.Lifecycle
   alias Arbor.Contracts.Cluster.Supervisor, as: SupervisorContract
-  alias Arbor.Core.{HordeRegistry, AgentCheckpoint, ClusterEvents}
+  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry}
+  alias Horde.DynamicSupervisor
 
   require Logger
-
-  @behaviour SupervisorContract
-  @behaviour Lifecycle
 
   # Configuration
   @supervisor_name Arbor.Core.HordeAgentSupervisor
@@ -76,6 +78,7 @@ defmodule Arbor.Core.HordeSupervisor do
   @doc """
   Starts the HordeSupervisor GenServer.
   """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -84,6 +87,7 @@ defmodule Arbor.Core.HordeSupervisor do
   Centrally registers a running agent process.
   This is called by agents themselves after they have successfully started.
   """
+  @spec register_agent(pid(), String.t(), map()) :: {:ok, pid()} | {:error, atom()}
   def register_agent(pid, agent_id, agent_specific_metadata) do
     GenServer.call(__MODULE__, {:register_agent, pid, agent_id, agent_specific_metadata})
   end
@@ -119,11 +123,12 @@ defmodule Arbor.Core.HordeSupervisor do
               start:
                 {agent_spec.module, :start_link,
                  [enhance_args(agent_spec.args, agent_id, spec_metadata)]},
-              restart: spec_metadata.restart_strategy, # Respect the agent's restart strategy
+              # Respect the agent's restart strategy
+              restart: spec_metadata.restart_strategy,
               type: :worker
             }
 
-            case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
+            case DynamicSupervisor.start_child(@supervisor_name, child_spec) do
               {:ok, pid} ->
                 Logger.info(
                   "Started agent #{agent_id} on #{node(pid)} (PID: #{inspect(pid)}), awaiting registration."
@@ -260,7 +265,7 @@ defmodule Arbor.Core.HordeSupervisor do
                 {:DOWN, ^ref, :process, _pid, _reason} ->
                   :ok
 
-                # Process terminated successfully
+                  # Process terminated successfully
               after
                 5000 ->
                   # The process did not terminate in time, abort restore
@@ -273,7 +278,8 @@ defmodule Arbor.Core.HordeSupervisor do
               end
 
             _ ->
-              :ok # Agent not running, proceed with restore
+              # Agent not running, proceed with restore
+              :ok
           end
 
         case termination_result do
@@ -285,8 +291,7 @@ defmodule Arbor.Core.HordeSupervisor do
                   {spec_metadata.args, :fresh_start}
 
                 state_data ->
-                  {spec_metadata.args |> Keyword.put(:recovered_state, state_data),
-                   :state_restored}
+                  {Keyword.put(spec_metadata.args, :recovered_state, state_data), :state_restored}
               end
 
             agent_spec = %{
@@ -299,9 +304,7 @@ defmodule Arbor.Core.HordeSupervisor do
 
             case start_agent(agent_spec) do
               {:ok, pid} ->
-                Logger.info(
-                  "Restored agent #{agent_id} with recovery status: #{recovery_status}"
-                )
+                Logger.info("Restored agent #{agent_id} with recovery status: #{recovery_status}")
 
                 {:ok, {pid, recovery_status}}
 
@@ -343,13 +346,12 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @impl SupervisorContract
-  def list_agents() do
+  def list_agents do
     # Get all agent specs
     case list_all_agent_specs() do
       {:ok, specs} ->
         agents =
-          specs
-          |> Enum.map(fn {agent_id, spec_metadata} ->
+          Enum.map(specs, fn {agent_id, spec_metadata} ->
             case HordeRegistry.lookup_agent_name(agent_id) do
               {:ok, pid, runtime_metadata} ->
                 %{
@@ -383,7 +385,7 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @impl SupervisorContract
-  def health_metrics() do
+  def health_metrics do
     cluster_members = Horde.Cluster.members(@supervisor_name)
     children = Horde.DynamicSupervisor.which_children(@supervisor_name)
 
@@ -488,7 +490,10 @@ defmodule Arbor.Core.HordeSupervisor do
   def on_stop(pid, reason) do
     case find_agent_id_by_pid(pid) do
       {:ok, agent_id} ->
-        Logger.info("Stopping agent #{agent_id} (PID: #{inspect(pid)}) due to: #{inspect(reason)}")
+        Logger.info(
+          "Stopping agent #{agent_id} (PID: #{inspect(pid)}) due to: #{inspect(reason)}"
+        )
+
         stop_agent(agent_id)
 
       {:error, :not_found} ->
@@ -544,16 +549,16 @@ defmodule Arbor.Core.HordeSupervisor do
 
   @doc """
   Look up agent specification from the distributed registry.
-  
+
   Returns the stored agent specification that was registered when the agent was started.
   This includes the module, args, restart strategy, and metadata.
-  
+
   ## Parameters
-  
+
   - `agent_id` - ID of the agent to look up
-  
+
   ## Returns
-  
+
   - `{:ok, spec_metadata}` - Agent spec found
   - `{:error, :not_found}` - Agent spec not in registry
   """
@@ -575,7 +580,7 @@ defmodule Arbor.Core.HordeSupervisor do
           agent_count: non_neg_integer(),
           status: :healthy | :degraded | :critical
         }
-  def get_supervisor_status() do
+  def get_supervisor_status do
     # In test mode, return mock status
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
@@ -610,16 +615,19 @@ defmodule Arbor.Core.HordeSupervisor do
 
   # Compatibility functions for the current API
 
+  @spec list_agents_by_node(node(), any()) :: {:ok, [map()]}
   def list_agents_by_node(node, _state \\ nil) do
     {:ok, agents} = list_agents()
     node_agents = Enum.filter(agents, fn agent -> agent.node == node end)
     {:ok, node_agents}
   end
 
+  @spec extract_agent_state(String.t(), any()) :: {:ok, any()} | {:error, term()}
   def extract_agent_state(agent_id, _state \\ nil) do
     handle_agent_handoff(agent_id, :handoff, nil)
   end
 
+  @spec restore_agent_state(String.t(), any(), any()) :: {:ok, any()} | {:error, term()}
   def restore_agent_state(agent_id, state_data, _state \\ nil) do
     handle_agent_handoff(agent_id, :takeover, state_data)
   end
@@ -630,7 +638,8 @@ defmodule Arbor.Core.HordeSupervisor do
 
   @impl GenServer
   def init(_opts) do
-    {:ok, %{}} # Stateless
+    # Stateless
+    {:ok, %{}}
   end
 
   @impl GenServer
@@ -799,7 +808,7 @@ defmodule Arbor.Core.HordeSupervisor do
     :ok
   end
 
-  defp list_all_agent_specs() do
+  defp list_all_agent_specs do
     pattern = {{:agent_spec, :"$1"}, :"$2", :"$3"}
     guard = []
     body = [{{:"$1", :"$3"}}]
@@ -874,7 +883,8 @@ defmodule Arbor.Core.HordeSupervisor do
   @doc """
   Start the Horde supervisor infrastructure.
   """
-  def start_supervisor() do
+  @spec start_supervisor() :: {:ok, pid()} | {:error, term()}
+  def start_supervisor do
     children = [
       {Horde.Registry,
        [
@@ -907,6 +917,7 @@ defmodule Arbor.Core.HordeSupervisor do
   @doc """
   Join a node to the supervisor cluster.
   """
+  @spec join_supervisor(node()) :: :ok
   def join_supervisor(node) do
     Horde.Cluster.set_members(@supervisor_name, [node() | [node]])
     Horde.Cluster.set_members(@registry_name, [node() | [node]])
@@ -916,6 +927,7 @@ defmodule Arbor.Core.HordeSupervisor do
   @doc """
   Remove a node from the supervisor cluster.
   """
+  @spec leave_supervisor(node()) :: :ok
   def leave_supervisor(node) do
     current_supervisor_members = Horde.Cluster.members(@supervisor_name)
     current_registry_members = Horde.Cluster.members(@registry_name)

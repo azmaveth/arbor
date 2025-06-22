@@ -122,7 +122,7 @@ defmodule Arbor.Contracts.Security.AuditEvent do
         operation: :read,
         decision: :authorized
       )
-      
+
       # Capability grant
       {:ok, event} = AuditEvent.new(
         event_type: :capability_granted,

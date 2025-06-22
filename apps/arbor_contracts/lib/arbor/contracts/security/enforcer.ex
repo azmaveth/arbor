@@ -26,7 +26,7 @@ defmodule Arbor.Contracts.Security.Enforcer do
 
       defmodule MySecurityEnforcer do
         @behaviour Arbor.Contracts.Security.Enforcer
-        
+
         @impl true
         def authorize(cap, resource_uri, operation, context, state) do
           with :ok <- validate_capability(cap),
@@ -98,7 +98,7 @@ defmodule Arbor.Contracts.Security.Enforcer do
         session_id: "session_456",
         request_size: 1024
       }
-      
+
       case Enforcer.authorize(capability, "arbor://fs/read/docs", :read, context, state) do
         {:ok, :authorized} -> perform_read()
         {:error, {:authorization_denied, reason}} -> handle_denial(reason)

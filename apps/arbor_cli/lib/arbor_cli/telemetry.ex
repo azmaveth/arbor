@@ -12,6 +12,7 @@ defmodule ArborCli.Telemetry do
   @doc """
   Start the telemetry collector.
   """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -58,6 +59,7 @@ defmodule ArborCli.Telemetry do
 
   # Private functions
 
+  @spec attach_handlers() :: :ok | {:error, :already_exists}
   defp attach_handlers do
     events = [
       [:arbor_cli, :command, :start],
@@ -75,6 +77,7 @@ defmodule ArborCli.Telemetry do
     )
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map(), any()) :: :ok
   defp handle_telemetry_event([:arbor_cli, :command, :start], _measurements, metadata, _config) do
     Logger.debug("Command started",
       command: metadata[:command],
@@ -82,6 +85,7 @@ defmodule ArborCli.Telemetry do
     )
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map(), any()) :: :ok
   defp handle_telemetry_event([:arbor_cli, :command, :stop], measurements, metadata, _config) do
     Logger.info("Command completed",
       command: metadata[:command],
@@ -90,6 +94,7 @@ defmodule ArborCli.Telemetry do
     )
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map(), any()) :: :ok
   defp handle_telemetry_event([:arbor_cli, :command, :exception], _measurements, metadata, _config) do
     Logger.error("Command failed with exception",
       command: metadata[:command],
@@ -97,14 +102,17 @@ defmodule ArborCli.Telemetry do
     )
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map(), any()) :: :ok
   defp handle_telemetry_event([:arbor_cli, :session, :created], _measurements, metadata, _config) do
     Logger.debug("Session created", session_id: metadata[:session_id])
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map(), any()) :: :ok
   defp handle_telemetry_event([:arbor_cli, :session, :ended], _measurements, metadata, _config) do
     Logger.debug("Session ended", session_id: metadata[:session_id])
   end
 
+  @spec handle_telemetry_event(list(atom()), map(), map()) :: :ok
   defp handle_telemetry_event(event_name, measurements, metadata) do
     Logger.debug("Telemetry event received",
       event: event_name,

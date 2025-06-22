@@ -1,6 +1,4 @@
 defmodule Arbor.Core.AgentBehavior do
-  alias Arbor.Contracts.Agent.Behavior, as: AgentBehaviorContract
-
   @moduledoc """
   Common behavior and helper functions for all Arbor agents.
 
@@ -54,7 +52,9 @@ defmodule Arbor.Core.AgentBehavior do
       end
   """
 
-  @behaviour AgentBehaviorContract
+  @behaviour Arbor.Contracts.Agent.Behavior
+
+  alias Arbor.Contracts.Agent.Behavior, as: AgentBehaviorContract
 
   @doc """
   Callback for extracting agent state for migration.
@@ -135,6 +135,7 @@ defmodule Arbor.Core.AgentBehavior do
       @behaviour Arbor.Core.AgentBehavior
 
       require Logger
+      alias Arbor.Core.HordeSupervisor
 
       # Default implementations
 
@@ -201,7 +202,7 @@ defmodule Arbor.Core.AgentBehavior do
         agent_id = Map.fetch!(state, :agent_id)
         metadata = get_agent_metadata(state)
 
-        case Arbor.Core.HordeSupervisor.register_agent(self(), agent_id, metadata) do
+        case HordeSupervisor.register_agent(self(), agent_id, metadata) do
           {:ok, pid} ->
             Logger.debug("Agent successfully registered with supervisor", agent_id: agent_id)
             new_state = handle_registration_result(state, {:ok, pid})
@@ -224,7 +225,8 @@ defmodule Arbor.Core.AgentBehavior do
 
               {:noreply, state}
             else
-              Logger.error("Failed to register with supervisor after multiple attempts, stopping.",
+              Logger.error(
+                "Failed to register with supervisor after multiple attempts, stopping.",
                 agent_id: agent_id,
                 reason: reason
               )

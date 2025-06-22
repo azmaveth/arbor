@@ -16,10 +16,10 @@ defmodule Arbor.Persistence.EventJournal do
 
       # Start the journal writer
       {:ok, _pid} = EventJournal.start_link(batch_size: 10, flush_interval: 1000)
-      
+
       # Write critical events (async)
       :ok = EventJournal.write_critical_event("session_123", {:user_message, message})
-      
+
       # Force flush for testing/shutdown
       :ok = EventJournal.flush_all()
   """

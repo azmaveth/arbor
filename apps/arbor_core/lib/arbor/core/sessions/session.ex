@@ -139,7 +139,8 @@ defmodule Arbor.Core.Sessions.Session do
   - `{:ok, Session.t()}` - Session struct
   - `{:error, reason}` - Failed to get struct
   """
-  @spec to_struct(GenServer.server()) :: {:ok, Arbor.Contracts.Core.Session.t()} | {:error, term()}
+  @spec to_struct(GenServer.server()) ::
+          {:ok, Arbor.Contracts.Core.Session.t()} | {:error, term()}
   def to_struct(session) do
     GenServer.call(session, :to_struct)
   end
@@ -271,10 +272,17 @@ defmodule Arbor.Core.Sessions.Session do
       :mock ->
         # For tests, register with mock registry
         Registry.register(Arbor.Core.MockSessionRegistry, state.session_id, metadata_for_registry)
+
       _ ->
         # For production, register with distributed SessionRegistry
-        case Arbor.Core.SessionRegistry.register_session(state.session_id, self(), metadata_for_registry) do
-          :ok -> :ok
+        case Arbor.Core.SessionRegistry.register_session(
+               state.session_id,
+               self(),
+               metadata_for_registry
+             ) do
+          :ok ->
+            :ok
+
           {:error, {:session_conflict, existing_pid}} ->
             # Another session with this ID already exists - this is a serious conflict
             # Better to fail fast than to continue with a conflicted state
@@ -283,6 +291,7 @@ defmodule Arbor.Core.Sessions.Session do
               existing_pid: existing_pid,
               current_pid: self()
             )
+
             exit({:session_conflict, existing_pid})
         end
     end
@@ -313,12 +322,13 @@ defmodule Arbor.Core.Sessions.Session do
     case build_session_struct(state) do
       {:ok, session_struct} ->
         {:reply, {:ok, session_struct}, update_activity(state)}
-      
+
       {:error, reason} ->
-        Logger.error("Failed to build session struct", 
-          session_id: state.session_id, 
+        Logger.error("Failed to build session struct",
+          session_id: state.session_id,
           reason: reason
         )
+
         {:reply, {:error, reason}, state}
     end
   end
@@ -527,6 +537,7 @@ defmodule Arbor.Core.Sessions.Session do
       :mock ->
         # For tests, unregister from mock registry
         Registry.unregister(Arbor.Core.MockSessionRegistry, state.session_id)
+
       _ ->
         # For production, unregister from distributed SessionRegistry
         Arbor.Core.SessionRegistry.unregister_session(state.session_id)
@@ -594,7 +605,7 @@ defmodule Arbor.Core.Sessions.Session do
   defp build_session_struct(state) do
     try do
       alias Arbor.Contracts.Core.Session, as: SessionContract
-      
+
       # Map session GenServer state to Session.t() struct
       session_struct = %SessionContract{
         id: state.session_id,
@@ -602,19 +613,21 @@ defmodule Arbor.Core.Sessions.Session do
         purpose: Map.get(state.metadata, :purpose, "General session"),
         status: determine_session_status(state),
         context: Map.get(state.metadata, :context, %{}),
-        capabilities: [], # TODO: Map from security_context.capabilities
+        # TODO: Map from security_context.capabilities
+        capabilities: [],
         agents: build_agents_map(state),
         max_agents: Map.get(state.metadata, :max_agents, 10),
         agent_count: MapSet.size(state.active_agents),
         created_at: state.created_at,
         updated_at: state.last_activity,
         expires_at: calculate_session_expiry(state),
-        terminated_at: nil, # Session is active if we can call this function
+        # Session is active if we can call this function
+        terminated_at: nil,
         timeout: state.timeout,
         cleanup_policy: :graceful,
         metadata: state.metadata
       }
-      
+
       {:ok, session_struct}
     rescue
       e ->
@@ -625,7 +638,7 @@ defmodule Arbor.Core.Sessions.Session do
   defp determine_session_status(state) do
     # Simple status determination based on activity
     time_since_activity = DateTime.diff(DateTime.utc_now(), state.last_activity)
-    
+
     cond do
       time_since_activity > state.timeout / 1000 -> :suspended
       MapSet.size(state.active_agents) > 0 -> :active
@@ -638,11 +651,13 @@ defmodule Arbor.Core.Sessions.Session do
     state.active_agents
     |> MapSet.to_list()
     |> Enum.into(%{}, fn agent_id ->
-      {agent_id, %{
-        joined_at: DateTime.utc_now(), # Placeholder - would need to track this
-        type: :unknown,
-        status: :active
-      }}
+      {agent_id,
+       %{
+         # Placeholder - would need to track this
+         joined_at: DateTime.utc_now(),
+         type: :unknown,
+         status: :active
+       }}
     end)
   end
 

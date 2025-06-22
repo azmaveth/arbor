@@ -34,6 +34,7 @@ defmodule ArborCli.RendererEnhanced do
       iex> ArborCli.RendererEnhanced.show_agent_spawn(result)
       # Displays a colored message indicating agent creation.
   """
+  @spec show_agent_spawn(map()) :: :ok
   def show_agent_spawn(result) do
     agent_id = result.result # result contains the agent ID directly
     agent_type = result.agent_type
@@ -63,6 +64,7 @@ defmodule ArborCli.RendererEnhanced do
       iex> ArborCli.RendererEnhanced.show_agent_status_table(agents)
       # Displays a table with agent information.
   """
+  @spec show_agent_status_table([map()]) :: :ok
   def show_agent_status_table(agents) when is_list(agents) do
     if Enum.empty?(agents) do
       show_info("No agents found.")
@@ -83,6 +85,7 @@ defmodule ArborCli.RendererEnhanced do
     end
   end
 
+  @spec show_agent_status_table(any()) :: :ok
   def show_agent_status_table(_), do: show_error("Invalid agent list provided.")
 
   @doc """
@@ -98,11 +101,12 @@ defmodule ArborCli.RendererEnhanced do
       iex> ArborCli.RendererEnhanced.show_execution_progress(50, 100)
       # Displays a progress bar at 50%.
   """
+  @spec show_execution_progress(number(), number()) :: :ok | nil
   def show_execution_progress(current, total)
       when is_number(current) and is_number(total) and total > 0 do
     percentage = round(current / total * 100)
     progress_text = "Progress: #{current}/#{total} (#{percentage}%)"
-    
+
     # Use IO.write for progress updates to stderr
     IO.write(:stderr, "\r#{progress_text}")
 
@@ -112,6 +116,7 @@ defmodule ArborCli.RendererEnhanced do
     end
   end
 
+  @spec show_execution_progress(any(), any()) :: nil
   def show_execution_progress(_, _), do: nil
 
   @doc """
@@ -125,6 +130,7 @@ defmodule ArborCli.RendererEnhanced do
       iex> ArborCli.RendererEnhanced.show_command_output_box("Command executed successfully.")
       # Displays the text inside a box with a title.
   """
+  @spec show_command_output_box(any()) :: :ok
   def show_command_output_box(output) do
     content = if is_binary(output), do: output, else: Kernel.inspect(output)
 
@@ -135,6 +141,7 @@ defmodule ArborCli.RendererEnhanced do
   @doc """
   Displays an error message with semantic coloring.
   """
+  @spec show_error(any()) :: :ok
   def show_error(message) do
     ["[ERROR] ", to_string(message)]
     |> tag(@color_scheme.error)
@@ -144,6 +151,7 @@ defmodule ArborCli.RendererEnhanced do
   @doc """
   Displays a success message with semantic coloring.
   """
+  @spec show_success(any()) :: :ok
   def show_success(message) do
     ["[SUCCESS] ", to_string(message)]
     |> tag(@color_scheme.success)
@@ -153,6 +161,7 @@ defmodule ArborCli.RendererEnhanced do
   @doc """
   Displays an informational message with semantic coloring.
   """
+  @spec show_info(any()) :: :ok
   def show_info(message) do
     ["[INFO] ", to_string(message)]
     |> tag(@color_scheme.info)
@@ -162,6 +171,7 @@ defmodule ArborCli.RendererEnhanced do
   @doc """
   Displays a warning message with semantic coloring.
   """
+  @spec show_warning(any()) :: :ok
   def show_warning(message) do
     ["[WARNING] ", to_string(message)]
     |> tag(@color_scheme.warning)
@@ -170,6 +180,7 @@ defmodule ArborCli.RendererEnhanced do
 
   # Private helpers
 
+  @spec colorize_status(String.t() | any()) :: any()
   defp colorize_status("active"), do: tag("active", :green)
   defp colorize_status("inactive"), do: tag("inactive", :yellow)
   defp colorize_status("error"), do: tag("error", :red)

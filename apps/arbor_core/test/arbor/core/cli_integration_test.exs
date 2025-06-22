@@ -23,37 +23,43 @@ defmodule Arbor.Core.CliIntegrationTest do
     end
 
     # Start the HordeAgentRegistry manually for CLI integration tests
-    case start_supervised({Horde.Registry,
-         [
-           name: Arbor.Core.HordeAgentRegistry,
-           keys: :unique,
-           members: :auto,
-           delta_crdt_options: [sync_interval: 100]
-         ]}) do
+    case start_supervised(
+           {Horde.Registry,
+            [
+              name: Arbor.Core.HordeAgentRegistry,
+              keys: :unique,
+              members: :auto,
+              delta_crdt_options: [sync_interval: 100]
+            ]}
+         ) do
       {:ok, _registry} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
 
     # Start the SessionRegistry manually for CLI integration tests
-    case start_supervised({Horde.Registry,
-         [
-           name: Arbor.Core.SessionRegistry,
-           keys: :unique,
-           members: :auto,
-           delta_crdt_options: [sync_interval: 100]
-         ]}) do
+    case start_supervised(
+           {Horde.Registry,
+            [
+              name: Arbor.Core.SessionRegistry,
+              keys: :unique,
+              members: :auto,
+              delta_crdt_options: [sync_interval: 100]
+            ]}
+         ) do
       {:ok, _registry} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
 
     # Start the HordeAgentSupervisor manually for CLI integration tests
-    case start_supervised({Horde.DynamicSupervisor,
-         [
-           name: Arbor.Core.HordeAgentSupervisor,
-           strategy: :one_for_one,
-           members: :auto,
-           delta_crdt_options: [sync_interval: 100]
-         ]}) do
+    case start_supervised(
+           {Horde.DynamicSupervisor,
+            [
+              name: Arbor.Core.HordeAgentSupervisor,
+              strategy: :one_for_one,
+              members: :auto,
+              delta_crdt_options: [sync_interval: 100]
+            ]}
+         ) do
       {:ok, _supervisor} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
@@ -97,9 +103,11 @@ defmodule Arbor.Core.CliIntegrationTest do
         Enum.each(children, fn
           {_, pid, _, _} when is_pid(pid) ->
             Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
+
           _ ->
             :ok
         end)
+
       _ ->
         :ok
     end
@@ -194,7 +202,8 @@ defmodule Arbor.Core.CliIntegrationTest do
       # This proves the Gateway shares the same validation logic, providing defense-in-depth.
       invalid_status_command = %{
         type: :get_agent_status,
-        params: %{agent_id: 123} # agent_id should be a string
+        # agent_id should be a string
+        params: %{agent_id: 123}
       }
 
       # Create a session to get a valid context for the Gateway call.

@@ -11,6 +11,7 @@ defmodule ArborCli.Renderer do
   @doc """
   Render a successful command result.
   """
+  @spec render_success(map()) :: :ok
   def render_success(result) do
     format = Application.get_env(:arbor_cli, :output_format, :table)
     verbose = Application.get_env(:arbor_cli, :verbose, false)
@@ -30,6 +31,7 @@ defmodule ArborCli.Renderer do
   @doc """
   Render an error result.
   """
+  @spec render_error(any()) :: :ok
   def render_error(error) do
     case error do
       {:session_creation_failed, reason} ->
@@ -68,10 +70,11 @@ defmodule ArborCli.Renderer do
   @doc """
   Render an exception.
   """
+  @spec render_exception(Exception.t()) :: :ok
   def render_exception(exception) do
     IO.puts(:stderr, "💥 Unexpected error occurred:")
     IO.puts(:stderr, "   #{Exception.format(:error, exception, [])}")
-    
+
     if Application.get_env(:arbor_cli, :verbose, false) do
       IO.puts(:stderr, "")
       IO.puts(:stderr, "Stack trace:")
@@ -81,12 +84,14 @@ defmodule ArborCli.Renderer do
 
   # Format-specific renderers
 
+  @spec render_json(map()) :: :ok
   defp render_json(result) do
     result
     |> Jason.encode!(pretty: true)
     |> IO.puts()
   end
 
+  @spec render_yaml(map()) :: :ok
   defp render_yaml(result) do
     # Simple YAML-like output
     # In a real implementation, you'd use a YAML library
@@ -94,6 +99,7 @@ defmodule ArborCli.Renderer do
     render_yaml_value(result, 0)
   end
 
+  @spec render_table(map()) :: :ok
   defp render_table(result) do
     case result.action do
       "spawn" -> render_spawn_table(result)
@@ -106,10 +112,11 @@ defmodule ArborCli.Renderer do
 
   # Table renderers for specific commands
 
+  @spec render_spawn_table(map()) :: :ok
   defp render_spawn_table(result) do
     IO.puts("✅ Agent spawned successfully")
     IO.puts("")
-    
+
     data = [
       ["Field", "Value"],
       ["Agent Type", result.agent_type],
@@ -121,6 +128,7 @@ defmodule ArborCli.Renderer do
     render_simple_table(data)
   end
 
+  @spec render_list_table(map()) :: :ok
   defp render_list_table(result) do
     agents = get_in(result, [:result, :result, :agents]) || []
     total = get_in(result, [:result, :result, :total_agents]) || 0
@@ -135,7 +143,7 @@ defmodule ArborCli.Renderer do
       rows = Enum.map(agents, fn agent ->
         [
           agent[:id] || "Unknown",
-          agent[:type] || "Unknown", 
+          agent[:type] || "Unknown",
           agent[:status] || "Unknown",
           agent[:node] || "Unknown"
         ]
@@ -145,6 +153,7 @@ defmodule ArborCli.Renderer do
     end
   end
 
+  @spec render_status_table(map()) :: :ok
   defp render_status_table(result) do
     status_data = get_in(result, [:result, :result])
 
@@ -166,6 +175,7 @@ defmodule ArborCli.Renderer do
     end
   end
 
+  @spec render_exec_table(map()) :: :ok
   defp render_exec_table(result) do
     exec_result = get_in(result, [:result, :result, :result])
 
@@ -173,7 +183,7 @@ defmodule ArborCli.Renderer do
     IO.puts("")
     IO.puts("Command: #{result.command}")
     IO.puts("Agent: #{result.agent_id}")
-    
+
     if result.args && length(result.args) > 0 do
       IO.puts("Arguments: #{Enum.join(result.args, " ")}")
     end
@@ -190,6 +200,7 @@ defmodule ArborCli.Renderer do
     end
   end
 
+  @spec render_generic_table(map()) :: :ok
   defp render_generic_table(result) do
     IO.puts("✅ Command completed")
     IO.puts("")
@@ -198,6 +209,7 @@ defmodule ArborCli.Renderer do
 
   # Helper functions
 
+  @spec render_simple_table([[String.t()]]) :: :ok
   defp render_simple_table(rows) do
     # Simple table rendering without external dependencies
     if length(rows) > 0 do
@@ -240,6 +252,7 @@ defmodule ArborCli.Renderer do
     end
   end
 
+  @spec render_nested_data(map() | list() | any(), integer()) :: :ok
   defp render_nested_data(data, indent) when is_map(data) do
     Enum.each(data, fn {key, value} ->
       prefix = String.duplicate(" ", indent)
@@ -255,6 +268,7 @@ defmodule ArborCli.Renderer do
     end)
   end
 
+  @spec render_nested_data(list(), integer()) :: :ok
   defp render_nested_data(data, indent) when is_list(data) do
     prefix = String.duplicate(" ", indent)
     Enum.each(data, fn item ->
@@ -262,11 +276,13 @@ defmodule ArborCli.Renderer do
     end)
   end
 
+  @spec render_nested_data(any(), integer()) :: :ok
   defp render_nested_data(data, indent) do
     prefix = String.duplicate(" ", indent)
     IO.puts("#{prefix}#{inspect(data)}")
   end
 
+  @spec render_yaml_value(map() | list() | any(), integer()) :: :ok
   defp render_yaml_value(value, indent) when is_map(value) do
     prefix = String.duplicate("  ", indent)
     Enum.each(value, fn {key, val} ->
@@ -275,6 +291,7 @@ defmodule ArborCli.Renderer do
     end)
   end
 
+  @spec render_yaml_value(list(), integer()) :: :ok
   defp render_yaml_value(value, indent) when is_list(value) do
     prefix = String.duplicate("  ", indent)
     Enum.each(value, fn item ->
@@ -282,24 +299,27 @@ defmodule ArborCli.Renderer do
     end)
   end
 
+  @spec render_yaml_value(any(), integer()) :: :ok
   defp render_yaml_value(value, indent) do
     prefix = String.duplicate("  ", indent)
     IO.puts("#{prefix}#{inspect(value)}")
   end
 
+  @spec render_execution_info(map()) :: :ok
   defp render_execution_info(result) do
     IO.puts("")
     IO.puts("🔍 Execution Details:")
-    
+
     if execution_id = get_in(result, [:execution_id]) do
       IO.puts("  Execution ID: #{execution_id}")
     end
-    
+
     if session_id = get_in(result, [:session_id]) do
       IO.puts("  Session ID: #{session_id}")
     end
   end
 
+  @spec format_error(binary() | atom() | any()) :: String.t()
   defp format_error(error) when is_binary(error), do: error
   defp format_error(error) when is_atom(error), do: Atom.to_string(error)
   defp format_error(error), do: inspect(error)

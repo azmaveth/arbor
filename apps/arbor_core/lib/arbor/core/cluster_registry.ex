@@ -12,10 +12,10 @@ defmodule Arbor.Core.ClusterRegistry do
 
       # Register an agent
       ClusterRegistry.register_agent("agent-123", agent_pid, %{type: :llm_agent})
-      
+
       # Look up an agent anywhere in the cluster
       {:ok, agent_pid} = ClusterRegistry.lookup_agent("agent-123")
-      
+
       # List all agents of a specific type
       {:ok, agents} = ClusterRegistry.list_agents_by_type(:worker_agent)
 
@@ -194,7 +194,7 @@ defmodule Arbor.Core.ClusterRegistry do
 
   ## Parameters
 
-  - `group_name` - Name of the agent group  
+  - `group_name` - Name of the agent group
   - `agent_pid` - Agent to add to the group
   - `metadata` - Agent-specific metadata
 
@@ -411,7 +411,7 @@ defmodule Arbor.Core.ClusterRegistry do
         Arbor.Core.HordeRegistry
 
       :auto ->
-        if Mix.env() == :test do
+        if Application.get_env(:arbor_core, :env) == :test do
           Arbor.Test.Mocks.LocalRegistry
         else
           Arbor.Core.HordeRegistry

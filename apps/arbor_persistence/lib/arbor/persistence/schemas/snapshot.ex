@@ -29,6 +29,7 @@ defmodule Arbor.Persistence.Schemas.Snapshot do
   @doc """
   Changeset for creating new snapshots.
   """
+  @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
   def changeset(snapshot, attrs) do
     snapshot
     |> cast(attrs, [
@@ -64,6 +65,7 @@ defmodule Arbor.Persistence.Schemas.Snapshot do
   @doc """
   Convert from contract snapshot to database schema.
   """
+  @spec from_contract(Arbor.Contracts.Persistence.Snapshot.t()) :: %__MODULE__{}
   def from_contract(contract_snapshot) do
     %__MODULE__{
       id: contract_snapshot.id,
@@ -83,6 +85,7 @@ defmodule Arbor.Persistence.Schemas.Snapshot do
   @doc """
   Convert from contract snapshot to map for insert with custom stream_id.
   """
+  @spec to_map(Arbor.Contracts.Persistence.Snapshot.t(), String.t()) :: map()
   def to_map(contract_snapshot, stream_id) do
     timestamp = DateTime.utc_now()
 
@@ -105,6 +108,7 @@ defmodule Arbor.Persistence.Schemas.Snapshot do
   @doc """
   Convert from database schema to contract snapshot.
   """
+  @spec to_contract(%__MODULE__{}) :: Arbor.Contracts.Persistence.Snapshot.t()
   def to_contract(%__MODULE__{} = snapshot) do
     %Arbor.Contracts.Persistence.Snapshot{
       id: snapshot.id,

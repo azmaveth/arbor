@@ -153,90 +153,110 @@ defmodule Arbor.Core.HordeCoordinator do
 
   # Node lifecycle management
 
+  @spec handle_node_join(map(), any()) :: {:ok, any()} | {:error, any()}
   def handle_node_join(node_info, _state) do
     GenServer.call(__MODULE__, {:handle_node_join, node_info})
   end
 
+  @spec handle_node_leave(node(), any(), any()) :: {:ok, any()} | {:error, any()}
   def handle_node_leave(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_leave, node, reason})
   end
 
+  @spec handle_node_failure(node(), any(), any()) :: {:ok, any()} | {:error, any()}
   def handle_node_failure(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_failure, node, reason})
   end
 
+  @spec get_cluster_info(any()) :: {:ok, map()} | {:error, any()}
   def get_cluster_info(_state) do
     GenServer.call(__MODULE__, :get_cluster_info)
   end
 
+  @spec get_redistribution_plan(node(), any()) :: {:ok, map()} | {:error, any()}
   def get_redistribution_plan(node, _state) do
     GenServer.call(__MODULE__, {:get_redistribution_plan, node})
   end
 
   # Agent management
 
+  @spec register_agent_on_node(map(), any()) :: {:ok, any()} | {:error, any()}
   def register_agent_on_node(agent_info, _state) do
     GenServer.call(__MODULE__, {:register_agent_on_node, agent_info})
   end
 
+  @spec calculate_distribution(list(), any()) :: {:ok, map()} | {:error, any()}
   def calculate_distribution(agents, _state) do
     GenServer.call(__MODULE__, {:calculate_distribution, agents})
   end
 
+  @spec update_node_capacity(map(), any()) :: {:ok, any()} | {:error, any()}
   def update_node_capacity(capacity_update, _state) do
     GenServer.call(__MODULE__, {:update_node_capacity, capacity_update})
   end
 
+  @spec suggest_redistribution(any()) :: {:ok, list()} | {:error, any()}
   def suggest_redistribution(_state) do
     GenServer.call(__MODULE__, :suggest_redistribution)
   end
 
   # Cluster state synchronization
 
+  @spec synchronize_cluster_state(map(), any()) :: {:ok, any()} | {:error, any()}
   def synchronize_cluster_state(state_update, _state) do
     GenServer.call(__MODULE__, {:synchronize_cluster_state, state_update})
   end
 
+  @spec get_sync_status(any()) :: {:ok, map()} | {:error, any()}
   def get_sync_status(_state) do
     GenServer.call(__MODULE__, :get_sync_status)
   end
 
+  @spec handle_split_brain(map(), any()) :: {:ok, any()} | {:error, any()}
   def handle_split_brain(split_brain_event, _state) do
     GenServer.call(__MODULE__, {:handle_split_brain, split_brain_event})
   end
 
+  @spec get_partition_status(any()) :: {:ok, map()} | {:error, any()}
   def get_partition_status(_state) do
     GenServer.call(__MODULE__, :get_partition_status)
   end
 
+  @spec resolve_state_conflicts(map(), any()) :: {:ok, any()} | {:error, any()}
   def resolve_state_conflicts(conflict_scenario, _state) do
     GenServer.call(__MODULE__, {:resolve_state_conflicts, conflict_scenario})
   end
 
   # Load balancing and health monitoring
 
+  @spec update_node_load(node(), number(), any()) :: {:ok, any()} | {:error, any()}
   def update_node_load(node, load, _state) do
     GenServer.call(__MODULE__, {:update_node_load, node, load})
   end
 
+  @spec analyze_cluster_load(any()) :: {:ok, map()} | {:error, any()}
   def analyze_cluster_load(_state) do
     GenServer.call(__MODULE__, :analyze_cluster_load)
   end
 
+  @spec update_node_health(map(), any()) :: {:ok, any()} | {:error, any()}
   def update_node_health(health_update, _state) do
     GenServer.call(__MODULE__, {:update_node_health, health_update})
   end
 
+  @spec get_cluster_health(any()) :: {:ok, map()} | {:error, any()}
   def get_cluster_health(_state) do
     GenServer.call(__MODULE__, :get_cluster_health)
   end
 
   # Event processing
 
+  @spec process_coordination_event(map(), any()) :: {:ok, any()} | {:error, any()}
   def process_coordination_event(event, _state) do
     GenServer.call(__MODULE__, {:process_coordination_event, event})
   end
 
+  @spec get_coordination_log(any()) :: {:ok, list()} | {:error, any()}
   def get_coordination_log(_state) do
     GenServer.call(__MODULE__, :get_coordination_log)
   end

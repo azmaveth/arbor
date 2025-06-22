@@ -13,6 +13,7 @@ defmodule ArborCli.SessionManager do
   @doc """
   Start the session manager.
   """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -20,6 +21,7 @@ defmodule ArborCli.SessionManager do
   @doc """
   Get session statistics.
   """
+  @spec get_stats() :: {:ok, map()}
   def get_stats do
     GenServer.call(__MODULE__, :get_stats)
   end

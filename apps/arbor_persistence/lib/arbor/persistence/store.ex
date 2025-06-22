@@ -15,7 +15,7 @@ defmodule Arbor.Persistence.Store do
 
       # MOCK: Use in-memory backend for unit tests
       {:ok, store} = Store.init(backend: :in_memory, table_name: :test_store)
-      
+
       # Production: Use PostgreSQL backend
       {:ok, store} = Store.init(backend: :postgresql, repo: MyRepo)
   """
@@ -275,10 +275,9 @@ defmodule Arbor.Persistence.Store do
   # PostgreSQL Backend Implementation
 
   defp append_events_to_postgresql(stream_id, events, expected_version) do
-    Repo.transaction(fn ->
-      do_append_events_transaction(stream_id, events, expected_version)
-    end)
-    |> case do
+    case Repo.transaction(fn ->
+           do_append_events_transaction(stream_id, events, expected_version)
+         end) do
       {:ok, final_version} -> {:ok, final_version}
       {:error, :version_conflict} -> {:error, :version_conflict}
       {:error, _reason} -> {:error, :database_error}

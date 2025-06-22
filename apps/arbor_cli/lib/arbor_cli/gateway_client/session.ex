@@ -11,9 +11,10 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Create a new session with the Gateway.
   """
+  @spec create(pid(), keyword()) :: {:ok, map()} | {:error, any()}
   def create(_connection_pool, opts) do
     Logger.info("Creating session through Gateway")
-    
+
     # Call the Gateway directly to create session
     case GenServer.call(Arbor.Core.Gateway, {:create_session, opts}) do
       {:ok, session_info} ->
@@ -27,9 +28,10 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   End a session.
   """
+  @spec end_session(pid(), String.t()) :: :ok | {:error, any()}
   def end_session(_connection_pool, session_id) do
     Logger.info("Ending session through Gateway", session_id: session_id)
-    
+
     # Call the Gateway directly to end session
     case GenServer.call(Arbor.Core.Gateway, {:end_session, session_id}) do
       :ok ->
@@ -43,6 +45,7 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Discover capabilities for a session.
   """
+  @spec discover_capabilities(pid(), String.t()) :: {:ok, [map()]}
   def discover_capabilities(_connection_pool, _session_id) do
     # Return simulated capabilities
     capabilities = [
@@ -86,6 +89,7 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Execute a command through the session.
   """
+  @spec execute_command(pid(), String.t(), map(), keyword()) :: {:ok, String.t()} | {:error, any()}
   def execute_command(_connection_pool, session_id, command, _opts) do
     Logger.info("Executing command through Gateway",
       session_id: session_id,
@@ -107,6 +111,7 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Get execution status.
   """
+  @spec get_execution_status(pid(), String.t()) :: {:ok, map()}
   def get_execution_status(_connection_pool, execution_id) do
     # In a real implementation, this would query the Gateway
     # For now, return a simulated status
@@ -122,9 +127,10 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Wait for command execution to complete.
   """
+  @spec wait_for_completion(pid(), String.t()) :: {:ok, any()} | {:error, any()}
   def wait_for_completion(_connection_pool, execution_id) do
     Logger.info("Waiting for execution completion", execution_id: execution_id)
-    
+
     # Call the Gateway to wait for completion
     case GenServer.call(Arbor.Core.Gateway, {:wait_for_completion, execution_id}) do
       {:ok, result} ->
@@ -138,9 +144,10 @@ defmodule ArborCli.GatewayClient.Session do
   @doc """
   Cancel an execution.
   """
+  @spec cancel_execution(pid(), String.t(), String.t()) :: :ok
   def cancel_execution(_connection_pool, execution_id, reason) do
-    Logger.info("Execution cancelled", 
-      execution_id: execution_id, 
+    Logger.info("Execution cancelled",
+      execution_id: execution_id,
       reason: reason
     )
     :ok
@@ -148,6 +155,7 @@ defmodule ArborCli.GatewayClient.Session do
 
   # Private functions
 
+  @spec simulate_command_execution(String.t(), String.t(), map()) :: :ok
   defp simulate_command_execution(execution_id, session_id, command) do
     Logger.info("Simulating command execution",
       execution_id: execution_id,
@@ -161,5 +169,6 @@ defmodule ArborCli.GatewayClient.Session do
     Logger.info("Command execution completed",
       execution_id: execution_id
     )
+    :ok
   end
 end

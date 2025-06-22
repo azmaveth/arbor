@@ -15,6 +15,7 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   @doc """
   Insert audit events into the database.
   """
+  @spec insert_audit_events([any()]) :: :ok | {:error, any()}
   def insert_audit_events(events) when is_list(events) do
     # Convert to schema structs
     changesets =
@@ -37,6 +38,7 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   @doc """
   Query audit events with filters.
   """
+  @spec get_audit_events(keyword()) :: {:ok, [any()]} | {:error, any()}
   def get_audit_events(filters) do
     query = from(e in SchemaAuditEvent)
 
@@ -54,6 +56,7 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   @doc """
   Clear all audit events (for testing).
   """
+  @spec clear_all() :: :ok
   def clear_all do
     Repo.delete_all(SchemaAuditEvent)
     :ok

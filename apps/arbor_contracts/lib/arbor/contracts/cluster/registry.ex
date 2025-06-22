@@ -24,7 +24,7 @@ defmodule Arbor.Contracts.Cluster.Registry do
 
       defmodule MyRegistry do
         @behaviour Arbor.Contracts.Cluster.Registry
-        
+
         @impl true
         def register_name(name, pid, metadata, state) do
           case Horde.Registry.register(state.registry, name, pid, metadata) do

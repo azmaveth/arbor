@@ -18,12 +18,12 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
       defmodule MyTest do
         use ExUnit.Case
         alias Arbor.Test.Mocks.LocalRegistry
-        
+
         setup do
           {:ok, registry} = LocalRegistry.init(name: :test_registry)
           {:ok, registry: registry}
         end
-        
+
         test "register and lookup process", %{registry: registry} do
           :ok = LocalRegistry.register_name(:my_process, self(), %{}, registry)
           {:ok, {pid, meta}} = LocalRegistry.lookup_name(:my_process, registry)
@@ -37,7 +37,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
 
       # Simulate node going down
       LocalRegistry.simulate_node_down(:node1@host, registry)
-      
+
       # Simulate network partition
       LocalRegistry.simulate_partition([:node1@host], [:node2@host], registry)
 
@@ -55,6 +55,16 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     :node_status
   ]
 
+  @type state() :: %__MODULE__{
+          names_table: atom(),
+          groups_table: atom(),
+          monitors_table: atom(),
+          ttl_table: atom(),
+          config: keyword(),
+          node_status: map()
+        }
+
+  @spec init(keyword()) :: {:ok, state()}
   def init(opts) do
     name = opts[:name] || :mock_registry
 
@@ -335,6 +345,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     terminate(:shutdown, state)
   end
 
+  @spec terminate(any(), state()) :: :ok
   def terminate(_reason, state) do
     # Clean up ETS tables
     :ets.delete(state.names_table)
@@ -349,6 +360,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   @doc """
   Simulate a node failure for testing.
   """
+  @spec simulate_node_down(node(), state()) :: state()
   def simulate_node_down(node, state) do
     handle_node_down(node, state)
   end
@@ -356,6 +368,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   @doc """
   Simulate network partition for testing.
   """
+  @spec simulate_partition([node()], [node()], any()) :: :ok
   def simulate_partition(nodes_a, nodes_b, _state) do
     # For testing, just track which nodes can't see each other
     send(self(), {:mock_partition, nodes_a, nodes_b})
@@ -365,6 +378,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   @doc """
   Get all registrations for verification.
   """
+  @spec get_all_registrations(state()) :: %{names: list(), groups: map()}
   def get_all_registrations(state) do
     names = :ets.tab2list(state.names_table)
     groups = :ets.tab2list(state.groups_table)

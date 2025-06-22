@@ -26,6 +26,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
 
   # Client API
 
+  @spec start_link(keyword()) :: Agent.on_start()
   def start_link(opts \\ []) do
     Agent.start_link(
       fn ->
@@ -40,6 +41,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   end
 
   # Internal function for Agent initialization, not part of behavior
+  @spec init(any()) :: {:ok, state()}
   def init(_opts) do
     state = %__MODULE__{
       names: %{},
@@ -50,6 +52,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     {:ok, state}
   end
 
+  @spec clear() :: :ok
   def clear do
     Agent.update(__MODULE__, fn _state ->
       %__MODULE__{
@@ -256,9 +259,9 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     {:ok, state}
   end
 
-
   # Additional methods for ClusterRegistry compatibility
 
+  @spec register_group(String.t(), String.t(), any()) :: :ok
   def register_group(group_name, agent_id, _state \\ nil) do
     Agent.update(__MODULE__, fn state ->
       current_members = Map.get(state.groups, group_name, [])
@@ -270,6 +273,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     :ok
   end
 
+  @spec list_group_members(String.t(), any()) :: {:ok, [String.t()]}
   def list_group_members(group_name, _state \\ nil) do
     Agent.get(__MODULE__, fn state ->
       case Map.get(state.groups, group_name) do
@@ -279,7 +283,8 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
         members when is_list(members) ->
           # Handle both formats: just IDs or {pid, metadata} tuples
           agent_ids =
-            Enum.map(members, fn
+            members
+            |> Enum.map(fn
               # Skip tuple format
               {_pid, _metadata} -> nil
               agent_id when is_binary(agent_id) -> agent_id
@@ -292,6 +297,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     end)
   end
 
+  @spec list_by_pattern(String.t(), any()) :: [{String.t(), pid(), map()}]
   def list_by_pattern(pattern, _state \\ nil) do
     Agent.get(__MODULE__, fn state ->
       regex =

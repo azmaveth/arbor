@@ -2,7 +2,7 @@ defmodule ArborCli.CLI do
   @moduledoc """
   Main CLI entry point for the Arbor command-line interface.
 
-  This module handles command-line argument parsing, routing to appropriate 
+  This module handles command-line argument parsing, routing to appropriate
   command handlers, and coordinating the overall CLI execution flow.
 
   ## Command Structure
@@ -27,6 +27,7 @@ defmodule ArborCli.CLI do
 
   This function is called by the escript when the `arbor` command is executed.
   """
+  @spec main([String.t()]) :: :ok
   def main(args) do
     # Start the application if not already started
     Application.ensure_all_started(:arbor_cli)
@@ -45,9 +46,10 @@ defmodule ArborCli.CLI do
   @doc """
   Parse command line arguments into a structured command.
   """
+  @spec parse_args([String.t()]) :: map()
   def parse_args(args) do
     spec = command_spec()
-    
+
     case Optimus.parse(spec, args) do
       {:ok, command_path, parsed} ->
         # Structure the result properly for execute_command
@@ -58,30 +60,30 @@ defmodule ArborCli.CLI do
           flags: parsed.flags,
           unknown: parsed.unknown
         }
-        
+
       :help ->
         print_help(spec)
         System.halt(0)
-        
+
       :version ->
         IO.puts("arbor version #{ArborCli.version()}")
         System.halt(0)
-        
+
       {:help, _command_path} ->
         print_help(spec)
         System.halt(0)
-        
+
       {:error, command_path, errors} when is_list(errors) ->
         IO.puts(:stderr, "Errors for command '#{Enum.join(command_path, " ")}':")
         Enum.each(errors, &IO.puts(:stderr, "  #{&1}"))
         IO.puts(:stderr, "Use 'arbor --help' for usage information.")
         System.halt(1)
-        
+
       {:error, {error_type, error_data}} ->
         print_error(error_type, error_data)
         print_help(spec)
         System.halt(1)
-        
+
       other ->
         IO.puts(:stderr, "Unexpected parse result: #{inspect(other)}")
         print_help(spec)
@@ -92,10 +94,11 @@ defmodule ArborCli.CLI do
   @doc """
   Execute the parsed command.
   """
+  @spec execute_command(map()) :: {:ok, any()} | {:error, any()}
   def execute_command(parsed) do
     # Extract command components from Optimus ParseResult
     options = parsed.options
-    flags = parsed.flags
+    _flags = parsed.flags
 
     # Set global configuration
     set_global_config(options)
@@ -110,9 +113,9 @@ defmodule ArborCli.CLI do
           :exec -> [parsed.args[:agent_id], parsed.args[:command] | parsed.unknown]
           :list -> []
         end
-        
+
         ArborCli.Commands.Agent.execute(subcommand, args, options)
-        
+
       other ->
         {:error, {:unexpected_command_result, other}}
     end
@@ -121,6 +124,7 @@ defmodule ArborCli.CLI do
   @doc """
   Handle command execution results.
   """
+  @spec handle_result({:ok, any()} | {:error, any()}) :: :ok
   def handle_result({:ok, result}) do
     render_enhanced_success(result)
     System.halt(0)
@@ -134,45 +138,48 @@ defmodule ArborCli.CLI do
   @doc """
   Handle uncaught exceptions.
   """
+  @spec handle_error(Exception.t()) :: :ok
   def handle_error(exception) do
     ArborCli.RendererEnhanced.show_error("Unexpected error occurred: #{Exception.message(exception)}")
-    
+
     if Application.get_env(:arbor_cli, :verbose, false) do
       ArborCli.RendererEnhanced.show_command_output_box(Exception.format(:error, exception, []))
     end
   end
 
   # Enhanced rendering functions
-  
+
+  @spec render_enhanced_success(map()) :: :ok
   defp render_enhanced_success(result) do
     case result.action do
-      "spawn" -> 
+      "spawn" ->
         ArborCli.RendererEnhanced.show_agent_spawn(result)
-        
-      "list" -> 
+
+      "list" ->
         agents = extract_agents_from_result(result)
         ArborCli.RendererEnhanced.show_agent_status_table(agents)
-        
-      "status" -> 
+
+      "status" ->
         if agent_status = extract_status_from_result(result) do
           ArborCli.RendererEnhanced.show_agent_status_table([agent_status])
         else
           ArborCli.RendererEnhanced.show_error("Failed to retrieve agent status for #{result.agent_id}")
           ArborCli.RendererEnhanced.show_command_output_box(result.result)
         end
-        
-      "exec" -> 
+
+      "exec" ->
         ArborCli.RendererEnhanced.show_success("Command '#{result.command}' executed on agent #{result.agent_id}")
         if result.result do
           ArborCli.RendererEnhanced.show_command_output_box(result.result)
         end
-        
-      _ -> 
+
+      _ ->
         ArborCli.RendererEnhanced.show_success("Command completed successfully")
         ArborCli.RendererEnhanced.show_command_output_box(result)
     end
   end
-  
+
+  @spec render_enhanced_error(any()) :: :ok
   defp render_enhanced_error(reason) do
     case reason do
       {:session_creation_failed, details} ->
@@ -207,10 +214,11 @@ defmodule ArborCli.CLI do
         ArborCli.RendererEnhanced.show_error("Error: #{format_error(other)}")
     end
   end
-  
+
+  @spec extract_agents_from_result(map()) :: [map()]
   defp extract_agents_from_result(result) do
     agents = get_in(result, [:result, :result, :agents]) || []
-    
+
     # Transform agents to match expected format for RendererEnhanced
     Enum.map(agents, fn agent ->
       %{
@@ -221,10 +229,11 @@ defmodule ArborCli.CLI do
       }
     end)
   end
-  
+
+  @spec extract_status_from_result(map()) :: map() | nil
   defp extract_status_from_result(result) do
     status_data = get_in(result, [:result, :result])
-    
+
     if status_data do
       %{
         id: result.agent_id,
@@ -236,7 +245,8 @@ defmodule ArborCli.CLI do
       nil
     end
   end
-  
+
+  @spec calculate_uptime(map()) :: String.t()
   defp calculate_uptime(agent_data) when is_map(agent_data) do
     cond do
       start_time = agent_data[:started_at] ->
@@ -248,27 +258,30 @@ defmodule ArborCli.CLI do
         else
           "Unknown"
         end
-      
+
       uptime = agent_data[:uptime] ->
         if is_integer(uptime) do
           ArborCli.FormatHelpers.format_duration(uptime)
         else
           to_string(uptime)
         end
-        
+
       true ->
         "N/A"
     end
   end
-  
+
+  @spec calculate_uptime(any()) :: String.t()
   defp calculate_uptime(_), do: "N/A"
-  
+
+  @spec format_error(binary() | atom() | any()) :: String.t()
   defp format_error(error) when is_binary(error), do: error
   defp format_error(error) when is_atom(error), do: Atom.to_string(error)
   defp format_error(error), do: inspect(error)
 
   # Private functions
 
+  @spec command_spec() :: Optimus.spec()
   defp command_spec do
     Optimus.new!(
       name: "arbor",
@@ -383,7 +396,7 @@ defmodule ArborCli.CLI do
               ]
             ],
             status: [
-              name: "status", 
+              name: "status",
               about: "Get agent status",
               args: [
                 agent_id: [
@@ -401,7 +414,7 @@ defmodule ArborCli.CLI do
               about: "Execute command on agent",
               args: [
                 agent_id: [
-                  value_name: "AGENT_ID", 
+                  value_name: "AGENT_ID",
                   help: "Agent ID to command",
                   required: true,
                   parser: :string
@@ -423,6 +436,7 @@ defmodule ArborCli.CLI do
     )
   end
 
+  @spec set_global_config(map()) :: :ok
   defp set_global_config(options) do
     # Update application configuration with CLI options
     if options[:gateway] do
@@ -442,11 +456,13 @@ defmodule ArborCli.CLI do
     end
   end
 
+  @spec print_error(any(), any()) :: :ok
   defp print_error(error_type, error_data) do
     IO.puts(:stderr, "Error: #{error_type}")
     IO.puts(:stderr, "Details: #{inspect(error_data)}")
   end
 
+  @spec print_help(Optimus.spec()) :: :ok
   defp print_help(spec) do
     IO.puts(Optimus.help(spec))
   end

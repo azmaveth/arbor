@@ -3,7 +3,7 @@ defmodule Arbor.Core.ClusterRegistryTest do
   Unit tests for distributed agent registry logic using local mocks.
 
   These tests use MOCK implementations to test registry logic without
-  requiring actual distributed clustering. The real Horde-based 
+  requiring actual distributed clustering. The real Horde-based
   implementation will be tested in integration tests.
   """
 

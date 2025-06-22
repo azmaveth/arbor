@@ -45,6 +45,7 @@ defmodule Arbor.Security.Schemas.Capability do
   @doc """
   Create a changeset for a new capability.
   """
+  @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
   def changeset(capability, attrs) do
     capability
     |> cast(attrs, @required_fields ++ @optional_fields)
@@ -58,6 +59,7 @@ defmodule Arbor.Security.Schemas.Capability do
   @doc """
   Create a changeset for revoking a capability.
   """
+  @spec revocation_changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
   def revocation_changeset(capability, attrs) do
     capability
     |> cast(attrs, [:revoked, :revoked_at, :revocation_reason, :revoker_id])

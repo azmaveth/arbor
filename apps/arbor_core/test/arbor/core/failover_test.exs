@@ -55,10 +55,12 @@ defmodule Arbor.Core.FailoverTest do
       GenServer.call(pid, :increment)
     end
 
+    @spec get_events(pid()) :: list()
     def get_events(pid) do
       GenServer.call(pid, :get_events)
     end
 
+    @spec handle_call(:increment, GenServer.from(), map()) :: {:reply, {:ok, integer()}, map()}
     def handle_call(:increment, _from, state) do
       new_counter = state.counter + 1
       event = {:incremented, new_counter, System.system_time(:millisecond)}
@@ -66,10 +68,12 @@ defmodule Arbor.Core.FailoverTest do
       {:reply, {:ok, new_counter}, new_state}
     end
 
+    @spec handle_call(:get_events, GenServer.from(), map()) :: {:reply, list(), map()}
     def handle_call(:get_events, _from, state) do
       {:reply, state.events, state}
     end
 
+    @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
     def handle_call(:get_state, _from, state) do
       {:reply, state, state}
     end

@@ -51,7 +51,7 @@ defmodule Arbor.Core.ClusterManager do
   use GenServer
   require Logger
 
-  alias Arbor.Core.{HordeRegistry, HordeSupervisor, HordeCoordinator, ClusterCoordinator}
+  alias Arbor.Core.{ClusterCoordinator, HordeCoordinator, HordeRegistry, HordeSupervisor}
 
   @type topology :: atom()
   @type node_event :: :nodeup | :nodedown
@@ -207,37 +207,40 @@ defmodule Arbor.Core.ClusterManager do
     # Get appropriate implementations based on config
     registry_impl = get_registry_impl()
     supervisor_impl = get_supervisor_impl()
-    
+
     status = %{
       nodes: [node() | state.connected_nodes],
       connected_nodes: length(state.connected_nodes),
       topology: state.topology,
       components: %{
-        registry: check_component_health(fn ->
-          if registry_impl == HordeRegistry do
-            registry_impl.get_registry_status()
-          else
-            # Mock registry doesn't have get_registry_status
-            {:ok, %{status: :healthy, members: [node()], count: 0}}
-          end
-        end),
-        supervisor: check_component_health(fn ->
-          if supervisor_impl == HordeSupervisor do
-            supervisor_impl.get_supervisor_status()
-          else
-            # Mock supervisor doesn't have get_supervisor_status
-            {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
-          end
-        end),
-        coordinator: check_component_health(fn ->
-          # Check if we're in test mode
-          if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
-            # Return mock health status
-            {:ok, %{status: :healthy, active_coordinators: 0}}
-          else
-            ClusterCoordinator.perform_health_check()
-          end
-        end)
+        registry:
+          check_component_health(fn ->
+            if registry_impl == HordeRegistry do
+              registry_impl.get_registry_status()
+            else
+              # Mock registry doesn't have get_registry_status
+              {:ok, %{status: :healthy, members: [node()], count: 0}}
+            end
+          end),
+        supervisor:
+          check_component_health(fn ->
+            if supervisor_impl == HordeSupervisor do
+              supervisor_impl.get_supervisor_status()
+            else
+              # Mock supervisor doesn't have get_supervisor_status
+              {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
+            end
+          end),
+        coordinator:
+          check_component_health(fn ->
+            # Check if we're in test mode
+            if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+              # Return mock health status
+              {:ok, %{status: :healthy, active_coordinators: 0}}
+            else
+              ClusterCoordinator.perform_health_check()
+            end
+          end)
       },
       uptime: System.system_time(:second) - state.startup_time
     }
@@ -385,13 +388,15 @@ defmodule Arbor.Core.ClusterManager do
         # the cluster manager when the coordinator is unavailable.
         UndefinedFunctionError ->
           Logger.debug("ClusterCoordinator.handle_node_failure/2 not available")
+
         error in [RuntimeError, ArgumentError] ->
-          Logger.warning("Failed to notify ClusterCoordinator of node failure", 
-            error: inspect(error), 
+          Logger.warning("Failed to notify ClusterCoordinator of node failure",
+            error: inspect(error),
             node: node
           )
+
         other_error ->
-          Logger.error("Unexpected error notifying ClusterCoordinator of node failure", 
+          Logger.error("Unexpected error notifying ClusterCoordinator of node failure",
             error: inspect(other_error),
             stacktrace: __STACKTRACE__,
             node: node
@@ -442,7 +447,8 @@ defmodule Arbor.Core.ClusterManager do
       end
 
       # Join supervisor cluster if using Horde
-      if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :join_supervisor, 1) do
+      if supervisor_impl == HordeSupervisor and
+           function_exported?(supervisor_impl, :join_supervisor, 1) do
         supervisor_impl.join_supervisor(node)
       end
 
@@ -453,15 +459,16 @@ defmodule Arbor.Core.ClusterManager do
 
       Logger.info("Successfully added #{node} to all Horde clusters")
     rescue
-      # Specific rescue for cluster formation failures. These are expected during 
+      # Specific rescue for cluster formation failures. These are expected during
       # network partitions or when Horde processes aren't ready yet.
       error in [UndefinedFunctionError, RuntimeError] ->
-        Logger.warning("Failed to add #{node} to Horde clusters", 
+        Logger.warning("Failed to add #{node} to Horde clusters",
           error: inspect(error),
           node: node
         )
+
       other_error ->
-        Logger.error("Unexpected error adding #{node} to Horde clusters", 
+        Logger.error("Unexpected error adding #{node} to Horde clusters",
           error: inspect(other_error),
           stacktrace: __STACKTRACE__,
           node: node
@@ -483,7 +490,8 @@ defmodule Arbor.Core.ClusterManager do
       end
 
       # Leave supervisor cluster if using Horde
-      if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :leave_supervisor, 1) do
+      if supervisor_impl == HordeSupervisor and
+           function_exported?(supervisor_impl, :leave_supervisor, 1) do
         supervisor_impl.leave_supervisor(node)
       end
 
@@ -497,12 +505,13 @@ defmodule Arbor.Core.ClusterManager do
       # Specific rescue for cluster cleanup failures. These are expected when
       # the failed node is already disconnected or Horde processes are down.
       error in [UndefinedFunctionError, RuntimeError] ->
-        Logger.warning("Failed to remove #{node} from Horde clusters", 
+        Logger.warning("Failed to remove #{node} from Horde clusters",
           error: inspect(error),
           node: node
         )
+
       other_error ->
-        Logger.error("Unexpected error removing #{node} from Horde clusters", 
+        Logger.error("Unexpected error removing #{node} from Horde clusters",
           error: inspect(other_error),
           stacktrace: __STACKTRACE__,
           node: node
@@ -522,11 +531,13 @@ defmodule Arbor.Core.ClusterManager do
       error in [UndefinedFunctionError, RuntimeError, ArgumentError] ->
         Logger.debug("Component health check failed", error: inspect(error))
         :down
+
       other_error ->
-        Logger.warning("Unexpected error during component health check", 
+        Logger.warning("Unexpected error during component health check",
           error: inspect(other_error),
           function: inspect(health_fn)
         )
+
         :down
     end
   end
@@ -540,11 +551,15 @@ defmodule Arbor.Core.ClusterManager do
       _ -> :arbor
     end
   end
-  
+
   defp get_registry_impl() do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
-      :mock -> Arbor.Test.Mocks.LocalRegistry
-      :horde -> HordeRegistry
+      :mock ->
+        Arbor.Test.Mocks.LocalRegistry
+
+      :horde ->
+        HordeRegistry
+
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
           Arbor.Test.Mocks.LocalRegistry
@@ -553,11 +568,15 @@ defmodule Arbor.Core.ClusterManager do
         end
     end
   end
-  
+
   defp get_supervisor_impl() do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
-      :mock -> Arbor.Test.Mocks.LocalSupervisor
-      :horde -> HordeSupervisor
+      :mock ->
+        Arbor.Test.Mocks.LocalSupervisor
+
+      :horde ->
+        HordeSupervisor
+
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
           Arbor.Test.Mocks.LocalSupervisor
@@ -621,34 +640,39 @@ defmodule Arbor.Core.ClusterManager do
       # Get appropriate implementations
       registry_impl = get_registry_impl()
       supervisor_impl = get_supervisor_impl()
-      
+
       detailed_health = %{
         components: %{
-          registry: check_component_health(fn ->
-            if registry_impl == HordeRegistry and function_exported?(registry_impl, :get_registry_status, 0) do
-              registry_impl.get_registry_status()
-            else
-              # Mock registry doesn't have get_registry_status
-              {:ok, %{status: :healthy, members: [node()], count: 0}}
-            end
-          end),
-          supervisor: check_component_health(fn ->
-            if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :get_supervisor_status, 0) do
-              supervisor_impl.get_supervisor_status()
-            else
-              # Mock supervisor doesn't have get_supervisor_status
-              {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
-            end
-          end),
-          coordinator: check_component_health(fn ->
-          # Check if we're in test mode
-          if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
-            # Return mock health status
-            {:ok, %{status: :healthy, active_coordinators: 0}}
-          else
-            ClusterCoordinator.perform_health_check()
-          end
-        end)
+          registry:
+            check_component_health(fn ->
+              if registry_impl == HordeRegistry and
+                   function_exported?(registry_impl, :get_registry_status, 0) do
+                registry_impl.get_registry_status()
+              else
+                # Mock registry doesn't have get_registry_status
+                {:ok, %{status: :healthy, members: [node()], count: 0}}
+              end
+            end),
+          supervisor:
+            check_component_health(fn ->
+              if supervisor_impl == HordeSupervisor and
+                   function_exported?(supervisor_impl, :get_supervisor_status, 0) do
+                supervisor_impl.get_supervisor_status()
+              else
+                # Mock supervisor doesn't have get_supervisor_status
+                {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
+              end
+            end),
+          coordinator:
+            check_component_health(fn ->
+              # Check if we're in test mode
+              if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+                # Return mock health status
+                {:ok, %{status: :healthy, active_coordinators: 0}}
+              else
+                ClusterCoordinator.perform_health_check()
+              end
+            end)
         },
         resources: %{
           memory: :erlang.memory(),
@@ -700,12 +724,13 @@ defmodule Arbor.Core.ClusterManager do
       error in [UndefinedFunctionError, RuntimeError] ->
         Logger.debug("OS monitoring not available", error: inspect(error))
         :unavailable
+
       other_error ->
-        Logger.warning("Unexpected error getting load average", 
+        Logger.warning("Unexpected error getting load average",
           error: inspect(other_error)
         )
+
         :unavailable
     end
   end
-
 end

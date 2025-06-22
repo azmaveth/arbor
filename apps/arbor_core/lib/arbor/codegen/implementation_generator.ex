@@ -66,6 +66,7 @@ defmodule Arbor.CodeGen.ImplementationGenerator do
   defp generate_doc(_), do: "  @doc false"
 
   defp generate_args(0), do: ""
+
   defp generate_args(arity) when arity > 0 do
     1..arity
     |> Enum.map(&"arg#{&1}")

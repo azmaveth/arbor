@@ -357,6 +357,7 @@ defmodule Arbor.Security.CapabilityStore do
       Agent.start_link(fn -> %{capabilities: %{}, sequence: 0} end, name: __MODULE__)
     end
 
+    @spec insert_capability(any()) :: :ok
     def insert_capability(capability) do
       Agent.update(__MODULE__, fn state ->
         %{state | capabilities: Map.put(state.capabilities, capability.id, capability)}
@@ -372,6 +373,7 @@ defmodule Arbor.Security.CapabilityStore do
       end
     end
 
+    @spec delete_capability(String.t(), any(), any()) :: :ok
     def delete_capability(capability_id, _reason, _revoker_id) do
       Agent.update(__MODULE__, fn state ->
         %{state | capabilities: Map.delete(state.capabilities, capability_id)}
@@ -391,6 +393,7 @@ defmodule Arbor.Security.CapabilityStore do
       {:ok, capabilities}
     end
 
+    @spec get_delegated_capabilities(String.t()) :: {:ok, [any()]}
     def get_delegated_capabilities(parent_capability_id) do
       capabilities =
         Agent.get(__MODULE__, fn state ->
@@ -402,6 +405,7 @@ defmodule Arbor.Security.CapabilityStore do
       {:ok, capabilities}
     end
 
+    @spec clear_all() :: :ok
     def clear_all do
       Agent.update(__MODULE__, fn _state ->
         %{capabilities: %{}, sequence: 0}

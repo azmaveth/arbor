@@ -45,7 +45,7 @@ defmodule Arbor.Core.Gateway do
 
   @behaviour Arbor.Contracts.Gateway.API
 
-  alias Arbor.Core.{Sessions, ClusterRegistry}
+  alias Arbor.Core.{ClusterRegistry, Sessions}
   alias Arbor.Types
   alias Arbor.Contracts.Client.Command
 
@@ -67,13 +67,13 @@ defmodule Arbor.Core.Gateway do
   # Contract-compliant API (Adapter Pattern)
 
   # Note: init/1 and terminate/2 callbacks conflict between GenServer and Gateway.API
-  # The GenServer callbacks take precedence. Gateway API init/terminate are handled 
+  # The GenServer callbacks take precedence. Gateway API init/terminate are handled
   # by start_link/1 and proper GenServer shutdown.
 
   @impl Arbor.Contracts.Gateway.API
   def execute_command(command, context, _state) do
     session_id = Map.get(context, :session_id)
-    
+
     if is_nil(session_id) do
       {:error, :session_not_found}
     else
@@ -185,7 +185,7 @@ defmodule Arbor.Core.Gateway do
   ## Examples
 
       {:ok, capabilities} = Gateway.discover_capabilities(session_id)
-      
+
       Enum.each(capabilities, fn capability ->
         IO.puts("\#{capability.name}: \#{capability.description}")
       end)
@@ -206,6 +206,7 @@ defmodule Arbor.Core.Gateway do
   def execute(session_id, command_name, params) do
     command = %{type: String.to_atom(command_name), params: params}
     context = %{session_id: session_id}
+
     case execute_command(command, context, nil) do
       {:ok, execution_ref} -> {:async, execution_ref}
       error -> error
@@ -227,7 +228,7 @@ defmodule Arbor.Core.Gateway do
   ## Examples
 
       Gateway.subscribe_execution(execution_id)
-      
+
       # Will receive messages like:
       # {:execution_event, %{status: :started, message: "Beginning analysis..."}}
       # {:execution_event, %{status: :progress, progress: 25, message: "Analyzing files..."}}
@@ -376,7 +377,7 @@ defmodule Arbor.Core.Gateway do
     session_id = Map.get(context, :session_id)
     command_type = Map.get(command, :type)
     params = Map.get(command, :params, %{})
-    
+
     execution_id = Types.generate_execution_id()
 
     # Start async execution
@@ -415,8 +416,7 @@ defmodule Arbor.Core.Gateway do
     )
 
     # Return contract-compliant response
-    {:reply, {:ok, execution_id},
-     %{state | active_executions: new_executions, stats: new_stats}}
+    {:reply, {:ok, execution_id}, %{state | active_executions: new_executions, stats: new_stats}}
   end
 
   @impl true
@@ -506,7 +506,7 @@ defmodule Arbor.Core.Gateway do
     case Map.get(state.active_executions, execution_ref) do
       nil ->
         {:reply, {:error, :execution_not_found}, state}
-      
+
       exec_info ->
         status = %{
           status: :executing,
@@ -517,6 +517,7 @@ defmodule Arbor.Core.Gateway do
           started_at: exec_info.started_at,
           completed_at: nil
         }
+
         {:reply, {:ok, status}, state}
     end
   end
@@ -526,22 +527,22 @@ defmodule Arbor.Core.Gateway do
     case Map.get(state.active_executions, execution_ref) do
       nil ->
         {:reply, {:error, :execution_not_found}, state}
-      
+
       exec_info ->
         # Cancel the task
         Task.shutdown(exec_info.task, :brutal_kill)
-        
+
         # Remove from active executions
         new_executions = Map.delete(state.active_executions, execution_ref)
-        
+
         # Broadcast cancellation
         broadcast_execution_event(
-          execution_ref, 
-          exec_info.session_id, 
-          :cancelled, 
+          execution_ref,
+          exec_info.session_id,
+          :cancelled,
           "Execution cancelled: #{reason}"
         )
-        
+
         {:reply, :ok, %{state | active_executions: new_executions}}
     end
   end
@@ -554,18 +555,21 @@ defmodule Arbor.Core.Gateway do
         # Check completed executions
         case Map.get(state.completed_executions, execution_ref) do
           nil ->
-            Logger.error("Failed to wait for completion", 
-              execution_id: execution_ref, 
-              reason: :execution_not_found)
+            Logger.error("Failed to wait for completion",
+              execution_id: execution_ref,
+              reason: :execution_not_found
+            )
+
             {:reply, {:error, :execution_not_found}, state}
-          
+
           completed_info ->
             # Return the completed result, unwrapping :ok tuples
-            data = case completed_info.result do
-              {:ok, data} -> data
-              data -> data
-            end
-            
+            data =
+              case completed_info.result do
+                {:ok, data} -> data
+                data -> data
+              end
+
             completion_result = %{
               execution_id: execution_ref,
               status: :completed,
@@ -574,26 +578,27 @@ defmodule Arbor.Core.Gateway do
                 message: "Command completed successfully"
               }
             }
-            
+
             # Remove from completed executions after retrieval
             new_completed = Map.delete(state.completed_executions, execution_ref)
             {:reply, {:ok, completion_result}, %{state | completed_executions: new_completed}}
         end
-      
+
       exec_info ->
         # Wait for the task to complete
         try do
           result = Task.await(exec_info.task, 30_000)
-          
+
           # Remove from active executions
           new_executions = Map.delete(state.active_executions, execution_ref)
-          
+
           # Unwrap :ok tuples
-          data = case result do
-            {:ok, data} -> data
-            data -> data
-          end
-          
+          data =
+            case result do
+              {:ok, data} -> data
+              data -> data
+            end
+
           # Format result for CLI compatibility
           completion_result = %{
             execution_id: execution_ref,
@@ -603,13 +608,14 @@ defmodule Arbor.Core.Gateway do
               message: "Command completed successfully"
             }
           }
-          
+
           Logger.info("Execution completed", execution_id: execution_ref)
           {:reply, {:ok, completion_result}, %{state | active_executions: new_executions}}
         catch
           :exit, {:timeout, _} ->
             Logger.error("Execution timeout", execution_id: execution_ref)
             {:reply, {:error, :timeout}, state}
+
           :exit, reason ->
             Logger.error("Execution failed", execution_id: execution_ref, reason: reason)
             {:reply, {:error, reason}, state}
@@ -625,12 +631,12 @@ defmodule Arbor.Core.Gateway do
         _result = Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "session:#{session_id}")
         subscription_ref = make_ref()
         {:reply, {:ok, subscription_ref}, state}
-        
+
       {:execution, execution_id} ->
         _result = Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "execution:#{execution_id}")
         subscription_ref = make_ref()
         {:reply, {:ok, subscription_ref}, state}
-        
+
       _ ->
         {:reply, {:error, :invalid_subscription}, state}
     end
@@ -646,19 +652,22 @@ defmodule Arbor.Core.Gateway do
   def handle_call({:list_commands, context}, _from, state) do
     # Delegate to existing capability discovery
     session_id = Map.get(context, :session_id)
-    
+
     case get_authorized_capabilities(session_id) do
       {:ok, capabilities} ->
         # Transform capabilities to command specs format
-        commands = Enum.map(capabilities, fn cap ->
-          %{
-            type: String.to_atom(cap.name),
-            description: cap.description,
-            params: cap.parameters,
-            required_capabilities: cap.required_permissions,
-            examples: []  # Could be expanded later
-          }
-        end)
+        commands =
+          Enum.map(capabilities, fn cap ->
+            %{
+              type: String.to_atom(cap.name),
+              description: cap.description,
+              params: cap.parameters,
+              required_capabilities: cap.required_permissions,
+              # Could be expanded later
+              examples: []
+            }
+          end)
+
         {:reply, {:ok, commands}, state}
     end
   end
@@ -679,19 +688,26 @@ defmodule Arbor.Core.Gateway do
     health = %{
       status: :healthy,
       active_executions: map_size(state.active_executions),
-      queued_commands: 0,  # We don't queue commands currently
-      subscriptions: 0,    # Would need proper tracking
-      rate_limit_status: %{},  # Not implemented yet
-      latency_ms: [],      # Would need metrics collection
-      error_rate: 0.0      # Would need error tracking
+      # We don't queue commands currently
+      queued_commands: 0,
+      # Would need proper tracking
+      subscriptions: 0,
+      # Not implemented yet
+      rate_limit_status: %{},
+      # Would need metrics collection
+      latency_ms: [],
+      # Would need error tracking
+      error_rate: 0.0
     }
+
     {:reply, {:ok, health}, state}
   end
 
   @impl true
   def handle_call({:check_rate_limit, _client_id, _operation, _cost}, _from, state) do
     # Placeholder implementation - rate limiting not implemented yet
-    remaining = 1000  # Assume plenty of quota
+    # Assume plenty of quota
+    remaining = 1000
     {:reply, {:ok, remaining}, state}
   end
 
@@ -779,9 +795,24 @@ defmodule Arbor.Core.Gateway do
         name: "spawn_agent",
         description: "Spawn a new agent",
         parameters: [
-          %{name: "type", type: :atom, required: true, description: "Type of agent to spawn (e.g., :code_analyzer)"},
-          %{name: "id", type: :string, required: false, description: "Optional unique ID for the agent"},
-          %{name: "working_dir", type: :string, required: false, description: "Working directory for the agent"}
+          %{
+            name: "type",
+            type: :atom,
+            required: true,
+            description: "Type of agent to spawn (e.g., :code_analyzer)"
+          },
+          %{
+            name: "id",
+            type: :string,
+            required: false,
+            description: "Optional unique ID for the agent"
+          },
+          %{
+            name: "working_dir",
+            type: :string,
+            required: false,
+            description: "Working directory for the agent"
+          }
         ],
         required_permissions: ["arbor://agent/spawn/"]
       },
@@ -842,9 +873,14 @@ defmodule Arbor.Core.Gateway do
             handle_agent_command_execution(params)
 
           # Support legacy string commands for backward compatibility
-          "analyze_code" -> handle_code_analysis(params)
-          "execute_tool" -> handle_tool_execution(params)
-          "query_agents" -> handle_agent_query(params)
+          "analyze_code" ->
+            handle_code_analysis(params)
+
+          "execute_tool" ->
+            handle_tool_execution(params)
+
+          "query_agents" ->
+            handle_agent_query(params)
 
           _ ->
             {:error, {:unknown_command, command}}
@@ -1053,20 +1089,22 @@ defmodule Arbor.Core.Gateway do
     # Move to completed executions instead of deleting
     completed_info = Map.put(exec_info, :result, result)
     completed_info = Map.put(completed_info, :completed_at, DateTime.utc_now())
-    
+
     # Remove from active and add to completed
     new_active = Map.delete(state.active_executions, execution_id)
     new_completed = Map.put(state.completed_executions, execution_id, completed_info)
-    
+
     # Clean up old completed executions (older than 5 minutes)
     cutoff = DateTime.add(DateTime.utc_now(), -300, :second)
-    new_completed = Enum.reduce(new_completed, %{}, fn {id, info}, acc ->
-      if DateTime.compare(info.completed_at, cutoff) == :gt do
-        Map.put(acc, id, info)
-      else
-        acc
-      end
-    end)
+
+    new_completed =
+      Enum.reduce(new_completed, %{}, fn {id, info}, acc ->
+        if DateTime.compare(info.completed_at, cutoff) == :gt do
+          Map.put(acc, id, info)
+        else
+          acc
+        end
+      end)
 
     {:noreply, %{state | active_executions: new_active, completed_executions: new_completed}}
   end
@@ -1092,7 +1130,7 @@ defmodule Arbor.Core.Gateway do
     # Move to completed executions with error instead of deleting
     completed_info = Map.put(exec_info, :error, reason)
     completed_info = Map.put(completed_info, :completed_at, DateTime.utc_now())
-    
+
     # Remove from active and add to completed
     new_active = Map.delete(state.active_executions, execution_id)
     new_completed = Map.put(state.completed_executions, execution_id, completed_info)
@@ -1104,7 +1142,10 @@ defmodule Arbor.Core.Gateway do
 
   defp handle_agent_spawn(params) do
     agent_type = params["type"] || params[:type]
-    agent_id = params["id"] || params[:id] || "#{agent_type}_#{System.unique_integer([:positive])}"
+
+    agent_id =
+      params["id"] || params[:id] || "#{agent_type}_#{System.unique_integer([:positive])}"
+
     working_dir = params["working_dir"] || params[:working_dir] || "/tmp"
 
     case agent_type do
@@ -1116,18 +1157,19 @@ defmodule Arbor.Core.Gateway do
           args: [agent_id: agent_id, working_dir: working_dir],
           restart_strategy: :permanent
         }
-        
+
         # Start agent via HordeSupervisor
         case Arbor.Core.HordeSupervisor.start_agent(agent_spec) do
           {:ok, pid} ->
-            {:ok, %{
-              agent_id: agent_id,
-              agent_type: agent_type,
-              pid: inspect(pid),
-              working_dir: working_dir,
-              status: :active
-            }}
-          
+            {:ok,
+             %{
+               agent_id: agent_id,
+               agent_type: agent_type,
+               pid: inspect(pid),
+               working_dir: working_dir,
+               status: :active
+             }}
+
           {:error, reason} ->
             {:error, {:agent_spawn_failed, reason}}
         end
@@ -1143,7 +1185,7 @@ defmodule Arbor.Core.Gateway do
 
   defp handle_agent_status(params) do
     agent_id = params["agent_id"] || params[:agent_id]
-    
+
     if agent_id do
       case Arbor.Core.HordeSupervisor.get_agent_info(agent_id) do
         {:ok, agent_info} ->
@@ -1152,12 +1194,13 @@ defmodule Arbor.Core.Gateway do
             agent_id: agent_id,
             status: if(Process.alive?(agent_info.pid), do: :active, else: :inactive)
           }
+
           {:ok, %{agents: [agent_data], total: 1}}
-        
+
         {:error, :not_found} ->
           # Return empty list format for non-existent agents (matches test expectation)
           {:ok, %{agents: [], total: 0}}
-        
+
         {:error, reason} ->
           {:error, {:agent_status_failed, reason}}
       end
@@ -1170,7 +1213,7 @@ defmodule Arbor.Core.Gateway do
     agent_id = params["agent_id"] || params[:agent_id]
     command = params["command"] || params[:command]
     args = params["args"] || params[:args] || []
-    
+
     if agent_id && command do
       # Try to find the agent via registry first
       case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
@@ -1180,12 +1223,14 @@ defmodule Arbor.Core.Gateway do
             agent_id when is_binary(agent_id) ->
               try do
                 result = Arbor.Agents.CodeAnalyzer.exec(agent_id, command, args)
-                {:ok, %{
-                  agent_id: agent_id,
-                  command: command,
-                  args: args,
-                  result: result
-                }}
+
+                {:ok,
+                 %{
+                   agent_id: agent_id,
+                   command: command,
+                   args: args,
+                   result: result
+                 }}
               rescue
                 e ->
                   {:error, {:agent_command_failed, Exception.message(e)}}
@@ -1193,14 +1238,14 @@ defmodule Arbor.Core.Gateway do
                 :exit, reason ->
                   {:error, {:agent_command_failed, reason}}
               end
-            
+
             _ ->
               {:error, :invalid_agent_id}
           end
-        
+
         {:error, :not_registered} ->
           {:error, :agent_not_found}
-        
+
         {:error, reason} ->
           {:error, {:agent_lookup_failed, reason}}
       end

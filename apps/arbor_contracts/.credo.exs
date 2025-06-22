@@ -16,7 +16,7 @@
         {Credo.Check.Consistency.SpaceAroundOperators, []},
         {Credo.Check.Consistency.SpaceInParentheses, []},
         {Credo.Check.Consistency.TabsOrSpaces, []},
-        
+
         # Readability - contracts must be clear
         {Credo.Check.Readability.AliasOrder, []},
         {Credo.Check.Readability.FunctionNames, []},
@@ -26,11 +26,11 @@
         {Credo.Check.Readability.SinglePipe, []},
         {Credo.Check.Readability.Specs, []},
         {Credo.Check.Readability.StrictModuleLayout, []},
-        
+
         # Design - ensure contracts follow best practices
         {Credo.Check.Design.AliasUsage, [priority: :low]},
         {Credo.Check.Design.DuplicatedCode, [mass_threshold: 40]},
-        
+
         # Warnings - catch potential issues
         {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
         {Credo.Check.Warning.BoolOperationOnSameValues, []},
@@ -49,7 +49,7 @@
         {Credo.Check.Warning.UnusedRegexOperation, []},
         {Credo.Check.Warning.UnusedStringOperation, []},
         {Credo.Check.Warning.UnusedTupleOperation, []},
-        
+
         # Disable checks that are too restrictive for contracts
         {Credo.Check.Refactor.Nesting, false},
         {Credo.Check.Refactor.UnlessWithElse, false},

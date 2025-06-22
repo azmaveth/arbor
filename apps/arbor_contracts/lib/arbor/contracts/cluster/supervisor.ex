@@ -28,19 +28,19 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
 
       defmodule MySupervisor do
         @behaviour Arbor.Contracts.Cluster.Supervisor
-        
+
         @impl true
         def start_agent(agent_spec) do
           # Store spec in registry for persistence
           register_agent_spec(agent_spec.id, agent_spec)
-          
+
           child_spec = %{
             id: agent_spec.id,
             start: {agent_spec.module, :start_link, [agent_spec.args]},
             restart: agent_spec.restart_strategy,
             type: :worker
           }
-          
+
           Horde.DynamicSupervisor.start_child(MyHordeSupervisor, child_spec)
         end
       end
@@ -104,12 +104,10 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
         restart_strategy: :permanent,
         metadata: %{session_id: "session_456"}
       }
-      
+
       {:ok, pid} = Supervisor.start_agent(agent_spec)
   """
-  @callback start_agent(
-              agent_spec()
-            ) :: {:ok, pid()} | {:error, supervisor_error()}
+  @callback start_agent(agent_spec()) :: {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
   Stop an agent gracefully.
@@ -150,9 +148,8 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `{:ok, pid}` - Agent restarted with new PID
   - `{:error, :agent_not_found}` - Agent doesn't exist
   """
-  @callback restart_agent(
-              agent_id :: Types.agent_id()
-            ) :: {:ok, pid()} | {:error, supervisor_error()}
+  @callback restart_agent(agent_id :: Types.agent_id()) ::
+              {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
   List all agents under supervision.
@@ -189,9 +186,8 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `:memory` - Current memory usage
   - `:message_queue_len` - Current message queue length
   """
-  @callback get_agent_info(
-              agent_id :: Types.agent_id()
-            ) :: {:ok, map()} | {:error, supervisor_error()}
+  @callback get_agent_info(agent_id :: Types.agent_id()) ::
+              {:ok, map()} | {:error, supervisor_error()}
 
   @doc """
   Restart an agent with state recovery if available.
@@ -227,9 +223,8 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `{:error, :agent_not_found}` - Agent spec not found in registry
   - `{:error, :restart_failed}` - Restart process failed
   """
-  @callback restore_agent(
-              agent_id :: Types.agent_id()
-            ) :: {:ok, pid()} | {:error, supervisor_error()}
+  @callback restore_agent(agent_id :: Types.agent_id()) ::
+              {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
   Update supervision strategy for an agent.
@@ -307,7 +302,6 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
               callback :: function()
             ) :: :ok | {:error, term()}
 
-
   @doc """
   Handle agent state handoff during migration.
 
@@ -318,7 +312,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
 
   When `operation` is `:handoff`, extract and return agent state.
 
-  ## For Restoration  
+  ## For Restoration
 
   When `operation` is `:takeover`, restore the provided state.
   """

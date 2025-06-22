@@ -1,12 +1,12 @@
 defmodule Arbor.Core.AgentReconciler do
   @moduledoc """
   Periodically reconciles agent specs stored in the registry with running processes.
-  
+
   This process ensures that:
   - Agents specified in the registry are actually running
   - Orphaned processes (running but not in registry) are cleaned up
   - Failed agents are restarted according to their restart strategy
-  
+
   This provides self-healing capabilities for the distributed agent system.
   """
 
@@ -21,8 +21,10 @@ defmodule Arbor.Core.AgentReconciler do
   # Configuration
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor
-  @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000) # 30 seconds default
+  # 30 seconds default
+  @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000)
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
@@ -75,7 +77,8 @@ defmodule Arbor.Core.AgentReconciler do
 
         new_state = %{
           state
-          | errors: [error | Enum.take(state.errors, 9)] # Keep last 10 errors
+          | # Keep last 10 errors
+            errors: [error | Enum.take(state.errors, 9)]
         }
 
         schedule_reconciliation()
@@ -118,7 +121,8 @@ defmodule Arbor.Core.AgentReconciler do
         # Add error to state
         new_state = %{
           state
-          | errors: [error | Enum.take(state.errors, 9)] # Keep last 10 errors
+          | # Keep last 10 errors
+            errors: [error | Enum.take(state.errors, 9)]
         }
 
         {:reply, {:error, error}, new_state}
@@ -130,14 +134,16 @@ defmodule Arbor.Core.AgentReconciler do
   @doc """
   Get reconciler status information.
   """
-  def get_status() do
+  @spec get_status() :: map()
+  def get_status do
     GenServer.call(__MODULE__, :status)
   end
 
   @doc """
   Force an immediate reconciliation cycle.
   """
-  def force_reconcile() do
+  @spec force_reconcile() :: :ok | {:error, any()}
+  def force_reconcile do
     GenServer.call(__MODULE__, :force_reconcile)
   end
 
@@ -146,7 +152,7 @@ defmodule Arbor.Core.AgentReconciler do
   #
 
   @impl Arbor.Contracts.Agent.Reconciler
-  def reconcile_agents() do
+  def reconcile_agents do
     try do
       do_reconcile_agents()
       :ok
@@ -156,7 +162,7 @@ defmodule Arbor.Core.AgentReconciler do
   end
 
   @impl Arbor.Contracts.Agent.Reconciler
-  def find_missing_agents() do
+  def find_missing_agents do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
 
@@ -178,7 +184,7 @@ defmodule Arbor.Core.AgentReconciler do
   end
 
   @impl Arbor.Contracts.Agent.Reconciler
-  def cleanup_orphaned_processes() do
+  def cleanup_orphaned_processes do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
 
@@ -223,11 +229,11 @@ defmodule Arbor.Core.AgentReconciler do
 
   # Private functions
 
-  defp schedule_reconciliation() do
+  defp schedule_reconciliation do
     Process.send_after(self(), :reconcile, @reconcile_interval)
   end
 
-  defp do_reconcile_agents() do
+  defp do_reconcile_agents do
     start_time = System.monotonic_time(:millisecond)
     node_name = node()
 
@@ -410,7 +416,12 @@ defmodule Arbor.Core.AgentReconciler do
 
           false ->
             cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-            error = %{agent_id: :undefined, reason: :cleanup_failed, duration_ms: cleanup_duration}
+
+            error = %{
+              agent_id: :undefined,
+              reason: :cleanup_failed,
+              duration_ms: cleanup_duration
+            }
 
             :telemetry.execute(
               [:arbor, :reconciliation, :agent_cleanup_failed],
@@ -457,7 +468,12 @@ defmodule Arbor.Core.AgentReconciler do
 
               false ->
                 cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-                error = %{agent_id: agent_id, reason: :cleanup_failed, duration_ms: cleanup_duration}
+
+                error = %{
+                  agent_id: agent_id,
+                  reason: :cleanup_failed,
+                  duration_ms: cleanup_duration
+                }
 
                 :telemetry.execute(
                   [:arbor, :reconciliation, :agent_cleanup_failed],
@@ -589,7 +605,7 @@ defmodule Arbor.Core.AgentReconciler do
     })
   end
 
-  defp get_all_agent_specs() do
+  defp get_all_agent_specs do
     pattern = {{:agent_spec, :"$1"}, :"$2", :"$3"}
     guard = []
     body = [{{:"$1", :"$3"}}]
@@ -597,7 +613,7 @@ defmodule Arbor.Core.AgentReconciler do
     Horde.Registry.select(@registry_name, [{pattern, guard, body}])
   end
 
-  defp get_running_children() do
+  defp get_running_children do
     children =
       @supervisor_name
       |> Horde.DynamicSupervisor.which_children()
@@ -667,7 +683,8 @@ defmodule Arbor.Core.AgentReconciler do
         child_spec = %{
           id: agent_id,
           start: {spec_metadata.module, :start_link, [enhanced_args]},
-          restart: :temporary, # Always use :temporary for Horde, reconciler handles restart logic
+          # Always use :temporary for Horde, reconciler handles restart logic
+          restart: :temporary,
           type: :worker
         }
 
@@ -918,7 +935,8 @@ defmodule Arbor.Core.AgentReconciler do
     successful_work = successful_restarts + successful_cleanups
 
     if total_work == 0 do
-      1.0 # Perfect efficiency when no work needed
+      # Perfect efficiency when no work needed
+      1.0
     else
       successful_work / total_work
     end
@@ -930,15 +948,24 @@ defmodule Arbor.Core.AgentReconciler do
     total_agents = max(total_specs, total_running)
 
     cond do
-      total_agents == 0 -> 1.0 # Perfect health with no agents
-      total_specs == total_running and total_errors == 0 -> 1.0 # Perfect sync, no errors
-      total_errors > total_agents -> 0.0 # More errors than agents (critical)
+      # Perfect health with no agents
+      total_agents == 0 ->
+        1.0
+
+      # Perfect sync, no errors
+      total_specs == total_running and total_errors == 0 ->
+        1.0
+
+      # More errors than agents (critical)
+      total_errors > total_agents ->
+        0.0
+
       true ->
         # Health score based on alignment and error rate
         alignment_score =
           if total_specs == 0,
-             do: 0.0,
-             else: min(total_running, total_specs) / max(total_specs, total_running)
+            do: 0.0,
+            else: min(total_running, total_specs) / max(total_specs, total_running)
 
         error_penalty = total_errors / max(total_agents, 1)
         max(0.0, alignment_score - error_penalty)

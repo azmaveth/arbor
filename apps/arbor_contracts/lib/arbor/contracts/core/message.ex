@@ -52,7 +52,7 @@ defmodule Arbor.Contracts.Core.Message do
   ## Options
 
   - `:to` (required) - Target agent URI
-  - `:from` (required) - Source agent URI  
+  - `:from` (required) - Source agent URI
   - `:payload` (required) - Message payload
   - `:session_id` - Session this message belongs to
   - `:trace_id` - Distributed tracing ID
@@ -64,7 +64,7 @@ defmodule Arbor.Contracts.Core.Message do
 
       {:ok, message} = Message.new(
         to: "arbor://agent/worker_001",
-        from: "arbor://agent/coordinator_001", 
+        from: "arbor://agent/coordinator_001",
         payload: %{task: :analyze, target: "file.ex"}
       )
   """

@@ -19,8 +19,12 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     node_name = :"arbor_codeanalyzer_test_#{@unique_id}@localhost"
 
     case :net_kernel.start([node_name, :shortnames]) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
+      {:ok, _} ->
+        :ok
+
+      {:error, {:already_started, _}} ->
+        :ok
+
       {:error, reason} ->
         IO.puts("Warning: Could not start distributed Erlang: #{inspect(reason)}")
         :ok
@@ -41,6 +45,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
     # Create test files
     test_file = Path.join(@temp_dir, "test.ex")
+
     File.write!(test_file, """
     defmodule Test do
       # This is a comment
@@ -63,6 +68,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     """)
 
     test_py_file = Path.join(@temp_dir, "test.py")
+
     File.write!(test_py_file, """
     def hello():
         # This is a comment
@@ -86,7 +92,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "agent lifecycle" do
     test "starts agent with valid arguments", %{temp_dir: temp_dir} do
-      agent_id = "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -102,7 +109,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     end
 
     test "fails with invalid working directory" do
-      agent_id = "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -125,7 +133,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "analyze_file/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id = "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -179,7 +188,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "analyze_directory/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id = "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -197,7 +207,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     test "analyzes directory with multiple files", %{agent_id: agent_id} do
       assert {:ok, analysis} = CodeAnalyzer.analyze_directory(agent_id, ".")
 
-      assert analysis.files_count >= 2 # test.ex and test.py
+      # test.ex and test.py
+      assert analysis.files_count >= 2
       assert analysis.total_lines > 0
       assert analysis.total_size > 0
       assert "elixir" in analysis.languages
@@ -217,7 +228,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "list_files/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id = "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -257,7 +269,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "exec/3" do
     setup %{temp_dir: temp_dir} do
-      agent_id = "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -317,7 +330,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "state management" do
     setup %{temp_dir: temp_dir} do
-      agent_id = "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id =
+        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
 
       agent_spec = %{
         id: agent_id,
@@ -368,6 +382,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     # Start Horde.Registry if not running
     if Process.whereis(@registry_name) == nil do
       IO.puts("  -> Starting Horde.Registry...")
+
       start_supervised!(
         {Horde.Registry,
          [
@@ -377,6 +392,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
            delta_crdt_options: [sync_interval: 100]
          ]}
       )
+
       IO.puts("  -> Horde.Registry started.")
     else
       IO.puts("  -> Horde.Registry already running.")
@@ -385,6 +401,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     # Start Horde.DynamicSupervisor if not running
     if Process.whereis(@supervisor_name) == nil do
       IO.puts("  -> Starting Horde.DynamicSupervisor...")
+
       start_supervised!(
         {Horde.DynamicSupervisor,
          [
@@ -396,6 +413,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
            delta_crdt_options: [sync_interval: 100]
          ]}
       )
+
       IO.puts("  -> Horde.DynamicSupervisor started.")
     else
       IO.puts("  -> Horde.DynamicSupervisor already running.")
@@ -420,17 +438,13 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     horde_supervisor_ready = Process.whereis(Arbor.Core.HordeSupervisor) != nil
 
     unless registry_ready and supervisor_ready and horde_supervisor_ready do
-      IO.inspect(
-        %{
-          "Horde Infrastructure Status" => "FAILED",
-          "Registry" => %{name: @registry_name, pid: Process.whereis(@registry_name)},
-          "Supervisor" => %{name: @supervisor_name, pid: Process.whereis(@supervisor_name)},
-          "HordeSupervisor" => %{
-            name: Arbor.Core.HordeSupervisor,
-            pid: Process.whereis(Arbor.Core.HordeSupervisor)
-          }
-        },
-        label: "Horde Infrastructure Check"
+      Logger.error("Horde infrastructure failed to start properly",
+        registry_status: %{name: @registry_name, pid: Process.whereis(@registry_name)},
+        supervisor_status: %{name: @supervisor_name, pid: Process.whereis(@supervisor_name)},
+        horde_supervisor_status: %{
+          name: Arbor.Core.HordeSupervisor,
+          pid: Process.whereis(Arbor.Core.HordeSupervisor)
+        }
       )
 
       raise "Horde infrastructure failed to start properly. Check logs for details."
@@ -471,7 +485,8 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
           end
 
           # Verification step
-          :timer.sleep(200) # Allow a moment for distributed state to sync
+          # Allow a moment for distributed state to sync
+          :timer.sleep(200)
           IO.puts("  -> Verifying cleanup...")
 
           case HordeSupervisor.list_agents() do
@@ -479,11 +494,9 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
               IO.puts("    -> OK: All agents stopped and unregistered.")
 
             {:ok, remaining_agents} ->
-              IO.puts(
-                "    -> WARNING: #{length(remaining_agents)} agents remain after cleanup."
-              )
+              IO.puts("    -> WARNING: #{length(remaining_agents)} agents remain after cleanup.")
 
-              IO.inspect(remaining_agents, label: "Remaining agents")
+              Logger.warning("Remaining agents after cleanup", remaining_agents: remaining_agents)
 
             {:error, reason} ->
               IO.puts(
@@ -502,7 +515,9 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
           "  -> ERROR: Exception during cleanup: #{inspect(exception)}. State may be inconsistent for next test."
         )
 
-        IO.inspect(Exception.format_stacktrace(__STACKTRACE__), label: "Cleanup Stacktrace")
+        Logger.error("Cleanup exception stacktrace",
+          stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+        )
     end
 
     IO.puts("--- Horde cleanup finished ---\n")

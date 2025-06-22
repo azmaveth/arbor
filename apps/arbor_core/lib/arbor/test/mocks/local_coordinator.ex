@@ -92,6 +92,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Client API
 
+  @spec start_link(keyword()) :: Agent.on_start()
   def start_link(_opts \\ []) do
     Agent.start_link(
       fn ->
@@ -131,6 +132,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
+  @spec init(any()) :: {:ok, state()}
   def init(_opts) do
     state = %__MODULE__{
       nodes: %{},
@@ -151,6 +153,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Node lifecycle management
 
+  @spec handle_node_join(map(), any()) :: :ok
   def handle_node_join(node_info, _state) do
     Agent.update(__MODULE__, fn state ->
       node_data = %{
@@ -181,6 +184,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec handle_node_leave(node(), any(), any()) :: :ok
   def handle_node_leave(node, _reason, _state) do
     Agent.update(__MODULE__, fn state ->
       case Map.get(state.nodes, node) do
@@ -197,6 +201,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec handle_node_failure(node(), any(), any()) :: :ok
   def handle_node_failure(node, _reason, _state) do
     Agent.update(__MODULE__, fn state ->
       case Map.get(state.nodes, node) do
@@ -237,6 +242,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec get_cluster_info(any()) :: {:ok, map()}
   def get_cluster_info(_state) do
     Agent.get(__MODULE__, fn state ->
       cluster_info = %{
@@ -250,6 +256,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
+  @spec get_redistribution_plan(node(), any()) :: {:ok, map()} | {:error, atom()}
   def get_redistribution_plan(node, _state) do
     Agent.get(__MODULE__, fn state ->
       plan =
@@ -266,6 +273,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Agent management
 
+  @spec register_agent_on_node(map(), any()) :: :ok
   def register_agent_on_node(agent_info, _state) do
     Agent.update(__MODULE__, fn state ->
       agent_data = %{
@@ -291,6 +299,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec calculate_distribution([map()], any()) :: {:ok, map()}
   def calculate_distribution(agents, _state) do
     Agent.get(__MODULE__, fn state ->
       assignments =
@@ -327,6 +336,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
+  @spec update_node_capacity(map(), any()) :: :ok
   def update_node_capacity(capacity_update, _state) do
     Agent.update(__MODULE__, fn state ->
       case Map.get(state.nodes, capacity_update.node) do
@@ -343,6 +353,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec suggest_redistribution(any()) :: {:ok, map()}
   def suggest_redistribution(_state) do
     Agent.get(__MODULE__, fn state ->
       # Find overloaded nodes (load > 80% of capacity OR capacity < 50)
@@ -375,6 +386,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Cluster state synchronization
 
+  @spec synchronize_cluster_state(map(), any()) :: :ok
   def synchronize_cluster_state(state_update, _state) do
     Agent.update(__MODULE__, fn state ->
       # Process each update in the state synchronization
@@ -420,12 +432,14 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec get_sync_status(any()) :: {:ok, map()}
   def get_sync_status(_state) do
     Agent.get(__MODULE__, fn state ->
       {:ok, state.sync_status}
     end)
   end
 
+  @spec handle_split_brain(map(), any()) :: :ok
   def handle_split_brain(split_brain_event, _state) do
     Agent.update(__MODULE__, fn state ->
       # Determine which partition has quorum (more coordinators)
@@ -454,12 +468,14 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec get_partition_status(any()) :: {:ok, map() | nil}
   def get_partition_status(_state) do
     Agent.get(__MODULE__, fn state ->
       {:ok, state.sync_status.partition_status}
     end)
   end
 
+  @spec resolve_state_conflicts(map(), any()) :: {:ok, map()}
   def resolve_state_conflicts(conflict_scenario, _state) do
     Agent.get(__MODULE__, fn _state ->
       # Simple conflict resolution: latest timestamp wins
@@ -517,6 +533,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Load balancing and health monitoring
 
+  @spec update_node_load(node(), number(), any()) :: :ok
   def update_node_load(node, load, _state) do
     Agent.update(__MODULE__, fn state ->
       updated_nodes =
@@ -530,6 +547,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec analyze_cluster_load(any()) :: {:ok, map()}
   def analyze_cluster_load(_state) do
     Agent.get(__MODULE__, fn state ->
       overloaded_nodes =
@@ -571,6 +589,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
+  @spec update_node_health(map(), any()) :: :ok
   def update_node_health(health_update, _state) do
     Agent.update(__MODULE__, fn state ->
       current_health =
@@ -596,6 +615,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     :ok
   end
 
+  @spec get_cluster_health(any()) :: {:ok, map()}
   def get_cluster_health(_state) do
     Agent.get(__MODULE__, fn state ->
       nodes_health =
@@ -633,6 +653,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   # Event processing
 
+  @spec process_coordination_event(map(), any()) :: {:ok, map()}
   def process_coordination_event(event, _state) do
     Agent.get_and_update(__MODULE__, fn state ->
       case process_event(event, state) do
@@ -666,6 +687,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
+  @spec get_coordination_log(any()) :: {:ok, map()}
   def get_coordination_log(_state) do
     Agent.get(__MODULE__, fn state ->
       processed_events = Enum.sort_by(state.event_log, & &1.timestamp)

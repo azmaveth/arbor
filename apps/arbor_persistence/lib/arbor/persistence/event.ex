@@ -2,7 +2,7 @@ defmodule Arbor.Persistence.Event do
   @moduledoc """
   Internal persistence representation of events.
 
-  This module provides conversion between the contract Event schema 
+  This module provides conversion between the contract Event schema
   and the internal persistence format optimized for storage.
 
   IMPORTANT: This is for persistence layer use only. All external

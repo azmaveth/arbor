@@ -6,6 +6,7 @@ defmodule Arbor.Test.Mocks.TestAgent do
 
   use Arbor.Core.AgentBehavior
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end

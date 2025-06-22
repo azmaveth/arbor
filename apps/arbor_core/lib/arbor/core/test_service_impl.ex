@@ -8,13 +8,12 @@ defmodule Arbor.Core.TestServiceImpl do
 
   @behaviour Arbor.Contracts.Test.SimpleService
 
-    @doc false
+  @doc false
   @impl true
   def stop_service() do
     # TODO: Implement this callback.
     {:error, :not_implemented}
   end
-
 
   @doc false
   @impl true
@@ -23,12 +22,10 @@ defmodule Arbor.Core.TestServiceImpl do
     {:error, :not_implemented}
   end
 
-
   @doc false
   @impl true
   def get_status() do
     # TODO: Implement this callback.
     {:error, :not_implemented}
   end
-
 end

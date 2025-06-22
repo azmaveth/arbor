@@ -49,8 +49,8 @@ defmodule Arbor.Core.Sessions.Manager do
 
   @behaviour Arbor.Contracts.Session.Manager
 
-  alias Arbor.Core.Sessions.Session
   alias Arbor.Core.ClusterSupervisor
+  alias Arbor.Core.Sessions.Session
   alias Arbor.Types
 
   # Removed @table - using Horde.Registry instead
@@ -62,6 +62,7 @@ defmodule Arbor.Core.Sessions.Manager do
     case GenServer.call(manager_pid, {:create_session, session_params}) do
       {:ok, session_struct} ->
         {:ok, session_struct}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -72,6 +73,7 @@ defmodule Arbor.Core.Sessions.Manager do
     case GenServer.call(manager_pid, {:get_session, session_id}) do
       {:ok, session_struct} ->
         {:ok, session_struct}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -87,9 +89,11 @@ defmodule Arbor.Core.Sessions.Manager do
 
   @impl Arbor.Contracts.Session.Manager
   def list_sessions(filters, manager_pid) when is_pid(manager_pid) do
-    case GenServer.call(manager_pid, {:list_sessions, filters}, 10_000) do # Extended timeout
+    # Extended timeout
+    case GenServer.call(manager_pid, {:list_sessions, filters}, 10_000) do
       {:ok, session_structs} ->
         {:ok, session_structs}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -97,7 +101,8 @@ defmodule Arbor.Core.Sessions.Manager do
 
   # Placeholder implementations for remaining callbacks
   @impl Arbor.Contracts.Session.Manager
-  def spawn_agent(_session_id, _agent_type, _agent_config, manager_pid) when is_pid(manager_pid) do
+  def spawn_agent(_session_id, _agent_type, _agent_config, manager_pid)
+      when is_pid(manager_pid) do
     {:error, :not_implemented}
   end
 
@@ -200,7 +205,7 @@ defmodule Arbor.Core.Sessions.Manager do
         {:ok, pid, metadata} ->
           # Session exists, can interact with it
           Session.send_message(pid, message)
-        
+
         {:error, :not_found} ->
           # Session doesn't exist
           IO.puts("Session not found")
@@ -218,9 +223,11 @@ defmodule Arbor.Core.Sessions.Manager do
             else
               {:error, :not_found}
             end
+
           [] ->
             {:error, :not_found}
         end
+
       _ ->
         # For production, use distributed SessionRegistry
         case Arbor.Core.SessionRegistry.lookup_session(session_id) do
@@ -243,7 +250,7 @@ defmodule Arbor.Core.Sessions.Manager do
   ## Examples
 
       sessions = Manager.list_sessions()
-      
+
       Enum.each(sessions, fn session_data ->
         IO.puts("Session \#{session_data.id}: \#{session_data.metadata.client_type}")
       end)
@@ -253,7 +260,9 @@ defmodule Arbor.Core.Sessions.Manager do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
         # For tests, list from mock registry
-        Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
+        Registry.select(Arbor.Core.MockSessionRegistry, [
+          {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
+        ])
         |> Enum.map(fn {id, pid, metadata} ->
           %{
             id: id,
@@ -264,6 +273,7 @@ defmodule Arbor.Core.Sessions.Manager do
           }
         end)
         |> Enum.filter(& &1.alive)
+
       _ ->
         # For production, use distributed SessionRegistry
         Arbor.Core.SessionRegistry.list_all_sessions()
@@ -287,7 +297,7 @@ defmodule Arbor.Core.Sessions.Manager do
       case Manager.end_session(session_id) do
         :ok ->
           IO.puts("Session ended successfully")
-        
+
         {:error, :not_found} ->
           IO.puts("Session not found")
       end
@@ -380,7 +390,8 @@ defmodule Arbor.Core.Sessions.Manager do
 
     {:ok,
      %{
-       monitor_refs: %{},  # Maps monitor ref -> session_id
+       # Maps monitor ref -> session_id
+       monitor_refs: %{},
        stats: %{
          total_created: 0,
          total_ended: 0,
@@ -395,21 +406,24 @@ defmodule Arbor.Core.Sessions.Manager do
     # Transform session_params to internal opts format
     opts = [
       created_by: Map.get(session_params, :user_id, "unknown"),
-      metadata: Map.put(session_params, :purpose, Map.get(session_params, :purpose, "General session")),
+      metadata:
+        Map.put(session_params, :purpose, Map.get(session_params, :purpose, "General session")),
       timeout: Map.get(session_params, :timeout, 3_600_000)
     ]
-    
+
     case create_session_internal(opts, state) do
       {:ok, session_id, pid, new_state} ->
         # Get the session struct for contract compliance
         case Session.to_struct(pid) do
           {:ok, session_struct} ->
             {:reply, {:ok, session_struct}, new_state}
+
           {:error, reason} ->
             # Clean up the session if struct creation failed
             cleanup_failed_session(session_id, pid)
             {:reply, {:error, reason}, state}
         end
+
       {:error, reason, new_state} ->
         {:reply, {:error, reason}, new_state}
     end
@@ -422,9 +436,11 @@ defmodule Arbor.Core.Sessions.Manager do
         case Session.to_struct(pid) do
           {:ok, session_struct} ->
             {:reply, {:ok, session_struct}, state}
+
           {:error, reason} ->
             {:reply, {:error, reason}, state}
         end
+
       {:error, reason} ->
         {:reply, {:error, reason}, state}
     end
@@ -443,6 +459,7 @@ defmodule Arbor.Core.Sessions.Manager do
     case list_sessions_with_structs(filters, state) do
       {:ok, session_structs} ->
         {:reply, {:ok, session_structs}, state}
+
       {:error, reason} ->
         {:reply, {:error, reason}, state}
     end
@@ -512,7 +529,8 @@ defmodule Arbor.Core.Sessions.Manager do
           metadata: opts[:metadata]
         )
 
-        {:reply, {:ok, session_id, pid}, %{state | monitor_refs: new_monitor_refs, stats: new_stats}}
+        {:reply, {:ok, session_id, pid},
+         %{state | monitor_refs: new_monitor_refs, stats: new_stats}}
 
       {:error, reason} ->
         Logger.error("Failed to create session", reason: reason)
@@ -536,7 +554,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
         # Session cleanup will be handled by :DOWN message
 
-        # Update stats  
+        # Update stats
         new_stats = Map.update!(state.stats, :total_ended, &(&1 + 1))
 
         Logger.info("Session ended via manager", session_id: session_id)
@@ -551,13 +569,15 @@ defmodule Arbor.Core.Sessions.Manager do
   @impl true
   def handle_call(:get_stats, _from, state) do
     # Get active session count from distributed registry
-    active_sessions = case Application.get_env(:arbor_core, :registry_impl, :auto) do
-      :mock ->
-        Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [true]}])
-        |> length()
-      _ ->
-        Arbor.Core.SessionRegistry.session_count()
-    end
+    active_sessions =
+      case Application.get_env(:arbor_core, :registry_impl, :auto) do
+        :mock ->
+          Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [true]}])
+          |> length()
+
+        _ ->
+          Arbor.Core.SessionRegistry.session_count()
+      end
 
     stats =
       Map.merge(state.stats, %{
@@ -575,7 +595,7 @@ defmodule Arbor.Core.Sessions.Manager do
       nil ->
         # Unknown process - not a session we're monitoring
         {:noreply, state}
-        
+
       session_id ->
         # Update state
         new_monitor_refs = Map.delete(state.monitor_refs, ref)
@@ -695,7 +715,7 @@ defmodule Arbor.Core.Sessions.Manager do
   defp list_sessions_with_structs(filters, _state) do
     try do
       # Get all session PIDs from registry
-      session_pids = 
+      session_pids =
         case Application.get_env(:arbor_core, :registry_impl, :auto) do
           :mock ->
             Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}])
@@ -710,7 +730,7 @@ defmodule Arbor.Core.Sessions.Manager do
         end
 
       # Convert to structs in parallel with timeout
-      session_structs = 
+      session_structs =
         session_pids
         |> Task.async_stream(
           fn pid -> Session.to_struct(pid) end,
@@ -719,7 +739,8 @@ defmodule Arbor.Core.Sessions.Manager do
         )
         |> Enum.reduce([], fn
           {:ok, {:ok, session_struct}}, acc -> [session_struct | acc]
-          _, acc -> acc  # Skip failed/timeout results
+          # Skip failed/timeout results
+          _, acc -> acc
         end)
 
       # Apply filters (basic implementation)
@@ -734,17 +755,25 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   defp apply_session_filters(sessions, filters) when map_size(filters) == 0, do: sessions
-  
+
   defp apply_session_filters(sessions, filters) do
     Enum.filter(sessions, fn session ->
       Enum.all?(filters, fn
-        {:user_id, user_id} -> session.user_id == user_id
-        {:status, status} -> session.status == status
-        {:created_after, datetime} -> 
+        {:user_id, user_id} ->
+          session.user_id == user_id
+
+        {:status, status} ->
+          session.status == status
+
+        {:created_after, datetime} ->
           DateTime.compare(session.created_at, datetime) in [:gt, :eq]
-        {:created_before, datetime} -> 
+
+        {:created_before, datetime} ->
           DateTime.compare(session.created_at, datetime) in [:lt, :eq]
-        _ -> true  # Unknown filter - ignore
+
+        # Unknown filter - ignore
+        _ ->
+          true
       end)
     end)
   end
@@ -754,10 +783,11 @@ defmodule Arbor.Core.Sessions.Manager do
       if Process.alive?(pid) do
         Process.exit(pid, :kill)
       end
-      
+
       ClusterSupervisor.terminate_child(session_id)
     rescue
-      _ -> :ok  # Best effort cleanup
+      # Best effort cleanup
+      _ -> :ok
     end
   end
 end

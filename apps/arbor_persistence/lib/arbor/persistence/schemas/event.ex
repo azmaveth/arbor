@@ -33,6 +33,7 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Changeset for creating new events.
   """
+  @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
   def changeset(event, attrs) do
     event
     |> cast(attrs, [
@@ -73,6 +74,7 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Convert from contract event to database schema.
   """
+  @spec from_contract(any()) :: %__MODULE__{}
   def from_contract(contract_event) do
     %__MODULE__{
       id: contract_event.id,
@@ -95,6 +97,7 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Convert from contract event to map for insert_all.
   """
+  @spec to_map(any()) :: map()
   def to_map(contract_event) do
     timestamp = DateTime.utc_now()
 
@@ -126,6 +129,7 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Convert from database schema to contract event.
   """
+  @spec to_contract(%__MODULE__{}) :: any()
   def to_contract(%__MODULE__{} = event) do
     %Arbor.Contracts.Events.Event{
       id: event.id,

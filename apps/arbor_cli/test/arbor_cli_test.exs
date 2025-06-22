@@ -11,7 +11,7 @@ defmodule ArborCliTest do
 
   test "config/0 returns configuration map" do
     config = ArborCli.config()
-    
+
     assert is_map(config)
     assert Map.has_key?(config, :gateway_endpoint)
     assert Map.has_key?(config, :timeout)

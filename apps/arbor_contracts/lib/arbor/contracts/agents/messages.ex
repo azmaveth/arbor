@@ -9,7 +9,7 @@ defmodule Arbor.Contracts.Agents.Messages do
   ## Message Categories
 
   1. **Task Messages**: Task assignment and results
-  2. **Coordination Messages**: Agent discovery and negotiation  
+  2. **Coordination Messages**: Agent discovery and negotiation
   3. **Capability Messages**: Permission requests and grants
   4. **Status Messages**: Health checks and status updates
 
@@ -72,8 +72,9 @@ defmodule Arbor.Contracts.Agents.Messages do
       {:ok, task}
     end
 
+    @spec generate_task_id() :: String.t()
     defp generate_task_id do
-      "task_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+      "task_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
     end
   end
 
@@ -154,8 +155,9 @@ defmodule Arbor.Contracts.Agents.Messages do
       {:ok, query}
     end
 
+    @spec generate_query_id() :: String.t()
     defp generate_query_id do
-      "query_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+      "query_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
     end
   end
 
@@ -223,8 +225,9 @@ defmodule Arbor.Contracts.Agents.Messages do
       end
     end
 
+    @spec generate_request_id() :: String.t()
     defp generate_request_id do
-      "capreq_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+      "capreq_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
     end
   end
 

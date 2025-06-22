@@ -29,11 +29,13 @@ defmodule ArborCli do
   @doc """
   Application version.
   """
+  @spec version() :: String.t()
   def version, do: "0.1.0"
 
   @doc """
   Get the default Gateway endpoint.
   """
+  @spec default_gateway_endpoint() :: String.t()
   def default_gateway_endpoint do
     Application.get_env(:arbor_cli, :gateway_endpoint, "http://localhost:4000")
   end
@@ -41,6 +43,7 @@ defmodule ArborCli do
   @doc """
   Get CLI configuration.
   """
+  @spec config() :: map()
   def config do
     %{
       gateway_endpoint: default_gateway_endpoint(),

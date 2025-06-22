@@ -45,6 +45,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
 
   # Client API
 
+  @spec start_link(keyword()) :: Agent.on_start()
   def start_link(opts \\ []) do
     Agent.start_link(
       fn ->
@@ -70,6 +71,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     end)
   end
 
+  @spec init(any()) :: {:ok, state()}
   def init(_opts) do
     state = %__MODULE__{
       agents: %{},
@@ -81,6 +83,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     {:ok, state}
   end
 
+  @spec start_supervisor(any()) :: {:ok, state()}
   def start_supervisor(_opts) do
     state = %__MODULE__{
       agents: %{},
@@ -215,8 +218,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   def list_agents() do
     Agent.get(__MODULE__, fn state ->
       agents =
-        state.agents
-        |> Enum.map(fn {agent_id, record} ->
+        Enum.map(state.agents, fn {agent_id, record} ->
           %{
             id: agent_id,
             pid: record.pid,
@@ -269,6 +271,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     end)
   end
 
+  @spec migrate_agent(String.t(), node()) :: {:ok, map()} | {:error, atom()}
   def migrate_agent(agent_id, target_node) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
@@ -484,10 +487,12 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
 
   # Additional functions for ClusterSupervisor compatibility
 
+  @spec extract_agent_state(String.t(), any()) :: {:ok, any()} | {:error, atom()}
   def extract_agent_state(agent_id, _state \\ nil) do
     handle_agent_handoff(agent_id, :handoff, nil)
   end
 
+  @spec restore_agent_state(String.t(), any(), any()) :: {:ok, map()} | {:error, atom()}
   def restore_agent_state(agent_id, state_data, _state \\ nil) do
     handle_agent_handoff(agent_id, :takeover, state_data)
   end

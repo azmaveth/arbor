@@ -298,7 +298,8 @@ defmodule Arbor.Core.ClusterIntegrationTest do
         target_node = List.first(target_nodes)
 
         # Trigger manual restoration (simulating failure response)
-        assert {:ok, {new_pid, recovery_status}} = Arbor.Core.HordeSupervisor.restore_agent(agent_id)
+        assert {:ok, {new_pid, recovery_status}} =
+                 Arbor.Core.HordeSupervisor.restore_agent(agent_id)
 
         # Verify agent migrated to different node
         assert node(new_pid) == target_node
@@ -317,9 +318,11 @@ defmodule Arbor.Core.ClusterIntegrationTest do
         IO.puts("Single node detected - testing restoration capability only")
 
         # Verify agent can be restored with state preservation
-        assert {:ok, {new_pid, recovery_status}} = Arbor.Core.HordeSupervisor.restore_agent(agent_id)
+        assert {:ok, {new_pid, recovery_status}} =
+                 Arbor.Core.HordeSupervisor.restore_agent(agent_id)
+
         assert new_pid != original_pid
-        
+
         # Verify state was preserved during restoration
         preserved_state = GenServer.call(new_pid, :get_state)
         assert preserved_state.important_data == "must_preserve"
@@ -682,6 +685,7 @@ defmodule TestResilientAgent do
         # Normal initialization
         state = Keyword.get(args, :state, %{})
         {:ok, state}
+
       recovered_state ->
         # Use recovered state from checkpoint
         {:ok, recovered_state}

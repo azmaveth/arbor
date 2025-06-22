@@ -24,7 +24,7 @@ defmodule Arbor.Contracts.Agents.Coordinator do
 
       defmodule MyCoordinator do
         @behaviour Arbor.Contracts.Agents.Coordinator
-        
+
         @impl true
         def delegate_task(task, requirements, opts, state) do
           with {:ok, agent} <- find_capable_agent(requirements, state),

@@ -2,8 +2,8 @@ defmodule Arbor.Contracts.Persistence.Store do
   @moduledoc """
   Defines the contract for persistence backends in the Arbor system.
 
-  This behaviour provides the foundation for event sourcing, CQRS, and 
-  general state persistence. All persistence implementations (PostgreSQL, 
+  This behaviour provides the foundation for event sourcing, CQRS, and
+  general state persistence. All persistence implementations (PostgreSQL,
   Redis, DETS) must conform to this contract.
 
   ## Design Principles
@@ -27,13 +27,13 @@ defmodule Arbor.Contracts.Persistence.Store do
 
       defmodule MyStore do
         @behaviour Arbor.Contracts.Persistence.Store
-        
+
         @impl true
         def init(opts) do
           # Initialize connection pool, tables, etc.
           {:ok, %{conn: establish_connection(opts)}}
         end
-        
+
         @impl true
         def append_events(stream_id, events, expected_version, state) do
           # Append events with optimistic concurrency control
@@ -107,7 +107,7 @@ defmodule Arbor.Contracts.Persistence.Store do
         %Event{type: :agent_started, data: %{agent_id: "agent_123"}},
         %Event{type: :capability_granted, data: %{cap_id: "cap_456"}}
       ]
-      
+
       {:ok, version} = Store.append_events("agent_123", events, 0, state)
   """
   @callback append_events(

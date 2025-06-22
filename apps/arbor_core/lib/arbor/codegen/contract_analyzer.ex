@@ -12,7 +12,7 @@ defmodule Arbor.CodeGen.ContractAnalyzer do
   @spec analyze(module()) :: {:ok, list(map())} | {:error, :contract_not_found}
   @spec extract_callbacks(module()) :: {:ok, list(map())} | {:error, :contract_not_found}
   def extract_callbacks(contract_module), do: analyze(contract_module)
-  
+
   def analyze(contract_module) do
     # Ensure all dependencies are compiled and available
     Mix.Task.run("deps.compile", [])

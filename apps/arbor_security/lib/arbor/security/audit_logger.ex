@@ -345,6 +345,7 @@ defmodule Arbor.Security.AuditLogger do
       Agent.start_link(fn -> %{events: [], sequence: 0} end, name: __MODULE__)
     end
 
+    @spec insert_audit_events([any()]) :: :ok
     def insert_audit_events(events) when is_list(events) do
       Agent.update(__MODULE__, fn state ->
         new_events = events ++ state.events
@@ -354,6 +355,7 @@ defmodule Arbor.Security.AuditLogger do
       :ok
     end
 
+    @spec get_audit_events(keyword()) :: {:ok, [any()]}
     def get_audit_events(filters) do
       events = Agent.get(__MODULE__, fn state -> state.events end)
 
@@ -362,6 +364,7 @@ defmodule Arbor.Security.AuditLogger do
       {:ok, filtered_events}
     end
 
+    @spec clear_all() :: :ok
     def clear_all do
       Agent.update(__MODULE__, fn _state ->
         %{events: [], sequence: 0}

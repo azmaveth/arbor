@@ -31,7 +31,8 @@ defmodule Arbor.Agents.CodeAnalyzer do
 
   use Arbor.Core.AgentBehavior
 
-  @max_file_size 10 * 1024 * 1024  # 10MB
+  # 10MB
+  @max_file_size 10 * 1024 * 1024
   @allowed_extensions ~w(.ex .exs .py .js .ts .rb .go .rs .java .c .cpp .h .hpp)
 
   # ================================
@@ -45,6 +46,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:agent_id` - Unique identifier for this agent
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
     GenServer.start_link(__MODULE__, args, name: via_name(agent_id))
@@ -69,6 +71,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
       #   modified_at: ~U[2025-06-21 10:30:00Z]
       # }}
   """
+  @spec analyze_file(String.t(), String.t()) :: {:ok, map()} | {:error, any()}
   def analyze_file(agent_id, path) do
     GenServer.call(via_name(agent_id), {:analyze_file, path})
   end
@@ -79,6 +82,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   ## Example
       {:ok, analysis} = CodeAnalyzer.analyze_directory("agent_id", "lib/")
   """
+  @spec analyze_directory(String.t(), String.t()) :: {:ok, map()} | {:error, any()}
   def analyze_directory(agent_id, path) do
     GenServer.call(via_name(agent_id), {:analyze_directory, path})
   end
@@ -88,6 +92,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
 
   Only returns files within the agent's working directory.
   """
+  @spec list_files(String.t(), String.t()) :: {:ok, [String.t()]} | {:error, any()}
   def list_files(agent_id, path) do
     GenServer.call(via_name(agent_id), {:list_files, path})
   end
@@ -103,6 +108,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   ## Example
       {:ok, result} = CodeAnalyzer.exec("agent_id", "analyze", ["lib/app.ex"])
   """
+  @spec exec(String.t(), String.t(), [String.t()]) :: {:ok, any()} | {:error, any()}
   def exec(agent_id, command, args \\ []) do
     GenServer.call(via_name(agent_id), {:exec, command, args})
   end
@@ -140,6 +146,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           working_dir: working_dir,
           reason: reason
         )
+
         {:stop, {:invalid_working_dir, reason}}
     end
   end
@@ -179,6 +186,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           path: path,
           reason: reason
         )
+
         {:reply, error, state}
     end
   end
@@ -207,6 +215,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           path: path,
           reason: reason
         )
+
         {:reply, error, state}
     end
   end
@@ -223,6 +232,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           path: path,
           reason: reason
         )
+
         {:reply, error, state}
     end
   end
@@ -236,6 +246,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           command: command,
           args_count: length(args)
         )
+
         {:reply, success, state}
 
       {:error, reason} = error ->
@@ -244,6 +255,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
           command: command,
           reason: reason
         )
+
         {:reply, error, state}
     end
   end
@@ -259,6 +271,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
       last_analysis: state.last_analysis,
       working_dir: state.working_dir
     }
+
     {:reply, {:ok, status}, state}
   end
 
@@ -278,10 +291,13 @@ defmodule Arbor.Agents.CodeAnalyzer do
     cond do
       String.starts_with?(abs_path, "/etc") ->
         {:error, :system_directory_not_allowed}
+
       String.starts_with?(abs_path, "/root") ->
         {:error, :system_directory_not_allowed}
+
       String.starts_with?(abs_path, "/sys") ->
         {:error, :system_directory_not_allowed}
+
       true ->
         case File.mkdir_p(abs_path) do
           :ok -> {:ok, abs_path}
@@ -374,8 +390,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     case File.ls(dir_path) do
       {:ok, files} ->
         file_info =
-          files
-          |> Enum.map(fn file ->
+          Enum.map(files, fn file ->
             full_path = Path.join(dir_path, file)
 
             case File.stat(full_path) do
@@ -508,11 +523,13 @@ defmodule Arbor.Agents.CodeAnalyzer do
         |> Enum.count(&(&1 == keyword))
       end)
       |> Enum.sum()
-      |> Kernel.+(1) # Base complexity is 1
+      # Base complexity is 1
+      |> Kernel.+(1)
 
     %{
       cyclomatic: cyclomatic,
-      cognitive: min(cyclomatic, 15) # Simplified cognitive complexity
+      # Simplified cognitive complexity
+      cognitive: min(cyclomatic, 15)
     }
   end
 end

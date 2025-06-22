@@ -17,16 +17,16 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
       defmodule MyTest do
         use ExUnit.Case
         alias Arbor.Test.Mocks.PermissiveSecurity
-        
+
         setup do
           {:ok, enforcer} = PermissiveSecurity.init([])
           {:ok, enforcer: enforcer}
         end
-        
+
         test "tracks authorization attempts", %{enforcer: enforcer} do
           cap = %Capability{id: "cap_123", resource_uri: "arbor://fs/read/test"}
           {:ok, :authorized} = PermissiveSecurity.authorize(cap, "arbor://fs/read/test", :read, %{}, enforcer)
-          
+
           # Verify authorization was tracked
           {:ok, attempts} = PermissiveSecurity.get_authorization_attempts(enforcer)
           assert length(attempts) == 1
@@ -39,10 +39,10 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
 
       # Deny next authorization
       PermissiveSecurity.configure_denial(enforcer, :next)
-      
+
       # Deny specific resource
       PermissiveSecurity.configure_denial(enforcer, {:resource, "arbor://fs/write/secure"})
-      
+
       # Deny specific capability
       PermissiveSecurity.configure_denial(enforcer, {:capability, "cap_123"})
 
@@ -310,6 +310,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @doc """
   Configure the mock to deny specific operations.
   """
+  @spec configure_denial(map(), any()) :: :ok
   def configure_denial(state, denial_spec) do
     :ets.insert(state.denials, {denial_spec})
     :ok
@@ -318,6 +319,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @doc """
   Clear a denial configuration.
   """
+  @spec clear_denial(any(), map()) :: :ok | true
   def clear_denial(denial_spec, state) do
     :ets.delete(state.denials, denial_spec)
   end
@@ -325,6 +327,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @doc """
   Get all authorization attempts for verification.
   """
+  @spec get_authorization_attempts(map()) :: {:ok, [map()]}
   def get_authorization_attempts(state) do
     attempts =
       :ets.match_object(state.authorization_attempts, {:attempt, :_})
@@ -336,6 +339,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @doc """
   Clear all tracked data.
   """
+  @spec reset(map()) :: :ok
   def reset(state) do
     :ets.delete_all_objects(state.authorization_attempts)
     :ets.delete_all_objects(state.audit_events)

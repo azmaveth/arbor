@@ -17,23 +17,23 @@ defmodule Arbor.Persistence.Repo.Migrations.CreateEventsTable do
       add :trace_id, :string, size: 255
       add :global_position, :bigserial
       add :occurred_at, :utc_datetime_usec, null: false
-      
+
       timestamps(type: :utc_datetime_usec)
     end
-    
+
     # Primary index for event ordering within streams
-    create unique_index(:events, [:stream_id, :stream_version], 
+    create unique_index(:events, [:stream_id, :stream_version],
                        name: :events_stream_id_stream_version_index)
-    
+
     # Index for querying by aggregate
     create index(:events, [:aggregate_id, :aggregate_type])
-    
+
     # Index for global event ordering
     create index(:events, [:global_position])
-    
+
     # Index for temporal queries
     create index(:events, [:occurred_at])
-    
+
     # Index for correlation tracking
     create index(:events, [:correlation_id])
     create index(:events, [:trace_id])

@@ -102,7 +102,7 @@ defmodule Arbor.Contracts.Core.Session do
         user_id: "user_123",
         purpose: "Code analysis"
       )
-      
+
       # Full configuration
       {:ok, session} = Session.new(
         user_id: "user_456",
@@ -130,7 +130,7 @@ defmodule Arbor.Contracts.Core.Session do
     defaults = session_defaults(now, attrs[:timeout])
     optional = extract_optional_fields(attrs)
 
-    attrs_with_defaults = Keyword.merge(defaults, required) |> Keyword.merge(optional)
+    attrs_with_defaults = Keyword.merge(Keyword.merge(defaults, required), optional)
 
     struct!(__MODULE__, attrs_with_defaults)
   end

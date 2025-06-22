@@ -11,15 +11,16 @@ defmodule ArborCli.GatewayClient.Connection do
   @doc """
   Start the connection pool.
   """
+  @spec start_pool(map()) :: {:ok, pid()} | {:error, any()}
   def start_pool(config) do
-    Logger.info("Starting connection pool", 
+    Logger.info("Starting connection pool",
       endpoint: config.gateway_endpoint,
       pool_size: config.connection_pool_size
     )
 
     # For now, just return a mock pool PID
     # In a real implementation, this would start an HTTP connection pool
-    pid = spawn(fn -> 
+    pid = spawn(fn ->
       Process.sleep(:infinity)
     end)
 
@@ -29,6 +30,7 @@ defmodule ArborCli.GatewayClient.Connection do
   @doc """
   Make an HTTP request using the connection pool.
   """
+  @spec request(pid(), atom(), String.t(), binary() | nil, list()) :: {:ok, map()} | {:error, map()}
   def request(_pool, method, path, body \\ nil, _headers \\ []) do
     Logger.debug("Making HTTP request",
       method: method,
@@ -47,6 +49,7 @@ defmodule ArborCli.GatewayClient.Connection do
 
   # Private functions - simulate HTTP responses
 
+  @spec simulate_get_response(String.t()) :: {:ok, map()}
   defp simulate_get_response("/sessions" <> _) do
     {:ok, %{
       status: 200,
@@ -57,6 +60,7 @@ defmodule ArborCli.GatewayClient.Connection do
     }}
   end
 
+  @spec simulate_get_response(String.t()) :: {:ok, map()}
   defp simulate_get_response("/agents" <> _) do
     {:ok, %{
       status: 200,
@@ -67,6 +71,7 @@ defmodule ArborCli.GatewayClient.Connection do
     }}
   end
 
+  @spec simulate_get_response(String.t()) :: {:ok, map()}
   defp simulate_get_response(_path) do
     {:ok, %{
       status: 200,
@@ -74,20 +79,22 @@ defmodule ArborCli.GatewayClient.Connection do
     }}
   end
 
+  @spec simulate_post_response(String.t(), binary() | nil) :: {:ok, map()}
   defp simulate_post_response("/sessions", _body) do
     session_id = "session_#{System.unique_integer([:positive])}"
     {:ok, %{
       status: 201,
       body: Jason.encode!(%{
         session_id: session_id,
-        created_at: DateTime.utc_now() |> DateTime.to_iso8601()
+        created_at: DateTime.to_iso8601(DateTime.utc_now())
       })
     }}
   end
 
+  @spec simulate_post_response(String.t(), binary()) :: {:ok, map()} | {:error, map()}
   defp simulate_post_response("/commands", body) do
     execution_id = "exec_#{System.unique_integer([:positive])}"
-    
+
     # Parse command from body
     case Jason.decode(body) do
       {:ok, command_data} ->
@@ -99,7 +106,7 @@ defmodule ArborCli.GatewayClient.Connection do
             command: command_data
           })
         }}
-      
+
       {:error, _} ->
         {:error, %{
           status: 400,
@@ -108,6 +115,7 @@ defmodule ArborCli.GatewayClient.Connection do
     end
   end
 
+  @spec simulate_post_response(String.t(), binary() | nil) :: {:ok, map()}
   defp simulate_post_response(_path, _body) do
     {:ok, %{
       status: 200,
@@ -115,6 +123,7 @@ defmodule ArborCli.GatewayClient.Connection do
     }}
   end
 
+  @spec simulate_put_response(String.t(), binary() | nil) :: {:ok, map()}
   defp simulate_put_response(_path, _body) do
     {:ok, %{
       status: 200,
@@ -122,6 +131,7 @@ defmodule ArborCli.GatewayClient.Connection do
     }}
   end
 
+  @spec simulate_delete_response(String.t()) :: {:ok, map()}
   defp simulate_delete_response(_path) do
     {:ok, %{
       status: 200,

@@ -6,7 +6,7 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
   use ExUnit.Case, async: false
 
-  alias Arbor.Core.{HordeSupervisor, AgentReconciler}
+  alias Arbor.Core.{AgentReconciler, HordeRegistry, HordeSupervisor}
 
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor
@@ -33,7 +33,9 @@ defmodule Arbor.Core.BasicSupervisionTest do
           Enum.each(agents, fn agent ->
             HordeSupervisor.stop_agent(agent.id)
           end)
-        _ -> :ok
+
+        _ ->
+          :ok
       end
     end)
 
@@ -86,7 +88,7 @@ defmodule Arbor.Core.BasicSupervisionTest do
       assert :ok = HordeSupervisor.stop_agent(agent_id)
 
       # Should be unregistered
-      assert {:error, :not_registered} = Arbor.Core.HordeRegistry.lookup_agent_name(agent_id)
+      assert {:error, :not_registered} = HordeRegistry.lookup_agent_name(agent_id)
     end
 
     test "permanent agents restart automatically via AgentReconciler" do
@@ -101,16 +103,17 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
       # Clean up any existing agent and registrations first
       _ = HordeSupervisor.stop_agent(agent_id)
-      _ = Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
+      _ = HordeRegistry.unregister_agent_name(agent_id)
       :timer.sleep(200)
 
       # Check what's in the registry before starting
-      case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
+      case HordeRegistry.lookup_agent_name(agent_id) do
         {:ok, existing_pid, _} ->
           IO.puts("Warning: Agent #{agent_id} still registered with PID #{inspect(existing_pid)}")
           # Force unregister
-          Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
+          HordeRegistry.unregister_agent_name(agent_id)
           :timer.sleep(100)
+
         {:error, :not_registered} ->
           :ok
       end
@@ -191,10 +194,12 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
   # Helper functions
 
+  @spec wait_for_registration(String.t(), non_neg_integer()) ::
+          {:ok, pid(), map()} | {:error, :timeout}
   defp wait_for_registration(agent_id, timeout \\ 1000) do
     # Poll for registration to handle async registration logic
     Enum.find_value(0..div(timeout, 50), fn _ ->
-      case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
+      case HordeRegistry.lookup_agent_name(agent_id) do
         {:ok, _, _} = result ->
           result
 
@@ -205,18 +210,21 @@ defmodule Arbor.Core.BasicSupervisionTest do
     end) || {:error, :timeout}
   end
 
+  @spec ensure_horde_infrastructure() :: :ok
   defp ensure_horde_infrastructure do
     # Start Horde.Registry if not running
     case GenServer.whereis(@registry_name) do
       nil ->
         {:ok, _} =
-          start_supervised({Horde.Registry,
-           [
-             name: @registry_name,
-             keys: :unique,
-             members: :auto,
-             delta_crdt_options: [sync_interval: 100]
-           ]})
+          start_supervised(
+            {Horde.Registry,
+             [
+               name: @registry_name,
+               keys: :unique,
+               members: :auto,
+               delta_crdt_options: [sync_interval: 100]
+             ]}
+          )
 
       _pid ->
         :ok
@@ -226,15 +234,17 @@ defmodule Arbor.Core.BasicSupervisionTest do
     case GenServer.whereis(@supervisor_name) do
       nil ->
         {:ok, _} =
-          start_supervised({Horde.DynamicSupervisor,
-           [
-             name: @supervisor_name,
-             strategy: :one_for_one,
-             distribution_strategy: Horde.UniformRandomDistribution,
-             process_redistribution: :active,
-             members: :auto,
-             delta_crdt_options: [sync_interval: 100]
-           ]})
+          start_supervised(
+            {Horde.DynamicSupervisor,
+             [
+               name: @supervisor_name,
+               strategy: :one_for_one,
+               distribution_strategy: Horde.UniformRandomDistribution,
+               process_redistribution: :active,
+               members: :auto,
+               delta_crdt_options: [sync_interval: 100]
+             ]}
+          )
 
       _pid ->
         :ok
@@ -244,7 +254,9 @@ defmodule Arbor.Core.BasicSupervisionTest do
     case GenServer.whereis(HordeSupervisor) do
       nil ->
         {:ok, _} = start_supervised({HordeSupervisor, []})
-      _pid -> :ok
+
+      _pid ->
+        :ok
     end
 
     # Wait for Horde components to stabilize
@@ -256,10 +268,12 @@ end
 defmodule BasicTestAgent do
   use Arbor.Core.AgentBehavior
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map(), {:continue, :register_with_supervisor}}
   def init(args) do
     agent_id = Keyword.get(args, :agent_id)
 
@@ -281,23 +295,28 @@ defmodule BasicTestAgent do
     }
   end
 
+  @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
 
+  @spec handle_call(:prepare_checkpoint, GenServer.from(), map()) :: {:reply, map(), map()}
   def handle_call(:prepare_checkpoint, _from, state) do
     # Return current state for checkpointing
     {:reply, state, state}
   end
 
+  @spec handle_cast({:set_value, any()}, map()) :: {:noreply, map()}
   def handle_cast({:set_value, value}, state) do
     {:noreply, %{state | value: value}}
   end
 
+  @spec handle_info(any(), map()) :: {:noreply, map()}
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
+  @spec terminate(any(), map()) :: :ok
   def terminate(_reason, _state) do
     # No self-cleanup - handled by supervisor
     :ok

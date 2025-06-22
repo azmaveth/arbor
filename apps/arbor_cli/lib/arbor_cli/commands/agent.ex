@@ -11,9 +11,10 @@ defmodule ArborCli.Commands.Agent do
   All agent commands work through the Gateway API and require an active session.
   """
 
-  require Logger
-  alias ArborCli.GatewayClient
   alias Arbor.Contracts.Client.Command
+  alias ArborCli.GatewayClient
+  
+  require Logger
 
   @doc """
   Execute an agent subcommand.
@@ -36,6 +37,7 @@ defmodule ArborCli.Commands.Agent do
   - `{:ok, result}` - Command executed successfully
   - `{:error, reason}` - Command failed
   """
+  @spec execute(atom(), [any()], map()) :: {:ok, map()} | {:error, any()}
   def execute(subcommand, args, options) do
     Logger.info("Executing agent command",
       subcommand: subcommand,
@@ -72,6 +74,7 @@ defmodule ArborCli.Commands.Agent do
 
   # Subcommand implementations
 
+  @spec execute_spawn(String.t(), [atom()], map()) :: {:ok, map()} | {:error, any()}
   defp execute_spawn(session_id, [agent_type], options) do
     Logger.info("Spawning agent", type: agent_type, options: options)
 
@@ -109,10 +112,12 @@ defmodule ArborCli.Commands.Agent do
     end
   end
 
+  @spec execute_spawn(String.t(), [any()], map()) :: {:error, tuple()}
   defp execute_spawn(_session_id, args, _options) do
     {:error, {:invalid_args, "spawn requires exactly one argument (agent type)", args}}
   end
 
+  @spec execute_list(String.t(), [any()], map()) :: {:ok, map()} | {:error, any()}
   defp execute_list(session_id, _args, options) do
     Logger.info("Listing agents", options: options)
 
@@ -148,6 +153,7 @@ defmodule ArborCli.Commands.Agent do
     end
   end
 
+  @spec execute_status(String.t(), [String.t()], map()) :: {:ok, map()} | {:error, any()}
   defp execute_status(session_id, [agent_id], _options) do
     Logger.info("Getting agent status", agent_id: agent_id)
 
@@ -184,10 +190,12 @@ defmodule ArborCli.Commands.Agent do
     end
   end
 
+  @spec execute_status(String.t(), [any()], map()) :: {:error, tuple()}
   defp execute_status(_session_id, args, _options) do
     {:error, {:invalid_args, "status requires exactly one argument (agent ID)", args}}
   end
 
+  @spec execute_exec(String.t(), [String.t(), ...], map()) :: {:ok, map()} | {:error, any()}
   defp execute_exec(session_id, [agent_id, command | command_args], _options) do
     Logger.info("Executing agent command",
       agent_id: agent_id,
@@ -240,12 +248,14 @@ defmodule ArborCli.Commands.Agent do
     end
   end
 
+  @spec execute_exec(String.t(), [any()], map()) :: {:error, tuple()}
   defp execute_exec(_session_id, args, _options) do
     {:error, {:invalid_args, "exec requires at least two arguments (agent ID and command)", args}}
   end
 
   # Helper functions
 
+  @spec build_spawn_params(atom(), map()) :: map()
   defp build_spawn_params(agent_type, options) do
     params = %{type: agent_type}
 
@@ -273,6 +283,7 @@ defmodule ArborCli.Commands.Agent do
     params
   end
 
+  @spec build_list_params(map()) :: map()
   defp build_list_params(options) do
     params = %{}
 

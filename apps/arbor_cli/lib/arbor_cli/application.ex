@@ -17,22 +17,22 @@ defmodule ArborCli.Application do
     children = [
       # Gateway client supervisor for connection pooling
       {ArborCli.GatewayClient.Supervisor, []},
-      
+
       # Session manager for CLI session lifecycle
       {ArborCli.SessionManager, []},
-      
+
       # Telemetry for CLI usage metrics (optional)
       {ArborCli.Telemetry, []}
     ]
 
     # Start supervision tree
     opts = [strategy: :one_for_one, name: ArborCli.Supervisor]
-    
+
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
         Logger.info("Arbor CLI application started", pid: inspect(pid))
         {:ok, pid}
-        
+
       {:error, reason} = error ->
         Logger.error("Failed to start Arbor CLI application", reason: reason)
         error

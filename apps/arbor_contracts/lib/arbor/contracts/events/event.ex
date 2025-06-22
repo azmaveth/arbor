@@ -100,7 +100,7 @@ defmodule Arbor.Contracts.Events.Event do
           resource_uri: "arbor://fs/read/docs"
         }
       )
-      
+
       # Event with full tracing
       {:ok, event} = Event.new(
         type: :task_completed,
@@ -154,7 +154,7 @@ defmodule Arbor.Contracts.Events.Event do
             capabilities: event.data.capabilities
           }
         end
-        
+
         def apply_event(%Event{type: :capability_granted} = event, state) do
           %{state | capabilities: [event.data.capability | state.capabilities]}
         end

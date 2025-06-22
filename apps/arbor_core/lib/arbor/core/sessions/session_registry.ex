@@ -29,7 +29,7 @@ defmodule Arbor.Core.SessionRegistry do
 
   Session metadata stored in the registry includes:
   - `:created_at` - When the session was created
-  - `:created_by` - Entity that created the session  
+  - `:created_by` - Entity that created the session
   - `:timeout` - Session timeout in milliseconds
   - `:metadata` - Custom session metadata
   """
@@ -39,6 +39,7 @@ defmodule Arbor.Core.SessionRegistry do
   @doc """
   Child specification for supervisor.
   """
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
     %{
       id: __MODULE__,
@@ -49,9 +50,10 @@ defmodule Arbor.Core.SessionRegistry do
     }
   end
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
     name = opts[:name] || __MODULE__
-    
+
     horde_opts = [
       name: name,
       keys: :unique,
@@ -66,13 +68,15 @@ defmodule Arbor.Core.SessionRegistry do
 
   @doc """
   Register a session with metadata.
-  
+
   This is called automatically by Session processes during initialization.
   """
   @spec register_session(Types.session_id(), pid(), map()) :: :ok | {:error, term()}
   def register_session(session_id, pid, metadata) do
     case Horde.Registry.register(__MODULE__, session_id, metadata) do
-      {:ok, _} -> :ok
+      {:ok, _} ->
+        :ok
+
       {:error, {:already_registered, existing_pid}} ->
         # Handle registration conflict
         if existing_pid == pid do
@@ -87,7 +91,7 @@ defmodule Arbor.Core.SessionRegistry do
 
   @doc """
   Unregister a session.
-  
+
   This is called automatically when sessions terminate, but can also
   be called explicitly for cleanup.
   """
@@ -112,6 +116,7 @@ defmodule Arbor.Core.SessionRegistry do
           unregister_session(session_id)
           {:error, :not_found}
         end
+
       [] ->
         {:error, :not_found}
     end
@@ -120,8 +125,10 @@ defmodule Arbor.Core.SessionRegistry do
   @doc """
   List all active sessions across the cluster.
   """
-  @spec list_all_sessions() :: [%{id: Types.session_id(), pid: pid(), metadata: map(), node: node()}]
-  def list_all_sessions() do
+  @spec list_all_sessions() :: [
+          %{id: Types.session_id(), pid: pid(), metadata: map(), node: node()}
+        ]
+  def list_all_sessions do
     # Get all registered sessions using a match pattern
     __MODULE__
     |> Horde.Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
@@ -141,7 +148,7 @@ defmodule Arbor.Core.SessionRegistry do
   Get session count across the cluster.
   """
   @spec session_count() :: non_neg_integer()
-  def session_count() do
+  def session_count do
     __MODULE__
     |> Horde.Registry.select([{{:"$1", :"$2", :"$3"}, [], [true]}])
     |> length()
@@ -158,6 +165,7 @@ defmodule Arbor.Core.SessionRegistry do
         # This creates a brief window where the session isn't visible
         unregister_session(session_id)
         register_session(session_id, pid, new_metadata)
+
       {:error, :not_found} ->
         {:error, :not_found}
     end

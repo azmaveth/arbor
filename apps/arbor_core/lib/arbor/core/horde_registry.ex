@@ -86,7 +86,7 @@ defmodule Arbor.Core.HordeRegistry do
   def register_with_ttl(_name, _pid, _ttl, _metadata, _state) do
     # TTL functionality temporarily disabled
     # Needs distributed timer solution (e.g., using Process.send_after with node tracking)
-    # 
+    #
     # TODO: To implement TTL support:
     # 1. Create a distributed timer service using Horde.DynamicSupervisor to manage timer processes
     # 2. Timer processes should monitor the registered process and unregister after TTL expires
@@ -99,7 +99,6 @@ defmodule Arbor.Core.HordeRegistry do
 
   @impl RegistryContract
   def update_metadata(name, new_metadata, _state \\ nil) do
-
     case lookup_name(name) do
       {:ok, {pid, old_metadata}} ->
         # Simply re-register with the merged metadata. Horde will handle the update.
@@ -116,7 +115,7 @@ defmodule Arbor.Core.HordeRegistry do
     # TODO: Group registrations store a PID and can become stale if an agent is
     # restarted. A robust solution would involve storing group membership in the
     # agent's spec and having the reconciler handle re-registration.
-    
+
     # Find agent ID for this PID
     case find_agent_by_pid(pid) do
       {:ok, agent_id} ->
@@ -213,8 +212,7 @@ defmodule Arbor.Core.HordeRegistry do
     all_entries = Horde.Registry.select(@registry_name, [{{:"$1", :"$2", :"$3"}, [], [:"$1"]}])
 
     agent_count =
-      all_entries
-      |> Enum.count(fn
+      Enum.count(all_entries, fn
         key when is_binary(key) -> true
         _ -> false
       end)
@@ -280,6 +278,7 @@ defmodule Arbor.Core.HordeRegistry do
 
   # Compatibility functions for existing code
 
+  @spec register_agent_name(String.t(), pid(), map()) :: {:ok, pid()} | {:error, atom()}
   def register_agent_name(agent_id, pid, metadata \\ %{}) do
     case register_name(agent_id, pid, metadata) do
       :ok -> {:ok, pid}
@@ -287,6 +286,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec lookup_agent_name(String.t()) :: {:ok, pid(), map()} | {:error, atom()}
   def lookup_agent_name(agent_id) do
     case lookup_name(agent_id) do
       {:ok, {pid, metadata}} -> {:ok, pid, metadata}
@@ -300,6 +300,7 @@ defmodule Arbor.Core.HordeRegistry do
   This is intended for system-level tools like the AgentReconciler that
   need to detect and clean up stale entries.
   """
+  @spec lookup_agent_name_raw(String.t()) :: {:ok, pid(), map()} | {:error, atom()}
   def lookup_agent_name_raw(agent_id) do
     case lookup_name_raw(agent_id) do
       {:ok, {pid, metadata}} -> {:ok, pid, metadata}
@@ -307,10 +308,12 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec unregister_agent_name(String.t()) :: :ok | {:error, atom()}
   def unregister_agent_name(agent_id) do
     unregister_name(agent_id)
   end
 
+  @spec list_names() :: [{String.t(), pid(), map()}]
   def list_names() do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # This function should be used with caution in production. For scalable listing,
@@ -328,6 +331,7 @@ defmodule Arbor.Core.HordeRegistry do
     end)
   end
 
+  @spec get_registry_status() :: map()
   def get_registry_status() do
     members = Horde.Cluster.members(@registry_name)
     {:ok, count} = count(nil)
@@ -348,6 +352,7 @@ defmodule Arbor.Core.HordeRegistry do
 
   # Group management helpers
 
+  @spec register_group(String.t(), String.t()) :: :ok | {:error, atom()}
   def register_group(group_name, agent_id) do
     # Look up the agent to get its PID
     case lookup_name(agent_id) do
@@ -359,6 +364,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec unregister_group(String.t(), String.t()) :: :ok | {:error, atom()}
   def unregister_group(group_name, agent_id) do
     # Look up the agent to get its PID
     case lookup_name(agent_id) do
@@ -370,6 +376,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec list_group_members(String.t()) :: {:ok, [String.t()]} | {:error, atom()}
   def list_group_members(group_name) do
     case lookup_group(group_name) do
       {:ok, members} ->
@@ -391,6 +398,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec list_agent_groups(String.t()) :: {:ok, [String.t()]} | {:error, atom()}
   def list_agent_groups(agent_id) do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # To optimize, consider storing an agent's group memberships within its own
@@ -477,6 +485,7 @@ defmodule Arbor.Core.HordeRegistry do
   @doc """
   Join a node to the registry cluster.
   """
+  @spec join_registry(node()) :: :ok
   def join_registry(node) do
     Horde.Cluster.set_members(@registry_name, [node() | [node]])
     :ok
@@ -485,6 +494,7 @@ defmodule Arbor.Core.HordeRegistry do
   @doc """
   Remove a node from the registry cluster.
   """
+  @spec leave_registry(node()) :: :ok
   def leave_registry(node) do
     current_members = Horde.Cluster.members(@registry_name)
     new_members = List.delete(current_members, node)

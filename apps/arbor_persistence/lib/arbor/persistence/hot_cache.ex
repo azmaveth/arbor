@@ -2,8 +2,8 @@ defmodule Arbor.Persistence.HotCache do
   @moduledoc """
   ETS-based hot storage cache for session state and fast recovery.
 
-  This module implements the "hot tier" of the multi-tiered persistence 
-  architecture. It provides microsecond access times for frequently 
+  This module implements the "hot tier" of the multi-tiered persistence
+  architecture. It provides microsecond access times for frequently
   accessed data.
 
   ## Design Principles
@@ -21,10 +21,10 @@ defmodule Arbor.Persistence.HotCache do
   ## Usage
 
       {:ok, cache} = HotCache.start_link(table_name: :session_cache)
-      
+
       :ok = HotCache.put(cache, "session_123", session_state)
       {:ok, state} = HotCache.get(cache, "session_123")
-      
+
       :ok = HotCache.delete(cache, "session_123")
   """
 

@@ -11,12 +11,14 @@ defmodule ArborCli.GatewayClient.EventStream do
   @doc """
   Create an event stream for an execution.
   """
+  @spec create(String.t()) :: Enumerable.t()
   def create(execution_id) do
     Stream.unfold({execution_id, :started}, &generate_next_event/1)
   end
 
   # Private functions
 
+  @spec generate_next_event({String.t(), atom()} | nil) :: {map(), {String.t(), atom()} | nil} | nil
   defp generate_next_event({execution_id, :started}) do
     event = %{
       execution_id: execution_id,
@@ -25,13 +27,14 @@ defmodule ArborCli.GatewayClient.EventStream do
       message: "Command execution started",
       progress: 10
     }
-    
+
     # Simulate delay
     Process.sleep(500)
-    
+
     {event, {execution_id, :progress_25}}
   end
 
+  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
   defp generate_next_event({execution_id, :progress_25}) do
     event = %{
       execution_id: execution_id,
@@ -40,11 +43,12 @@ defmodule ArborCli.GatewayClient.EventStream do
       message: "Processing command...",
       progress: 25
     }
-    
+
     Process.sleep(800)
     {event, {execution_id, :progress_50}}
   end
 
+  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
   defp generate_next_event({execution_id, :progress_50}) do
     event = %{
       execution_id: execution_id,
@@ -53,11 +57,12 @@ defmodule ArborCli.GatewayClient.EventStream do
       message: "Executing on agents...",
       progress: 50
     }
-    
+
     Process.sleep(1200)
     {event, {execution_id, :progress_75}}
   end
 
+  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
   defp generate_next_event({execution_id, :progress_75}) do
     event = %{
       execution_id: execution_id,
@@ -66,11 +71,12 @@ defmodule ArborCli.GatewayClient.EventStream do
       message: "Collecting results...",
       progress: 75
     }
-    
+
     Process.sleep(600)
     {event, {execution_id, :completed}}
   end
 
+  @spec generate_next_event({String.t(), atom()}) :: {map(), nil}
   defp generate_next_event({execution_id, :completed}) do
     event = %{
       execution_id: execution_id,
@@ -84,10 +90,11 @@ defmodule ArborCli.GatewayClient.EventStream do
         execution_time_ms: 3200
       }
     }
-    
+
     {event, nil}  # End the stream
   end
 
+  @spec generate_next_event(nil) :: nil
   defp generate_next_event(nil) do
     nil  # Stream ended
   end

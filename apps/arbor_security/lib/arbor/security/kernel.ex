@@ -174,7 +174,7 @@ defmodule Arbor.Security.Kernel do
 
   @impl true
   def handle_call({:authorize, opts}, _from, state) do
-    request_id = :crypto.strong_rand_bytes(8) |> Base.encode16()
+    request_id = Base.encode16(:crypto.strong_rand_bytes(8))
     capability = Keyword.fetch!(opts, :capability)
     resource_uri = Keyword.fetch!(opts, :resource_uri)
     operation = Keyword.fetch!(opts, :operation)

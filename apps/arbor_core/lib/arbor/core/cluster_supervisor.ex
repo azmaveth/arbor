@@ -18,13 +18,13 @@ defmodule Arbor.Core.ClusterSupervisor do
         restart_strategy: :permanent
       }
       ClusterSupervisor.start_agent(agent_spec)
-      
+
       # Agent will automatically restart on failures
       # and migrate to healthy nodes if current node fails
-      
+
       # Get agent status
       {:ok, info} = ClusterSupervisor.get_agent_info("agent-123")
-      
+
       # Restart agent with state recovery
       {:ok, {new_pid, recovery_status}} = ClusterSupervisor.restore_agent("agent-123")
 
@@ -37,8 +37,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   and runtime configuration.
   """
 
-  alias Arbor.Types
   alias Arbor.Contracts.Cluster.Supervisor, as: SupervisorContract
+  alias Arbor.Types
 
   @type agent_spec :: SupervisorContract.agent_spec()
   @type supervisor_error :: SupervisorContract.supervisor_error()
@@ -171,21 +171,21 @@ defmodule Arbor.Core.ClusterSupervisor do
 
   @doc """
   Restart an agent with state recovery if available.
-  
+
   This function restarts the agent and attempts to recover its state
   if the agent supports checkpointing. The agent will be restarted
   on an optimal node in the cluster.
-  
+
   ## Process
-  
+
   1. Stop the current agent process gracefully
   2. Attempt to recover agent state from checkpoints
   3. Start agent on optimal node (determined by Horde)
   4. Restore state if recovery was successful
   5. Registry entries are updated automatically
-  
+
   ## Returns
-  
+
   - `{:ok, {new_pid, recovery_status}}` - Agent restored successfully
     - recovery_status can be :recovered, :no_checkpoint, or :fresh_start
   - `{:error, :agent_not_found}` - Agent doesn't exist
@@ -195,7 +195,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec restore_agent(Types.agent_id()) :: {:ok, {pid(), atom()}} | {:error, supervisor_error()}
   def restore_agent(agent_id) do
     supervisor_impl = get_supervisor_impl()
-    
+
     supervisor_impl.restore_agent(agent_id)
   end
 
@@ -373,7 +373,7 @@ defmodule Arbor.Core.ClusterSupervisor do
         Arbor.Core.HordeSupervisor
 
       :auto ->
-        if Mix.env() == :test do
+        if Application.get_env(:arbor_core, :env) == :test do
           Arbor.Test.Mocks.LocalSupervisor
         else
           Arbor.Core.HordeSupervisor

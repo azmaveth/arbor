@@ -90,7 +90,7 @@ defmodule Arbor.Contracts.Session.Manager do
         metadata: %{project_id: "proj_456"},
         timeout: 3_600_000  # 1 hour
       }
-      
+
       {:ok, session} = SessionManager.create_session(params, state)
   """
   @callback create_session(

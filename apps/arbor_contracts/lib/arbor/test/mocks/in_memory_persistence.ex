@@ -14,12 +14,12 @@ defmodule Arbor.Test.Mocks.InMemoryPersistence do
 
       defmodule MyTest do
         use ExUnit.Case
-        
+
         setup do
           {:ok, store} = Arbor.Test.Mocks.InMemoryPersistence.init(table_name: :test_store)
           {:ok, store: store}
         end
-        
+
         test "append and read events", %{store: store} do
           events = [%Event{type: :test_event, data: %{value: 1}}]
           {:ok, version} = InMemoryPersistence.append_events("stream_1", events, -1, store)
@@ -33,7 +33,7 @@ defmodule Arbor.Test.Mocks.InMemoryPersistence do
 
       # Configure to fail on next append
       :ets.insert(store.config_table, {:fail_next_append, true})
-      
+
       # Configure to simulate version conflict
       :ets.insert(store.config_table, {:simulate_version_conflict, true})
 

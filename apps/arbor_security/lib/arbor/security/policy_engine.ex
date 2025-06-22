@@ -201,10 +201,12 @@ defmodule Arbor.Security.Policies.RateLimiter do
   # tokens per second
   @default_refill_rate 10
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @spec check_rate(String.t(), atom()) :: {:ok, map()} | {:error, :rate_limit_exceeded}
   def check_rate(principal_id, operation) do
     GenServer.call(__MODULE__, {:check_rate, principal_id, operation})
   end
@@ -292,12 +294,14 @@ defmodule Arbor.Security.Policies.TimeRestrictions do
     }
   }
 
+  @spec get_restrictions(String.t()) :: map() | nil
   def get_restrictions(resource_uri) do
     Enum.find_value(@restrictions, fn {prefix, restrictions} ->
       if String.starts_with?(resource_uri, prefix), do: restrictions
     end)
   end
 
+  @spec allowed_now?(map(), any()) :: boolean()
   def allowed_now?(restrictions, _context) do
     now = DateTime.utc_now()
     day_of_week = Date.day_of_week(now)
@@ -324,6 +328,7 @@ defmodule Arbor.Security.Policies.ResourcePolicies do
   Resource-specific security policies.
   """
 
+  @spec sensitive_patterns() :: [Regex.t()]
   def sensitive_patterns do
     [
       ~r/\/secrets?\//,
@@ -349,14 +354,17 @@ defmodule Arbor.Security.Policies.ResourcePolicies do
     "arbor://tool/execute/" => 3
   }
 
+  @spec sensitive?(String.t()) :: boolean()
   def sensitive?(resource_uri) do
     Enum.any?(sensitive_patterns(), &Regex.match?(&1, resource_uri))
   end
 
+  @spec dangerous_tool?(String.t()) :: boolean()
   def dangerous_tool?(resource_uri) do
     resource_uri in @dangerous_tools
   end
 
+  @spec required_security_level(String.t()) :: integer()
   def required_security_level(resource_uri) do
     # Find the most specific matching pattern
     @security_levels
