@@ -25,8 +25,8 @@ defmodule Arbor.Core.ClusterSupervisor do
       # Get agent status
       {:ok, info} = ClusterSupervisor.get_agent_info("agent-123")
       
-      # Manually migrate agent to different node
-      ClusterSupervisor.migrate_agent("agent-123", :"other@node")
+      # Restart agent with state recovery
+      {:ok, {new_pid, recovery_status}} = ClusterSupervisor.restore_agent("agent-123")
 
   ## Implementation Strategy
 
@@ -73,12 +73,11 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec start_agent(agent_spec()) :: {:ok, pid()} | {:error, supervisor_error()}
   def start_agent(agent_spec) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
     # Ensure required fields and set defaults
     validated_spec = validate_and_normalize_spec(agent_spec)
 
-    case supervisor_impl.start_agent(validated_spec, state) do
+    case supervisor_impl.start_agent(validated_spec) do
       {:ok, pid} -> {:ok, pid}
       {:error, reason} -> {:error, reason}
     end
@@ -103,9 +102,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec stop_agent(Types.agent_id(), timeout()) :: :ok | {:error, supervisor_error()}
   def stop_agent(agent_id, timeout \\ 5000) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.stop_agent(agent_id, timeout, state)
+    supervisor_impl.stop_agent(agent_id, timeout)
   end
 
   @doc """
@@ -122,9 +120,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec restart_agent(Types.agent_id()) :: {:ok, pid()} | {:error, supervisor_error()}
   def restart_agent(agent_id) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.restart_agent(agent_id, state)
+    supervisor_impl.restart_agent(agent_id)
   end
 
   @doc """
@@ -151,9 +148,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec get_agent_info(Types.agent_id()) :: {:ok, map()} | {:error, supervisor_error()}
   def get_agent_info(agent_id) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.get_agent_info(agent_id, state)
+    supervisor_impl.get_agent_info(agent_id)
   end
 
   @doc """
@@ -169,38 +165,38 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec list_agents() :: {:ok, [map()]} | {:error, supervisor_error()}
   def list_agents() do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.list_agents(state)
+    supervisor_impl.list_agents()
   end
 
   @doc """
-  Move an agent to a specific node.
-
-  Triggers migration of an agent from its current node to the target node.
-  Agent state is preserved during migration.
-
-  ## Migration Process
-
-  1. Agent state is extracted via handoff
-  2. Agent is stopped on current node
-  3. Agent is started on target node
-  4. State is restored via takeover
-  5. Registry entries are updated
-
+  Restart an agent with state recovery if available.
+  
+  This function restarts the agent and attempts to recover its state
+  if the agent supports checkpointing. The agent will be restarted
+  on an optimal node in the cluster.
+  
+  ## Process
+  
+  1. Stop the current agent process gracefully
+  2. Attempt to recover agent state from checkpoints
+  3. Start agent on optimal node (determined by Horde)
+  4. Restore state if recovery was successful
+  5. Registry entries are updated automatically
+  
   ## Returns
-
-  - `{:ok, new_pid}` - Migration successful
+  
+  - `{:ok, {new_pid, recovery_status}}` - Agent restored successfully
+    - recovery_status can be :recovered, :no_checkpoint, or :fresh_start
   - `{:error, :agent_not_found}` - Agent doesn't exist
-  - `{:error, :node_not_available}` - Target node not in cluster
-  - `{:error, :migration_failed}` - Migration process failed
+  - `{:error, :no_spec}` - No agent specification found
+  - `{:error, reason}` - Restoration failed
   """
-  @spec migrate_agent(Types.agent_id(), node()) :: {:ok, pid()} | {:error, supervisor_error()}
-  def migrate_agent(agent_id, target_node) do
+  @spec restore_agent(Types.agent_id()) :: {:ok, {pid(), atom()}} | {:error, supervisor_error()}
+  def restore_agent(agent_id) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
-
-    supervisor_impl.migrate_agent(agent_id, target_node, state)
+    
+    supervisor_impl.restore_agent(agent_id)
   end
 
   @doc """
@@ -223,9 +219,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec update_agent_spec(Types.agent_id(), map()) :: :ok | {:error, supervisor_error()}
   def update_agent_spec(agent_id, updates) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.update_agent_spec(agent_id, updates, state)
+    supervisor_impl.update_agent_spec(agent_id, updates)
   end
 
   @doc """
@@ -248,9 +243,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec health_metrics() :: {:ok, map()} | {:error, supervisor_error()}
   def health_metrics() do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.health_metrics(state)
+    supervisor_impl.health_metrics()
   end
 
   @doc """
@@ -279,16 +273,15 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec set_event_handler(atom(), function()) :: :ok | {:error, term()}
   def set_event_handler(event_type, callback) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.set_event_handler(event_type, callback, state)
+    supervisor_impl.set_event_handler(event_type, callback)
   end
 
   @doc """
   Extract agent state for handoff during migration.
 
-  Low-level function for state management during agent migration.
-  Usually called automatically during migrate_agent/2.
+  Low-level function for state management during agent restoration.
+  Usually called automatically during restore_agent/1.
 
   ## Returns
 
@@ -298,16 +291,15 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec extract_agent_state(Types.agent_id()) :: {:ok, any()} | {:error, term()}
   def extract_agent_state(agent_id) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.handle_agent_handoff(agent_id, :handoff, nil, state)
+    supervisor_impl.extract_agent_state(agent_id)
   end
 
   @doc """
   Restore agent state after takeover during migration.
 
-  Low-level function for state management during agent migration.
-  Usually called automatically during migrate_agent/2.
+  Low-level function for state management during agent restoration.
+  Usually called automatically during restore_agent/1.
 
   ## Returns
 
@@ -317,9 +309,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   @spec restore_agent_state(Types.agent_id(), any()) :: {:ok, any()} | {:error, term()}
   def restore_agent_state(agent_id, agent_state) do
     supervisor_impl = get_supervisor_impl()
-    state = get_supervisor_state()
 
-    supervisor_impl.handle_agent_handoff(agent_id, :takeover, agent_state, state)
+    supervisor_impl.restore_agent_state(agent_id, agent_state)
   end
 
   # Convenience functions for specific agent types

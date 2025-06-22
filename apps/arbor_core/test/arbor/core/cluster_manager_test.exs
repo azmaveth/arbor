@@ -8,10 +8,10 @@ defmodule Arbor.Core.ClusterManagerTest do
     Application.put_env(:arbor_core, :registry_impl, :mock)
     Application.put_env(:arbor_core, :supervisor_impl, :mock)
 
-    # Ensure ClusterManager is started
+    # Ensure ClusterManager is started under test supervisor
     case Process.whereis(ClusterManager) do
       nil ->
-        {:ok, _pid} = ClusterManager.start_link([])
+        start_supervised!(ClusterManager)
 
       _pid ->
         :ok

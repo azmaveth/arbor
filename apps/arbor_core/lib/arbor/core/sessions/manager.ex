@@ -47,13 +47,96 @@ defmodule Arbor.Core.Sessions.Manager do
   use GenServer
   require Logger
 
+  @behaviour Arbor.Contracts.Session.Manager
+
   alias Arbor.Core.Sessions.Session
   alias Arbor.Core.ClusterSupervisor
   alias Arbor.Types
 
-  @table :arbor_sessions
+  # Removed @table - using Horde.Registry instead
 
-  # Client API
+  # Contract-compliant API (Adapter Pattern)
+
+  @impl Arbor.Contracts.Session.Manager
+  def create_session(session_params, manager_pid) when is_pid(manager_pid) do
+    case GenServer.call(manager_pid, {:create_session, session_params}) do
+      {:ok, session_struct} ->
+        {:ok, session_struct}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def get_session(session_id, manager_pid) when is_pid(manager_pid) do
+    case GenServer.call(manager_pid, {:get_session, session_id}) do
+      {:ok, session_struct} ->
+        {:ok, session_struct}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def terminate_session(session_id, reason, manager_pid) when is_pid(manager_pid) do
+    case GenServer.call(manager_pid, {:terminate_session, session_id, reason}) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def list_sessions(filters, manager_pid) when is_pid(manager_pid) do
+    case GenServer.call(manager_pid, {:list_sessions, filters}, 10_000) do # Extended timeout
+      {:ok, session_structs} ->
+        {:ok, session_structs}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Placeholder implementations for remaining callbacks
+  @impl Arbor.Contracts.Session.Manager
+  def spawn_agent(_session_id, _agent_type, _agent_config, manager_pid) when is_pid(manager_pid) do
+    {:error, :not_implemented}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def list_agents(_session_id, manager_pid) when is_pid(manager_pid) do
+    {:ok, []}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def grant_session_capability(_session_id, _capability, manager_pid) when is_pid(manager_pid) do
+    :ok
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def update_session_context(_session_id, _key, _value, manager_pid) when is_pid(manager_pid) do
+    :ok
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def get_session_context(_session_id, manager_pid) when is_pid(manager_pid) do
+    {:ok, %{}}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def update_session(_session_id, _updates, manager_pid) when is_pid(manager_pid) do
+    {:error, :not_implemented}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def health_check(_session_id, manager_pid) when is_pid(manager_pid) do
+    {:ok, %{status: :healthy}}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def handle_expired_sessions(manager_pid) when is_pid(manager_pid) do
+    {:ok, 0}
+  end
+
+  # Legacy Client API (for backward compatibility)
 
   @doc """
   Start the Session Manager.
@@ -93,9 +176,10 @@ defmodule Arbor.Core.Sessions.Manager do
         timeout: 3_600_000  # 1 hour
       )
   """
+  @deprecated "Use create_session/2 instead"
   @spec create_session(keyword()) :: {:ok, Types.session_id(), pid()} | {:error, term()}
   def create_session(opts \\ []) do
-    GenServer.call(__MODULE__, {:create_session, opts})
+    GenServer.call(__MODULE__, {:create_session_legacy, opts})
   end
 
   @doc """
@@ -124,18 +208,25 @@ defmodule Arbor.Core.Sessions.Manager do
   """
   @spec get_session(Types.session_id()) :: {:ok, pid(), map()} | {:error, :not_found}
   def get_session(session_id) do
-    case :ets.lookup(@table, session_id) do
-      [{^session_id, pid, metadata}] when is_pid(pid) ->
-        if Process.alive?(pid) do
-          {:ok, pid, metadata}
-        else
-          # Clean up dead session
-          :ets.delete(@table, session_id)
-          {:error, :not_found}
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        # For tests, lookup in mock registry
+        case Registry.lookup(Arbor.Core.MockSessionRegistry, session_id) do
+          [{pid, metadata}] when is_pid(pid) ->
+            if Process.alive?(pid) do
+              {:ok, pid, metadata}
+            else
+              {:error, :not_found}
+            end
+          [] ->
+            {:error, :not_found}
         end
-
-      [] ->
-        {:error, :not_found}
+      _ ->
+        # For production, use distributed SessionRegistry
+        case Arbor.Core.SessionRegistry.lookup_session(session_id) do
+          {:ok, {pid, metadata}} -> {:ok, pid, metadata}
+          {:error, :not_found} -> {:error, :not_found}
+        end
     end
   end
 
@@ -159,17 +250,24 @@ defmodule Arbor.Core.Sessions.Manager do
   """
   @spec list_sessions() :: [map()]
   def list_sessions do
-    :ets.tab2list(@table)
-    |> Enum.map(fn {id, pid, metadata} ->
-      %{
-        id: id,
-        pid: pid,
-        metadata: metadata,
-        alive: Process.alive?(pid),
-        node: node(pid)
-      }
-    end)
-    |> Enum.filter(& &1.alive)
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        # For tests, list from mock registry
+        Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
+        |> Enum.map(fn {id, pid, metadata} ->
+          %{
+            id: id,
+            pid: pid,
+            metadata: metadata,
+            alive: Process.alive?(pid),
+            node: node(pid)
+          }
+        end)
+        |> Enum.filter(& &1.alive)
+      _ ->
+        # For production, use distributed SessionRegistry
+        Arbor.Core.SessionRegistry.list_all_sessions()
+    end
   end
 
   @doc """
@@ -274,9 +372,6 @@ defmodule Arbor.Core.Sessions.Manager do
   def init(opts) do
     Logger.info("Starting Arbor Session Manager", opts: opts)
 
-    # Create ETS table for fast session lookups
-    :ets.new(@table, [:named_table, :public, read_concurrency: true])
-
     # Subscribe to session events
     Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "sessions")
 
@@ -285,7 +380,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
     {:ok,
      %{
-       sessions: %{},
+       monitor_refs: %{},  # Maps monitor ref -> session_id
        stats: %{
          total_created: 0,
          total_ended: 0,
@@ -294,8 +389,68 @@ defmodule Arbor.Core.Sessions.Manager do
      }}
   end
 
+  # Contract-compliant GenServer handlers
   @impl true
-  def handle_call({:create_session, opts}, _from, state) do
+  def handle_call({:create_session, session_params}, _from, state) do
+    # Transform session_params to internal opts format
+    opts = [
+      created_by: Map.get(session_params, :user_id, "unknown"),
+      metadata: Map.put(session_params, :purpose, Map.get(session_params, :purpose, "General session")),
+      timeout: Map.get(session_params, :timeout, 3_600_000)
+    ]
+    
+    case create_session_internal(opts, state) do
+      {:ok, session_id, pid, new_state} ->
+        # Get the session struct for contract compliance
+        case Session.to_struct(pid) do
+          {:ok, session_struct} ->
+            {:reply, {:ok, session_struct}, new_state}
+          {:error, reason} ->
+            # Clean up the session if struct creation failed
+            cleanup_failed_session(session_id, pid)
+            {:reply, {:error, reason}, state}
+        end
+      {:error, reason, new_state} ->
+        {:reply, {:error, reason}, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call({:get_session, session_id}, _from, state) do
+    case lookup_session_pid(session_id) do
+      {:ok, pid} ->
+        case Session.to_struct(pid) do
+          {:ok, session_struct} ->
+            {:reply, {:ok, session_struct}, state}
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:terminate_session, session_id, _reason}, _from, state) do
+    case end_session_internal(session_id, state) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, reason, new_state} -> {:reply, {:error, reason}, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call({:list_sessions, filters}, _from, state) do
+    case list_sessions_with_structs(filters, state) do
+      {:ok, session_structs} ->
+        {:reply, {:ok, session_structs}, state}
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  # Legacy GenServer handlers
+  @impl true
+  def handle_call({:create_session_legacy, opts}, _from, state) do
     session_id = Types.generate_session_id()
     # 1 hour default
     timeout = opts[:timeout] || 3_600_000
@@ -328,18 +483,11 @@ defmodule Arbor.Core.Sessions.Manager do
           custom: opts[:metadata] || %{}
         }
 
-        :ets.insert(@table, {session_id, pid, session_metadata})
-
         # Monitor for cleanup
-        Process.monitor(pid)
+        ref = Process.monitor(pid)
 
-        # Track in manager state
-        new_sessions =
-          Map.put(state.sessions, session_id, %{
-            pid: pid,
-            metadata: session_metadata,
-            created_at: DateTime.utc_now()
-          })
+        # Track monitor ref for efficient DOWN handling
+        new_monitor_refs = Map.put(state.monitor_refs, ref, session_id)
 
         # Update stats
         new_stats = Map.update!(state.stats, :total_created, &(&1 + 1))
@@ -364,7 +512,7 @@ defmodule Arbor.Core.Sessions.Manager do
           metadata: opts[:metadata]
         )
 
-        {:reply, {:ok, session_id, pid}, %{state | sessions: new_sessions, stats: new_stats}}
+        {:reply, {:ok, session_id, pid}, %{state | monitor_refs: new_monitor_refs, stats: new_stats}}
 
       {:error, reason} ->
         Logger.error("Failed to create session", reason: reason)
@@ -386,16 +534,14 @@ defmodule Arbor.Core.Sessions.Manager do
         # Gracefully stop the session using cluster supervisor
         ClusterSupervisor.stop_agent(session_id)
 
-        # Remove from ETS (will be handled by :DOWN message as well)
-        :ets.delete(@table, session_id)
+        # Session cleanup will be handled by :DOWN message
 
-        # Update state
-        new_sessions = Map.delete(state.sessions, session_id)
+        # Update stats  
         new_stats = Map.update!(state.stats, :total_ended, &(&1 + 1))
 
         Logger.info("Session ended via manager", session_id: session_id)
 
-        {:reply, :ok, %{state | sessions: new_sessions, stats: new_stats}}
+        {:reply, :ok, %{state | stats: new_stats}}
 
       {:error, :not_found} ->
         {:reply, {:error, :not_found}, state}
@@ -404,7 +550,14 @@ defmodule Arbor.Core.Sessions.Manager do
 
   @impl true
   def handle_call(:get_stats, _from, state) do
-    active_sessions = :ets.info(@table, :size) || 0
+    # Get active session count from distributed registry
+    active_sessions = case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [true]}])
+        |> length()
+      _ ->
+        Arbor.Core.SessionRegistry.session_count()
+    end
 
     stats =
       Map.merge(state.stats, %{
@@ -416,14 +569,16 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
-    # Find and cleanup session
-    case :ets.match_object(@table, {:_, pid, :_}) do
-      [{session_id, ^pid, metadata}] ->
-        :ets.delete(@table, session_id)
-
+  def handle_info({:DOWN, ref, :process, _pid, reason}, state) do
+    # Find session ID from monitor ref
+    case Map.get(state.monitor_refs, ref) do
+      nil ->
+        # Unknown process - not a session we're monitoring
+        {:noreply, state}
+        
+      session_id ->
         # Update state
-        new_sessions = Map.delete(state.sessions, session_id)
+        new_monitor_refs = Map.delete(state.monitor_refs, ref)
         new_stats = Map.update!(state.stats, :total_ended, &(&1 + 1))
 
         # Broadcast event
@@ -442,15 +597,10 @@ defmodule Arbor.Core.Sessions.Manager do
 
         Logger.info("Session ended",
           session_id: session_id,
-          reason: reason,
-          duration_seconds: calculate_session_duration(metadata)
+          reason: reason
         )
 
-        {:noreply, %{state | sessions: new_sessions, stats: new_stats}}
-
-      [] ->
-        # Not a session process we're tracking
-        {:noreply, state}
+        {:noreply, %{state | monitor_refs: new_monitor_refs, stats: new_stats}}
     end
   end
 
@@ -469,9 +619,145 @@ defmodule Arbor.Core.Sessions.Manager do
 
   # Private functions
 
-  defp calculate_session_duration(%{created_at: created_at}) do
-    DateTime.diff(DateTime.utc_now(), created_at)
+  defp create_session_internal(opts, state) do
+    session_id = Types.generate_session_id()
+    timeout = opts[:timeout] || 3_600_000
+
+    # Start session under cluster supervisor for distributed management
+    session_spec = %{
+      id: session_id,
+      module: Session,
+      args: [
+        session_id: session_id,
+        created_by: opts[:created_by],
+        metadata: opts[:metadata] || %{},
+        timeout: timeout
+      ]
+    }
+
+    case ClusterSupervisor.start_child(session_spec) do
+      {:ok, pid} ->
+        # Update session stats
+        new_stats = Map.update!(state.stats, :sessions_created, &(&1 + 1))
+
+        # Emit telemetry
+        :telemetry.execute(
+          [:arbor, :session, :created],
+          %{count: 1},
+          %{session_id: session_id}
+        )
+
+        Logger.info("Session created", session_id: session_id, pid: pid)
+
+        {:ok, session_id, pid, %{state | stats: new_stats}}
+
+      {:error, reason} ->
+        Logger.error("Failed to start session", session_id: session_id, reason: reason)
+        {:error, reason, state}
+    end
   end
 
-  defp calculate_session_duration(_), do: nil
+  defp lookup_session_pid(session_id) do
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        case Registry.lookup(Arbor.Core.MockSessionRegistry, session_id) do
+          [{pid, _metadata}] -> {:ok, pid}
+          [] -> {:error, :not_found}
+        end
+
+      _ ->
+        case Arbor.Core.SessionRegistry.lookup_session(session_id) do
+          {:ok, pid} -> {:ok, pid}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  defp end_session_internal(session_id, state) do
+    case lookup_session_pid(session_id) do
+      {:ok, pid} ->
+        # Stop the session process
+        case ClusterSupervisor.terminate_child(session_id) do
+          :ok ->
+            Logger.info("Session ended", session_id: session_id)
+            {:ok, state}
+
+          {:error, reason} ->
+            Logger.error("Failed to end session", session_id: session_id, reason: reason)
+            {:error, reason, state}
+        end
+
+      {:error, reason} ->
+        {:error, reason, state}
+    end
+  end
+
+  defp list_sessions_with_structs(filters, _state) do
+    try do
+      # Get all session PIDs from registry
+      session_pids = 
+        case Application.get_env(:arbor_core, :registry_impl, :auto) do
+          :mock ->
+            Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}])
+            |> Enum.map(fn {_session_id, {pid, _metadata}} -> pid end)
+
+          _ ->
+            Arbor.Core.SessionRegistry.list_all_sessions()
+            |> case do
+              {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
+              {:error, _} -> []
+            end
+        end
+
+      # Convert to structs in parallel with timeout
+      session_structs = 
+        session_pids
+        |> Task.async_stream(
+          fn pid -> Session.to_struct(pid) end,
+          timeout: 2000,
+          on_timeout: :kill_task
+        )
+        |> Enum.reduce([], fn
+          {:ok, {:ok, session_struct}}, acc -> [session_struct | acc]
+          _, acc -> acc  # Skip failed/timeout results
+        end)
+
+      # Apply filters (basic implementation)
+      filtered_sessions = apply_session_filters(session_structs, filters)
+
+      {:ok, filtered_sessions}
+    rescue
+      e ->
+        Logger.error("Failed to list sessions", error: Exception.message(e))
+        {:error, :list_failed}
+    end
+  end
+
+  defp apply_session_filters(sessions, filters) when map_size(filters) == 0, do: sessions
+  
+  defp apply_session_filters(sessions, filters) do
+    Enum.filter(sessions, fn session ->
+      Enum.all?(filters, fn
+        {:user_id, user_id} -> session.user_id == user_id
+        {:status, status} -> session.status == status
+        {:created_after, datetime} -> 
+          DateTime.compare(session.created_at, datetime) in [:gt, :eq]
+        {:created_before, datetime} -> 
+          DateTime.compare(session.created_at, datetime) in [:lt, :eq]
+        _ -> true  # Unknown filter - ignore
+      end)
+    end)
+  end
+
+  defp cleanup_failed_session(session_id, pid) do
+    try do
+      if Process.alive?(pid) do
+        Process.exit(pid, :kill)
+      end
+      
+      ClusterSupervisor.terminate_child(session_id)
+    rescue
+      _ -> :ok  # Best effort cleanup
+    end
+  end
 end

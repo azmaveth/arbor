@@ -1,3 +1,16 @@
+# ⚠️ ARCHIVED/OUTDATED DOCUMENTATION ⚠️
+
+> **NOTE:** This document describes a previous command architecture implementation and is **NO LONGER CURRENT**.  
+> 
+> **For current architecture information, refer to:**
+> - `/docs/arbor/01-overview/architecture-overview.md` - Current architectural overview
+> - Implementation code in `/apps/arbor_core/lib/arbor/core/` - Source of truth for current design
+> - Contract definitions in `/apps/arbor_contracts/` - Current behavioral contracts
+>
+> This document is preserved for historical reference but should not be used for implementation guidance.
+
+---
+
 # Agent Command Architecture
 
 This document consolidates the command architecture for the enhanced agent system, covering the asynchronous command/event pattern, execution flow, progress tracking, error handling, and real-world implementations.

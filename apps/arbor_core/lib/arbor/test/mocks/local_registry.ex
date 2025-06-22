@@ -39,6 +39,17 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     )
   end
 
+  # Internal function for Agent initialization, not part of behavior
+  def init(_opts) do
+    state = %__MODULE__{
+      names: %{},
+      groups: %{},
+      monitors: %{}
+    }
+
+    {:ok, state}
+  end
+
   def clear do
     Agent.update(__MODULE__, fn _state ->
       %__MODULE__{
@@ -58,6 +69,11 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     }
 
     {:ok, state}
+  end
+
+  @impl Arbor.Contracts.Cluster.Registry
+  def stop_registry(_reason, _state) do
+    :ok
   end
 
   @impl Arbor.Contracts.Cluster.Registry
@@ -240,14 +256,10 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     {:ok, state}
   end
 
-  @impl Arbor.Contracts.Cluster.Registry
-  def stop_registry(_reason, _state) do
-    :ok
-  end
 
   # Additional methods for ClusterRegistry compatibility
 
-  def register_group(group_name, agent_id, _state) do
+  def register_group(group_name, agent_id, _state \\ nil) do
     Agent.update(__MODULE__, fn state ->
       current_members = Map.get(state.groups, group_name, [])
       updated_members = [agent_id | current_members]
@@ -280,7 +292,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     end)
   end
 
-  def list_by_pattern(pattern, _state) do
+  def list_by_pattern(pattern, _state \\ nil) do
     Agent.get(__MODULE__, fn state ->
       regex =
         pattern

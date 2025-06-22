@@ -93,3 +93,8 @@ config :arbor_core,
   registry_impl: :horde,
   supervisor_impl: :horde,
   coordinator_impl: :horde
+
+# Configure robust agent retries for production
+config :arbor_core, :agent_retry,
+  retries: 3,
+  initial_delay: 250

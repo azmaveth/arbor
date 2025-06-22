@@ -465,134 +465,156 @@ end
 
 ---
 
-### Step 3: Enable Distributed Operation with Horde (TDD Approach)
+### Step 3: Validate and Harden Declarative Agent Supervision (Current Architecture)
+
+> **STATUS:** ✅ **COMPLETED** - Our implementation has successfully evolved beyond the original plan into a superior "Declarative Agent Supervision" architecture.
+>
+> **Current Architecture Features:**
+> - Stateless `HordeSupervisor` (module, not GenServer)
+> - Agent self-registration pattern with automatic cleanup
+> - `AgentReconciler` for continuous self-healing
+> - Agent specifications stored in distributed `Horde.Registry` using `{:agent_spec, agent_id}` keys
+> - Automatic failover via Horde's `process_redistribution: :active`
 
 **AI Implementation Prompt:**
-"FIRST: Read and understand all reference documentation:
+"FIRST: Read and understand current architecture:
 
-- `docs/arbor/01-overview/architecture-overview.md` - Review 'Distributed by Default' principle
-- Step 0 contracts: `Arbor.Contracts.Cluster.Registry` and `Arbor.Contracts.Cluster.Supervisor` behaviors
-- `docs/arbor/06-infrastructure/tooling-analysis.md` - Review Horde and libcluster patterns
+- Current implementation in `/apps/arbor_core/lib/arbor/core/horde_supervisor.ex` - Stateless supervision model
+- `/apps/arbor_core/lib/arbor/core/agent_reconciler.ex` - Self-healing reconciliation process
+- `/apps/arbor_core/lib/arbor/core/cluster_manager.ex` - Node lifecycle management
+- `/apps/arbor_contracts/lib/arbor/contracts/cluster/supervisor.ex` - Updated stateless contracts
 
-BEFORE STARTING: Verify prerequisites are met - confirm Step 0 cluster contracts are frozen, persistence and security layers are operational, and `arbor_core` application exists.
+CURRENT STATUS: The declarative supervision model is operational but needs validation and hardening for production use.
 
-Use layered test-driven development to implement distributed operation:
+Focus on testing and improving the existing superior architecture:
 
-## PHASE A: UNIT TDD (Red-Green-Refactor)
+## PHASE A: VALIDATE CURRENT ARCHITECTURE
 
-Write failing unit tests for distributed coordination contracts:
-
-1. **Test Agent Registry Logic:**
+1. **Comprehensive Multi-Node Integration Tests:**
    ```elixir
-   defmodule Arbor.Core.RegistryTest do
-     test "registers agent with unique ID" do
-       agent_id = "agent-123"
-       # MOCK: Use local registry for unit testing
-       assert :ok = ClusterRegistry.register_agent(agent_id, self())
-       assert {:ok, pid} = ClusterRegistry.lookup_agent(agent_id)
-       assert pid == self()
-     end
-     
-     test "prevents duplicate agent registration" do
-       agent_id = "agent-123"
-       :ok = ClusterRegistry.register_agent(agent_id, self())
-       assert {:error, :already_registered} = ClusterRegistry.register_agent(agent_id, self())
-     end
-   end
-   ```
-
-2. **Test Agent Supervision Logic:**
-   Unit test agent lifecycle management:
-   - Agent startup across cluster nodes
-   - Agent termination and cleanup
-   - Agent migration between nodes
-
-3. **Test Cluster Coordination:**
-   - Unit test node join/leave event handling
-   - Test agent redistribution logic
-   - Verify cluster state synchronization
-
-Use **MOCK IMPLEMENTATIONS** from Step 0 for single-node testing without real clustering.
-
-## PHASE B: INTEGRATION TDD
-
-4. **Write Failing Multi-Node Integration Test:**
-   ```elixir
-   defmodule Arbor.Core.ClusterIntegrationTest do
+   defmodule Arbor.Core.DeclarativeSupervisionTest do
      use ExUnit.Case
      @moduletag :integration
      @moduletag :cluster
      
-     test "agents communicate across cluster nodes" do
-       # This test will initially fail - requires real clustering
+     test "agent specifications persist and reconcile across node failures" do
+       # Start agents on a 3-node cluster
+       {:ok, agent_id} = HordeSupervisor.start_agent(%{
+         module: TestAgent,
+         args: %{data: "important_state"},
+         restart: :permanent
+       })
        
-       # Start agents on different nodes
-       {:ok, agent1_id} = ClusterSupervisor.start_agent(:worker, %{node: :node1})
-       {:ok, agent2_id} = ClusterSupervisor.start_agent(:coordinator, %{node: :node2})
+       # Verify agent spec is in registry
+       assert {:ok, spec} = HordeSupervisor.get_agent_spec(agent_id)
        
-       # Verify agents are on different nodes
-       {:ok, agent1_pid} = ClusterRegistry.lookup_agent(agent1_id)
-       {:ok, agent2_pid} = ClusterRegistry.lookup_agent(agent2_id)
-       assert node(agent1_pid) != node(agent2_pid)
-       
-       # Test cross-node communication
-       :ok = AgentCoordinator.delegate_task(agent1_id, agent2_id, %{task_type: :analyze})
-       
-       # Verify task delegation across nodes
-       assert_receive {:task_completed, ^agent2_id, result}, 5000
-     end
-     
-     test "handles node failure with agent migration" do
-       # Start agent on node1
-       {:ok, agent_id} = ClusterSupervisor.start_agent(:worker, %{})
+       # Kill the node running the agent
        original_node = get_agent_node(agent_id)
-       
-       # Simulate node failure
        disconnect_node(original_node)
        
-       # Verify agent migrates to surviving node
-       :timer.sleep(1000)  # Allow migration time
-       {:ok, new_pid} = ClusterRegistry.lookup_agent(agent_id)
+       # Wait for AgentReconciler to detect and restart
+       :timer.sleep(2000)
+       
+       # Verify agent restarted on surviving node
+       assert {:ok, new_pid} = HordeSupervisor.lookup_agent(agent_id)
        assert node(new_pid) != original_node
+       
+       # Verify spec still exists in registry
+       assert {:ok, ^spec} = HordeSupervisor.get_agent_spec(agent_id)
      end
    end
    ```
 
-5. **Implement Production Components:**
-   - Add `horde` and `libcluster` dependencies
-   - Configure `Arbor.Core.HordeRegistry` for distributed agent registration
-   - Implement `Arbor.Core.HordeSupervisor` for distributed agent supervision
-   - Add `libcluster` configuration for node discovery
-   - Update Gateway and SessionManager for location transparency
-   - Implement ClusterManager for node lifecycle events
+2. **AgentReconciler Self-Healing Validation:**
+   - Test reconciler detects missing agents and restarts them
+   - Test reconciler cleans up orphaned processes
+   - Verify reconciler handles registry inconsistencies
+   - Test reconciler performance under load
 
-6. **Integration Test Passes:**
-   Use real multi-node setup (via Docker or distributed test framework)
+3. **Agent Self-Registration Pattern Testing:**
+   - Verify agents register themselves correctly
+   - Test cleanup when agents terminate normally
+   - Validate registration works across node restarts
+
+## PHASE B: PRODUCTION HARDENING
+
+4. **Implement Stateful Agent Recovery:**
+   ```elixir
+   # Agents should checkpoint critical state
+   defmodule StatefulAgent do
+     use GenServer
+     
+     def init(initial_state) do
+       # Try to recover persisted state
+       case load_checkpoint(initial_state.agent_id) do
+         {:ok, saved_state} -> 
+           Logger.info("Agent #{initial_state.agent_id} recovered from checkpoint")
+           {:ok, saved_state}
+         {:error, :not_found} -> 
+           {:ok, initial_state}
+       end
+     end
+     
+     def handle_cast(:checkpoint, state) do
+       save_checkpoint(state.agent_id, state)
+       {:noreply, state}
+     end
+   end
+   ```
+
+5. **Add Comprehensive Telemetry:**
+   ```elixir
+   # In AgentReconciler
+   def reconcile_agents do
+     :telemetry.execute([:arbor, :reconciliation, :start], %{}, %{node: node()})
+     
+     # ... reconciliation logic ...
+     
+     :telemetry.execute([:arbor, :reconciliation, :complete], %{
+       missing_agents_restarted: missing_count,
+       orphaned_agents_cleaned: orphaned_count,
+       duration_ms: duration
+     }, %{node: node()})
+   end
+   ```
+
+6. **Clarify migrate_agent Semantics:**
+   Update documentation to clarify that `migrate_agent/2` performs a stateless restart, not stateful migration.
+
+## PHASE C: CLUSTER-WIDE EVENTING
+
+7. **Implement Phoenix.PubSub Broadcasting:**
+   ```elixir
+   # In HordeSupervisor
+   defp broadcast_agent_event(event_type, agent_id, metadata \\ %{}) do
+     Phoenix.PubSub.broadcast(Arbor.PubSub, "cluster:agents", %{
+       event: event_type,
+       agent_id: agent_id,
+       node: node(),
+       timestamp: DateTime.utc_now(),
+       metadata: metadata
+     })
+   end
+   ```
 
 ## TESTING REQUIREMENTS
 
-- **Unit Tests:** Test distributed logic with single-node mocks
-- **Multi-Node Tests:** Test actual clustering with multiple BEAM nodes
-- **Failure Tests:** Test node disconnection and agent migration scenarios
-- **Performance Tests:** Verify clustering doesn't degrade single-node performance
+- **Multi-Node Tests:** Test 3-node cluster scenarios with node failures
+- **Chaos Tests:** Random node kills, network partitions, high load
+- **Performance Tests:** Reconciliation overhead, agent startup times
+- **Persistence Tests:** Agent state recovery after failures
 
-## MOCK USAGE (CLEARLY LABELED)
+## SUCCESS CRITERIA
 
-Use these **MOCK IMPLEMENTATIONS** for unit testing:
-- `Arbor.Test.Mocks.LocalRegistry` for single-node testing
-- `Arbor.Test.Mocks.LocalSupervisor` for non-distributed testing
-- Mark all mock usage: `# MOCK: Replace with Horde for distributed operation`
+The current architecture should demonstrate:
+- ✅ Stateless supervision with no single points of failure
+- ✅ Automatic agent redistribution on node failures  
+- ✅ Self-healing via AgentReconciler
+- ⏳ Stateful agent recovery (to be implemented)
+- ⏳ Comprehensive telemetry and observability
+- ⏳ Cluster-wide event broadcasting
 
-## DISTRIBUTED TESTING PATTERNS
-
-Test distributed scenarios:
-- **Node Discovery:** Nodes find each other automatically
-- **Agent Distribution:** Agents spread across available nodes
-- **Communication:** Agents can message across nodes
-- **Failover:** Agents migrate when nodes fail
-- **Split-Brain:** Cluster handles network partitions gracefully
-
-AFTER COMPLETION: Verify postrequisites are achieved - multi-node cluster formation verified, agents distributed across nodes, cross-node communication working, automatic failover tested, and all distributed mocks clearly labeled."
+AFTER COMPLETION: Verify the declarative supervision model is production-ready with comprehensive testing, telemetry provides visibility into self-healing operations, stateful agents can recover their state after migration, and cluster-wide events enable real-time monitoring."
 
 **Reference Documentation:**
 

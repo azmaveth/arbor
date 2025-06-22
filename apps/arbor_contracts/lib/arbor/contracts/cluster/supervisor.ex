@@ -1,23 +1,28 @@
 defmodule Arbor.Contracts.Cluster.Supervisor do
   @moduledoc """
-  Contract for distributed supervision of agents using Horde.
+  Contract for stateless distributed supervision of agents using Horde.
 
-  This behaviour defines how agents are supervised across the cluster,
-  handling node failures, rebalancing, and state handoff. It provides
-  the foundation for Arbor's fault-tolerant agent orchestration.
+  This behaviour defines a stateless interface for managing agents across the cluster.
+  The implementation is built on three core components:
 
-  ## Supervision Guarantees
+  ## Architecture Components
 
-  - **Automatic Restart**: Failed agents are restarted according to strategy
-  - **Node Migration**: Agents migrate when nodes fail
-  - **State Preservation**: Agent state is preserved across restarts
-  - **Load Balancing**: Agents are distributed across healthy nodes
+  - **HordeSupervisor (Module)**: Stateless API for agent lifecycle management
+  - **Horde.Registry**: Distributed, persistent store for agent specifications (desired state)
+  - **AgentReconciler (Process)**: Self-healing process that ensures running agents match stored specs
 
-  ## Supervision Strategies
+  ## Fault Tolerance Approach
 
-  - `:one_for_one` - Restart only the failed agent
-  - `:rest_for_one` - Restart failed agent and those started after it
-  - `:one_for_all` - Restart all agents if one fails
+  - **Automatic Restart**: Horde's `process_redistribution: :active` restarts failed agents
+  - **Spec Persistence**: Agent specifications stored in distributed CRDT registry
+  - **Self-Healing**: AgentReconciler periodically corrects desired vs actual state
+  - **No Single Points of Failure**: All state is distributed across cluster nodes
+
+  ## Restart Strategies (Per-Agent)
+
+  - `:permanent` - Always restart agent if it fails
+  - `:transient` - Restart only if agent exits abnormally
+  - `:temporary` - Never restart agent (remove from system when it exits)
 
   ## Example Implementation
 
@@ -25,7 +30,10 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
         @behaviour Arbor.Contracts.Cluster.Supervisor
         
         @impl true
-        def start_agent(agent_spec, state) do
+        def start_agent(agent_spec) do
+          # Store spec in registry for persistence
+          register_agent_spec(agent_spec.id, agent_spec)
+          
           child_spec = %{
             id: agent_spec.id,
             start: {agent_spec.module, :start_link, [agent_spec.args]},
@@ -33,7 +41,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
             type: :worker
           }
           
-          Horde.DynamicSupervisor.start_child(state.supervisor, child_spec)
+          Horde.DynamicSupervisor.start_child(MyHordeSupervisor, child_spec)
         end
       end
 
@@ -52,7 +60,6 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
           optional(:metadata) => map()
         }
 
-  @type state :: any()
   @type reason :: atom() | term()
 
   @type supervisor_error ::
@@ -98,11 +105,10 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
         metadata: %{session_id: "session_456"}
       }
       
-      {:ok, pid} = Supervisor.start_agent(agent_spec, state)
+      {:ok, pid} = Supervisor.start_agent(agent_spec)
   """
   @callback start_agent(
-              agent_spec(),
-              state()
+              agent_spec()
             ) :: {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
@@ -125,8 +131,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   """
   @callback stop_agent(
               agent_id :: Types.agent_id(),
-              timeout :: timeout(),
-              state()
+              timeout :: timeout()
             ) :: :ok | {:error, supervisor_error()}
 
   @doc """
@@ -146,8 +151,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `{:error, :agent_not_found}` - Agent doesn't exist
   """
   @callback restart_agent(
-              agent_id :: Types.agent_id(),
-              state()
+              agent_id :: Types.agent_id()
             ) :: {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
@@ -167,7 +171,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `:started_at` - When agent was started
   - `:metadata` - Agent metadata
   """
-  @callback list_agents(state()) ::
+  @callback list_agents() ::
               {:ok, [map()]} | {:error, supervisor_error()}
 
   @doc """
@@ -186,41 +190,45 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `:message_queue_len` - Current message queue length
   """
   @callback get_agent_info(
-              agent_id :: Types.agent_id(),
-              state()
+              agent_id :: Types.agent_id()
             ) :: {:ok, map()} | {:error, supervisor_error()}
 
   @doc """
-  Move an agent to a specific node.
+  Restart an agent with state recovery if available.
 
-  Triggers migration of an agent from its current node to a target node.
-  The agent's state is preserved during migration.
+  **State Recovery:** If the agent implements the `AgentCheckpoint` behavior,
+  this function will attempt to preserve the agent's state during restart.
+  Otherwise, the agent restarts with fresh state from its original specification.
+
+  The agent will be restarted according to Horde's distribution strategy,
+  which determines optimal node placement based on cluster load and availability.
 
   ## Parameters
 
-  - `agent_id` - Agent to migrate
-  - `target_node` - Node to migrate to
-  - `state` - Supervisor state
+  - `agent_id` - Agent to restart with potential state recovery
 
-  ## Migration Process
+  ## Restart Process
 
-  1. Agent state is extracted
-  2. Agent is stopped on current node
-  3. Agent is started on target node
-  4. State is restored
-  5. Registrations are updated
+  1. Agent specification retrieved from registry
+  2. If agent implements checkpointing, current state is captured
+  3. Agent is gracefully stopped
+  4. Agent is restarted with recovered state (if available) or fresh state
+  5. Horde places agent according to distribution strategy
+
+  ## State Recovery
+
+  - **State MAY be preserved** if agent implements `AgentCheckpoint` behavior
+  - Agents without checkpointing restart with fresh state
+  - State recovery is automatic and transparent to the caller
 
   ## Returns
 
-  - `{:ok, new_pid}` - Migration successful
-  - `{:error, :agent_not_found}` - Agent doesn't exist
-  - `{:error, :node_not_available}` - Target node not in cluster
-  - `{:error, :migration_failed}` - Migration process failed
+  - `{:ok, new_pid}` - Agent restarted successfully
+  - `{:error, :agent_not_found}` - Agent spec not found in registry
+  - `{:error, :restart_failed}` - Restart process failed
   """
-  @callback migrate_agent(
-              agent_id :: Types.agent_id(),
-              target_node :: node(),
-              state()
+  @callback restore_agent(
+              agent_id :: Types.agent_id()
             ) :: {:ok, pid()} | {:error, supervisor_error()}
 
   @doc """
@@ -247,8 +255,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   """
   @callback update_agent_spec(
               agent_id :: Types.agent_id(),
-              updates :: map(),
-              state()
+              updates :: map()
             ) :: :ok | {:error, supervisor_error()}
 
   @doc """
@@ -268,7 +275,7 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   - `:restart_intensity` - Recent restart frequency
   - `:memory_usage` - Total memory used by agents
   """
-  @callback health_metrics(state()) ::
+  @callback health_metrics() ::
               {:ok, map()} | {:error, supervisor_error()}
 
   @doc """
@@ -297,29 +304,9 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   """
   @callback set_event_handler(
               event_type :: atom(),
-              callback :: function(),
-              state()
+              callback :: function()
             ) :: :ok | {:error, term()}
 
-  @doc """
-  Start the distributed supervisor infrastructure.
-
-  Sets up the Horde supervisor infrastructure including CRDT components.
-  This is distinct from GenServer.init/1 and manages the supervisor component lifecycle.
-
-  ## Options
-
-  - `:name` - Supervisor name
-  - `:strategy` - Default supervision strategy
-  - `:max_children` - Maximum agents to supervise
-  - `:delta_crdt_options` - Horde CRDT options
-
-  ## Returns
-
-  - `{:ok, state}` - Supervisor initialized
-  - `{:error, reason}` - Initialization failed
-  """
-  @callback start_supervisor(opts :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
   Handle agent state handoff during migration.
@@ -338,15 +325,6 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   @callback handle_agent_handoff(
               agent_id :: Types.agent_id(),
               operation :: :handoff | :takeover,
-              state_data :: any(),
-              state()
+              state_data :: any()
             ) :: {:ok, any()} | {:error, term()}
-
-  @doc """
-  Stop the distributed supervisor and clean up resources.
-
-  This handles supervisor component shutdown and is distinct from GenServer.terminate/2.
-  Should gracefully stop all agents and cleanup supervisor resources.
-  """
-  @callback stop_supervisor(reason :: term(), state()) :: :ok
 end

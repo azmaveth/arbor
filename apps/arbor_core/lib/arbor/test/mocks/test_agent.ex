@@ -17,32 +17,22 @@ defmodule Arbor.Test.Mocks.TestAgent do
     agent_metadata = Keyword.get(args, :agent_metadata, %{})
     initial_state = Keyword.get(args, :initial_state, %{})
 
-    # Self-register with the registry
-    if agent_id do
-      case register_self(agent_id, agent_metadata) do
-        :ok ->
-          Logger.info("TestAgent successfully registered",
-            agent_id: agent_id,
-            pid: inspect(self())
-          )
-
-        {:error, reason} ->
-          Logger.error("TestAgent failed to register",
-            agent_id: agent_id,
-            reason: inspect(reason)
-          )
-
-          # Continue anyway for testing purposes
-      end
-    end
+    # Ensure initial_state is always a map for Map.merge
+    base_state = if is_map(initial_state), do: initial_state, else: %{}
 
     state =
-      Map.merge(initial_state, %{
+      Map.merge(base_state, %{
         agent_id: agent_id,
+        agent_metadata: agent_metadata,
         registered_at: System.system_time(:millisecond)
       })
 
-    {:ok, state}
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl Arbor.Core.AgentBehavior
+  def get_agent_metadata(state) do
+    Map.get(state, :agent_metadata, %{})
   end
 
   @impl GenServer

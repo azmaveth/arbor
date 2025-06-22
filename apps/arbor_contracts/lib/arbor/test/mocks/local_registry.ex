@@ -55,7 +55,6 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     :node_status
   ]
 
-  @impl true
   def init(opts) do
     name = opts[:name] || :mock_registry
 
@@ -325,6 +324,17 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   end
 
   @impl true
+  def start_registry(opts) do
+    # For testing, just create an initial state
+    init(opts)
+  end
+
+  @impl true
+  def stop_registry(_reason, state) do
+    # Clean up resources
+    terminate(:shutdown, state)
+  end
+
   def terminate(_reason, state) do
     # Clean up ETS tables
     :ets.delete(state.names_table)

@@ -204,14 +204,40 @@ defmodule Arbor.Core.ClusterManager do
 
   @impl GenServer
   def handle_call(:cluster_status, _from, state) do
+    # Get appropriate implementations based on config
+    registry_impl = get_registry_impl()
+    supervisor_impl = get_supervisor_impl()
+    
     status = %{
       nodes: [node() | state.connected_nodes],
       connected_nodes: length(state.connected_nodes),
       topology: state.topology,
       components: %{
-        registry: check_component_health(&HordeRegistry.get_registry_status/0),
-        supervisor: check_component_health(&HordeSupervisor.get_supervisor_status/0),
-        coordinator: check_component_health(&ClusterCoordinator.perform_health_check/0)
+        registry: check_component_health(fn ->
+          if registry_impl == HordeRegistry do
+            registry_impl.get_registry_status()
+          else
+            # Mock registry doesn't have get_registry_status
+            {:ok, %{status: :healthy, members: [node()], count: 0}}
+          end
+        end),
+        supervisor: check_component_health(fn ->
+          if supervisor_impl == HordeSupervisor do
+            supervisor_impl.get_supervisor_status()
+          else
+            # Mock supervisor doesn't have get_supervisor_status
+            {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
+          end
+        end),
+        coordinator: check_component_health(fn ->
+          # Check if we're in test mode
+          if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+            # Return mock health status
+            {:ok, %{status: :healthy, active_coordinators: 0}}
+          else
+            ClusterCoordinator.perform_health_check()
+          end
+        end)
       },
       uptime: System.system_time(:second) - state.startup_time
     }
@@ -271,6 +297,7 @@ defmodule Arbor.Core.ClusterManager do
     case Map.get(state.node_health_data, target_node) do
       nil ->
         {:reply, {:error, :node_not_found}, state}
+
       health_data ->
         {:reply, {:ok, health_data}, state}
     end
@@ -301,15 +328,12 @@ defmodule Arbor.Core.ClusterManager do
 
     # Start periodic health checks
     health_timer = schedule_health_check()
-    
-    new_state = %{state | 
-      connected_nodes: connected, 
-      health_check_timer: health_timer
-    }
-    
+
+    new_state = %{state | connected_nodes: connected, health_check_timer: health_timer}
+
     # Perform initial health check
     updated_state = perform_cluster_health_check(new_state)
-    
+
     {:noreply, updated_state}
   end
 
@@ -344,17 +368,42 @@ defmodule Arbor.Core.ClusterManager do
       # Remove node from all Horde clusters
       remove_node_from_horde_clusters(node)
 
-      # Notify event handlers
+      # NOTE: Horde.DynamicSupervisor automatically handles agent migration
+      # with process_redistribution: :active configuration. No manual intervention needed.
+      Logger.info("Horde will automatically redistribute agents from failed node #{node}")
+
+      # Notify event handlers about the node failure
       Enum.each(state.event_handlers, fn handler ->
         spawn(fn -> handler.(:nodedown, node) end)
       end)
 
+      # Notify cluster coordinator about the node failure for observability
+      try do
+        Arbor.Core.ClusterCoordinator.handle_node_failure(node, :network_failure)
+      rescue
+        # Specific rescue for known coordination failures. We want to log but not crash
+        # the cluster manager when the coordinator is unavailable.
+        UndefinedFunctionError ->
+          Logger.debug("ClusterCoordinator.handle_node_failure/2 not available")
+        error in [RuntimeError, ArgumentError] ->
+          Logger.warning("Failed to notify ClusterCoordinator of node failure", 
+            error: inspect(error), 
+            node: node
+          )
+        other_error ->
+          Logger.error("Unexpected error notifying ClusterCoordinator of node failure", 
+            error: inspect(other_error),
+            stacktrace: __STACKTRACE__,
+            node: node
+          )
+      end
+
       # Update state
       updated_nodes = List.delete(state.connected_nodes, node)
-      
+
       # Remove node from health data
       updated_health_data = Map.delete(state.node_health_data, node)
-      
+
       {:noreply, %{state | connected_nodes: updated_nodes, node_health_data: updated_health_data}}
     else
       {:noreply, state}
@@ -366,7 +415,7 @@ defmodule Arbor.Core.ClusterManager do
     # Perform health check and schedule the next one
     updated_state = perform_cluster_health_check(state)
     health_timer = schedule_health_check()
-    
+
     final_state = %{updated_state | health_check_timer: health_timer}
     {:noreply, final_state}
   end
@@ -382,40 +431,82 @@ defmodule Arbor.Core.ClusterManager do
   defp add_node_to_horde_clusters(node) do
     Logger.info("Adding #{node} to Horde clusters")
 
-    try do
-      # Join registry cluster
-      HordeRegistry.join_registry(node)
+    # Only add to Horde clusters if we're using Horde implementations
+    registry_impl = get_registry_impl()
+    supervisor_impl = get_supervisor_impl()
 
-      # Join supervisor cluster
-      HordeSupervisor.join_supervisor(node)
+    try do
+      # Join registry cluster if using Horde
+      if registry_impl == HordeRegistry and function_exported?(registry_impl, :join_registry, 1) do
+        registry_impl.join_registry(node)
+      end
+
+      # Join supervisor cluster if using Horde
+      if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :join_supervisor, 1) do
+        supervisor_impl.join_supervisor(node)
+      end
 
       # Join coordinator cluster
-      HordeCoordinator.join_coordination(node)
+      if function_exported?(HordeCoordinator, :join_coordination, 1) do
+        HordeCoordinator.join_coordination(node)
+      end
 
       Logger.info("Successfully added #{node} to all Horde clusters")
     rescue
-      error ->
-        Logger.error("Failed to add #{node} to Horde clusters: #{inspect(error)}")
+      # Specific rescue for cluster formation failures. These are expected during 
+      # network partitions or when Horde processes aren't ready yet.
+      error in [UndefinedFunctionError, RuntimeError] ->
+        Logger.warning("Failed to add #{node} to Horde clusters", 
+          error: inspect(error),
+          node: node
+        )
+      other_error ->
+        Logger.error("Unexpected error adding #{node} to Horde clusters", 
+          error: inspect(other_error),
+          stacktrace: __STACKTRACE__,
+          node: node
+        )
     end
   end
 
   defp remove_node_from_horde_clusters(node) do
     Logger.info("Removing #{node} from Horde clusters")
 
-    try do
-      # Leave registry cluster
-      HordeRegistry.leave_registry(node)
+    # Only remove from Horde clusters if we're using Horde implementations
+    registry_impl = get_registry_impl()
+    supervisor_impl = get_supervisor_impl()
 
-      # Leave supervisor cluster
-      HordeSupervisor.leave_supervisor(node)
+    try do
+      # Leave registry cluster if using Horde
+      if registry_impl == HordeRegistry and function_exported?(registry_impl, :leave_registry, 1) do
+        registry_impl.leave_registry(node)
+      end
+
+      # Leave supervisor cluster if using Horde
+      if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :leave_supervisor, 1) do
+        supervisor_impl.leave_supervisor(node)
+      end
 
       # Leave coordinator cluster
-      HordeCoordinator.leave_coordination(node)
+      if function_exported?(HordeCoordinator, :leave_coordination, 1) do
+        HordeCoordinator.leave_coordination(node)
+      end
 
       Logger.info("Successfully removed #{node} from all Horde clusters")
     rescue
-      error ->
-        Logger.error("Failed to remove #{node} from Horde clusters: #{inspect(error)}")
+      # Specific rescue for cluster cleanup failures. These are expected when
+      # the failed node is already disconnected or Horde processes are down.
+      error in [UndefinedFunctionError, RuntimeError] ->
+        Logger.warning("Failed to remove #{node} from Horde clusters", 
+          error: inspect(error),
+          node: node
+        )
+      other_error ->
+        Logger.error("Unexpected error removing #{node} from Horde clusters", 
+          error: inspect(other_error),
+          stacktrace: __STACKTRACE__,
+          node: node
+        )
     end
   end
 
@@ -426,7 +517,17 @@ defmodule Arbor.Core.ClusterManager do
         _ -> :down
       end
     rescue
-      _ -> :down
+      # Specific rescue for health check failures. These are expected when components
+      # are starting up, shutting down, or experiencing temporary issues.
+      error in [UndefinedFunctionError, RuntimeError, ArgumentError] ->
+        Logger.debug("Component health check failed", error: inspect(error))
+        :down
+      other_error ->
+        Logger.warning("Unexpected error during component health check", 
+          error: inspect(other_error),
+          function: inspect(health_fn)
+        )
+        :down
     end
   end
 
@@ -437,6 +538,32 @@ defmodule Arbor.Core.ClusterManager do
       :test -> :arbor_test
       :prod -> :arbor_prod
       _ -> :arbor
+    end
+  end
+  
+  defp get_registry_impl() do
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock -> Arbor.Test.Mocks.LocalRegistry
+      :horde -> HordeRegistry
+      :auto ->
+        if Application.get_env(:arbor_core, :env, :prod) == :test do
+          Arbor.Test.Mocks.LocalRegistry
+        else
+          HordeRegistry
+        end
+    end
+  end
+  
+  defp get_supervisor_impl() do
+    case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
+      :mock -> Arbor.Test.Mocks.LocalSupervisor
+      :horde -> HordeSupervisor
+      :auto ->
+        if Application.get_env(:arbor_core, :env, :prod) == :test do
+          Arbor.Test.Mocks.LocalSupervisor
+        else
+          HordeSupervisor
+        end
     end
   end
 
@@ -454,18 +581,15 @@ defmodule Arbor.Core.ClusterManager do
 
     # Collect health data for all nodes (current + connected)
     all_nodes = [node() | state.connected_nodes] |> Enum.uniq()
-    
-    new_health_data = 
+
+    new_health_data =
       all_nodes
-      |> Enum.map(fn node_name -> 
+      |> Enum.map(fn node_name ->
         {node_name, collect_node_health(node_name)}
       end)
       |> Map.new()
 
-    %{state | 
-      node_health_data: new_health_data, 
-      last_health_check: timestamp
-    }
+    %{state | node_health_data: new_health_data, last_health_check: timestamp}
   end
 
   defp collect_cluster_health_data(state) do
@@ -484,7 +608,7 @@ defmodule Arbor.Core.ClusterManager do
 
   defp collect_node_health(node_name) do
     timestamp = System.system_time(:millisecond)
-    
+
     base_health = %{
       node: node_name,
       timestamp: timestamp,
@@ -494,11 +618,37 @@ defmodule Arbor.Core.ClusterManager do
 
     # If it's the current node, collect detailed health
     if node_name == node() do
+      # Get appropriate implementations
+      registry_impl = get_registry_impl()
+      supervisor_impl = get_supervisor_impl()
+      
       detailed_health = %{
         components: %{
-          registry: check_component_health(&HordeRegistry.get_registry_status/0),
-          supervisor: check_component_health(&HordeSupervisor.get_supervisor_status/0),
-          coordinator: check_component_health(&ClusterCoordinator.perform_health_check/0)
+          registry: check_component_health(fn ->
+            if registry_impl == HordeRegistry and function_exported?(registry_impl, :get_registry_status, 0) do
+              registry_impl.get_registry_status()
+            else
+              # Mock registry doesn't have get_registry_status
+              {:ok, %{status: :healthy, members: [node()], count: 0}}
+            end
+          end),
+          supervisor: check_component_health(fn ->
+            if supervisor_impl == HordeSupervisor and function_exported?(supervisor_impl, :get_supervisor_status, 0) do
+              supervisor_impl.get_supervisor_status()
+            else
+              # Mock supervisor doesn't have get_supervisor_status
+              {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
+            end
+          end),
+          coordinator: check_component_health(fn ->
+          # Check if we're in test mode
+          if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+            # Return mock health status
+            {:ok, %{status: :healthy, active_coordinators: 0}}
+          else
+            ClusterCoordinator.perform_health_check()
+          end
+        end)
         },
         resources: %{
           memory: :erlang.memory(),
@@ -508,23 +658,25 @@ defmodule Arbor.Core.ClusterManager do
           atom_count: :erlang.system_info(:atom_count)
         }
       }
-      
+
       Map.merge(base_health, detailed_health)
     else
       # For remote nodes, try to ping and get basic status
-      ping_result = case Node.ping(node_name) do
-        :pong -> :reachable
-        :pang -> :unreachable
-      end
-      
+      ping_result =
+        case Node.ping(node_name) do
+          :pong -> :reachable
+          :pang -> :unreachable
+        end
+
       Map.put(base_health, :ping_status, ping_result)
     end
   end
 
   defp count_healthy_nodes(health_data) do
     health_data
-    |> Enum.count(fn {_node, data} -> 
-      data.connected and not Map.has_key?(data, :ping_status) or data[:ping_status] == :reachable
+    |> Enum.count(fn {_node, data} ->
+      (data.connected and not Map.has_key?(data, :ping_status)) or
+        data[:ping_status] == :reachable
     end)
   end
 
@@ -534,14 +686,26 @@ defmodule Arbor.Core.ClusterManager do
       case Application.ensure_all_started(:os_mon) do
         {:ok, _} ->
           case :cpu_sup.avg1() do
-            {:ok, load} -> load / 256  # Convert to standard load average format
+            # Convert to standard load average format
+            {:ok, load} -> load / 256
             _ -> :unavailable
           end
-        _ -> 
+
+        _ ->
           :unavailable
       end
     rescue
-      _ -> :unavailable
+      # Specific rescue for OS monitoring failures. This is expected on some platforms
+      # where os_mon is not available or doesn't have required permissions.
+      error in [UndefinedFunctionError, RuntimeError] ->
+        Logger.debug("OS monitoring not available", error: inspect(error))
+        :unavailable
+      other_error ->
+        Logger.warning("Unexpected error getting load average", 
+          error: inspect(other_error)
+        )
+        :unavailable
     end
   end
+
 end

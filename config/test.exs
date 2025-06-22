@@ -52,9 +52,14 @@ config :libcluster,
     ]
   ]
 
-# For most tests, we'll use the mock implementations
+# Use real Horde implementations for better integration testing
 config :arbor_core,
   env: :test,
-  registry_impl: :mock,
-  supervisor_impl: :mock,
-  coordinator_impl: :mock
+  registry_impl: :horde,
+  supervisor_impl: :horde,
+  coordinator_impl: :horde
+
+# Configure fast agent retries for tests to reduce timing issues
+config :arbor_core, :agent_retry,
+  retries: 1,
+  initial_delay: 10

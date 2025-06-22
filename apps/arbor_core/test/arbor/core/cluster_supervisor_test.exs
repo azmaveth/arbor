@@ -219,63 +219,9 @@ defmodule Arbor.Core.ClusterSupervisorTest do
     end
   end
 
-  describe "agent migration" do
-    test "migrates agent to different node", %{supervisor_state: state} do
-      agent_spec = %{
-        id: "migration-test-agent",
-        module: Arbor.Test.Mocks.TestAgent,
-        args: [state: %{data: "important"}],
-        restart_strategy: :permanent
-      }
-
-      # MOCK: Use local supervisor for unit testing
-      {:ok, original_pid} = ClusterSupervisor.start_agent(agent_spec)
-      target_node = :test@otherhost
-
-      # Migrate agent
-      assert {:ok, new_pid} =
-               ClusterSupervisor.migrate_agent(
-                 agent_spec.id,
-                 target_node
-               )
-
-      # Should have new PID (simulating cross-node migration)
-      assert new_pid != original_pid
-
-      # Agent should show as migrated
-      assert {:ok, info} = ClusterSupervisor.get_agent_info(agent_spec.id)
-      assert info.node == target_node
-      assert info.pid == new_pid
-    end
-
-    test "handles migration to unavailable node", %{supervisor_state: state} do
-      agent_spec = %{
-        id: "migration-fail-agent",
-        module: Arbor.Test.Mocks.TestAgent,
-        args: [],
-        restart_strategy: :permanent
-      }
-
-      # MOCK: Use local supervisor for unit testing
-      {:ok, _pid} = ClusterSupervisor.start_agent(agent_spec)
-
-      # Try to migrate to unavailable node
-      assert {:error, :node_not_available} =
-               ClusterSupervisor.migrate_agent(
-                 agent_spec.id,
-                 :unavailable@node
-               )
-    end
-
-    test "handles migration of non-existent agent", %{supervisor_state: state} do
-      # MOCK: Use local supervisor for unit testing
-      assert {:error, :agent_not_found} =
-               ClusterSupervisor.migrate_agent(
-                 "non-existent",
-                 :target@node
-               )
-    end
-  end
+  # Migration tests have been removed as migrate_agent/2 has been replaced
+  # with restore_agent/1 which handles state recovery and optimal node placement
+  # automatically via Horde
 
   describe "supervision strategy updates" do
     test "updates agent supervision strategy", %{supervisor_state: state} do

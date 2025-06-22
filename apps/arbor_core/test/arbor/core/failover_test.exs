@@ -18,6 +18,7 @@ defmodule Arbor.Core.FailoverTest do
   # Test agent that tracks state changes
   defmodule StatefulTestAgent do
     use Arbor.Core.AgentBehavior
+    require Logger
 
     def start_link(args) do
       GenServer.start_link(__MODULE__, args)
@@ -28,35 +29,26 @@ defmodule Arbor.Core.FailoverTest do
       # Extract agent identity from args (passed by HordeSupervisor)
       agent_id = Keyword.get(args, :agent_id)
       agent_metadata = Keyword.get(args, :agent_metadata, %{})
-      
+
       # Extract initial state data
       id = Keyword.get(args, :id, agent_id || "test-agent")
       counter = Keyword.get(args, :counter, 0)
-      
-      # Self-register with the registry if agent_id is provided
-      if agent_id do
-        case register_self(agent_id, agent_metadata) do
-          :ok ->
-            Logger.info("StatefulTestAgent registered successfully",
-              agent_id: agent_id,
-              pid: inspect(self())
-            )
-          {:error, reason} ->
-            Logger.error("StatefulTestAgent failed to register",
-              agent_id: agent_id,
-              reason: inspect(reason)
-            )
-        end
-      end
-      
+
       state = %{
         id: id,
+        agent_id: agent_id,
+        agent_metadata: agent_metadata,
         counter: counter,
         events: [],
         started_at: System.system_time(:millisecond)
       }
 
-      {:ok, state}
+      # Defer registration to AgentBehavior's handle_continue
+      if agent_id do
+        {:ok, state, {:continue, :register_with_supervisor}}
+      else
+        {:ok, state}
+      end
     end
 
     def increment(pid) do
@@ -78,22 +70,29 @@ defmodule Arbor.Core.FailoverTest do
       {:reply, state.events, state}
     end
 
+    def handle_call(:get_state, _from, state) do
+      {:reply, state, state}
+    end
+
     # Custom state extraction that includes important data
     @impl Arbor.Core.AgentBehavior
     def extract_state(state) do
-      %{
-        id: state.id,
-        counter: state.counter,
-        events: state.events,
-        original_start: state.started_at,
-        extracted_at: System.system_time(:millisecond)
-      }
+      extracted =
+        %{
+          id: state.id,
+          counter: state.counter,
+          events: state.events,
+          original_start: state.started_at,
+          extracted_at: System.system_time(:millisecond)
+        }
+
+      {:ok, extracted}
     end
 
     # Custom state restoration that merges old and new state
     @impl Arbor.Core.AgentBehavior
     def restore_state(current_state, extracted_state) do
-      %{
+      new_state = %{
         current_state
         | counter: extracted_state.counter,
           events: [
@@ -101,6 +100,8 @@ defmodule Arbor.Core.FailoverTest do
             | extracted_state.events
           ]
       }
+
+      {:ok, new_state}
     end
   end
 

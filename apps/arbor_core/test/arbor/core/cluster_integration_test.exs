@@ -17,6 +17,68 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
   alias Arbor.Core.{ClusterRegistry, ClusterSupervisor, ClusterCoordinator}
 
+  # Helper to wrap start functions, treating :already_started as :ok
+  defp start_or_ok({:ok, _pid}), do: {:ok, :started}
+  defp start_or_ok({:error, {:already_started, _pid}}), do: {:ok, :already_started}
+  defp start_or_ok({:error, _reason} = error), do: error
+
+  defp start_horde_components() do
+    # Try to start each component, but treat :already_started as success.
+    # This ensures the test works whether Horde is started by the Application
+    # or manually by the test itself.
+    with {:ok, _} <- start_or_ok(start_horde_registry()),
+         {:ok, _} <- start_or_ok(Arbor.Core.HordeSupervisor.start_supervisor()),
+         {:ok, _} <- start_or_ok(Arbor.Core.HordeCoordinator.start_coordination()) do
+      # Give time for components to sync
+      :timer.sleep(500)
+      :ok
+    else
+      error -> error
+    end
+  end
+
+  defp start_horde_registry() do
+    # Start the actual Horde.Registry that HordeRegistry module will use
+    children = [
+      {Horde.Registry,
+       [
+         name: Arbor.Core.HordeAgentRegistry,
+         keys: :unique,
+         members: :auto,
+         delta_crdt_options: [sync_interval: 100]
+       ]}
+    ]
+
+    Supervisor.start_link(children,
+      strategy: :one_for_one,
+      name: Arbor.Core.HordeAgentRegistrySupervisor
+    )
+  end
+
+  defp stop_horde_components() do
+    # Stop supervisors in reverse order
+    supervisors = [
+      Arbor.Core.HordeCoordinatorSupervisor,
+      Arbor.Core.HordeSupervisorRegistry,
+      # The actual Horde.Registry supervisor
+      Arbor.Core.HordeAgentRegistrySupervisor
+    ]
+
+    Enum.each(supervisors, fn sup_name ->
+      case Process.whereis(sup_name) do
+        nil ->
+          :ok
+
+        pid ->
+          try do
+            Supervisor.stop(pid, :normal, 5000)
+          catch
+            :exit, _ -> :ok
+          end
+      end
+    end)
+  end
+
   setup_all do
     # Start distributed Erlang
     :net_kernel.start([:arbor_test@localhost, :shortnames])
@@ -35,55 +97,17 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
     # Start Horde infrastructure manually for integration tests
     # Note: In production, these would be started by the Application supervision tree
-    try do
-      {:ok, _registry_pid} = Arbor.Core.HordeRegistry.start_registry()
-      {:ok, _supervisor_pid} = Arbor.Core.HordeSupervisor.start_supervisor()
-      {:ok, _coordinator_pid} = Arbor.Core.HordeCoordinator.start_coordination()
-      :ok
-    rescue
-      e ->
-        IO.puts("Failed to start Horde components: #{inspect(e)}")
-        # Continue anyway for now - some tests might still work
+    case start_horde_components() do
+      :ok ->
         :ok
+
+      {:error, reason} ->
+        flunk("Failed to start Horde components: #{inspect(reason)}")
     end
 
     on_exit(fn ->
       # Stop Horde services
-      case Process.whereis(Arbor.Core.HordeRegistry) do
-        nil ->
-          :ok
-
-        pid ->
-          try do
-            GenServer.stop(pid)
-          catch
-            :exit, _ -> :ok
-          end
-      end
-
-      case Process.whereis(Arbor.Core.HordeSupervisor) do
-        nil ->
-          :ok
-
-        pid ->
-          try do
-            GenServer.stop(pid)
-          catch
-            :exit, _ -> :ok
-          end
-      end
-
-      case Process.whereis(Arbor.Core.HordeCoordinator) do
-        nil ->
-          :ok
-
-        pid ->
-          try do
-            GenServer.stop(pid)
-          catch
-            :exit, _ -> :ok
-          end
-      end
+      stop_horde_components()
 
       # Reset to auto mode
       Application.put_env(:arbor_core, :registry_impl, :auto)
@@ -108,27 +132,39 @@ defmodule Arbor.Core.ClusterIntegrationTest do
     test "agents communicate across cluster nodes" do
       # This test will initially fail - requires real clustering
 
+      # Register test process to receive messages
+      Process.register(self(), :test_coordinator_proc)
+
       # Start primary coordinator agent
-      {:ok, coordinator_id} =
+      coordinator_id = "coordinator-primary"
+
+      {:ok, coordinator_pid} =
         ClusterSupervisor.start_coordinator_agent(
-          "coordinator-primary",
+          coordinator_id,
           TestCoordinatorAgent,
           [coordination_mode: :primary],
           %{session_id: "test-session-001"}
         )
 
       # Start worker agent (should be placed on different node if available)
-      {:ok, worker_id} =
+      worker_id = "worker-001"
+
+      {:ok, worker_pid} =
         ClusterSupervisor.start_worker_agent(
-          "worker-001",
+          worker_id,
           TestWorkerAgent,
           [work_type: :analysis],
           %{session_id: "test-session-001"}
         )
 
+      # Wait a bit for registration to propagate
+      :timer.sleep(100)
+
       # Verify agents are registered cluster-wide
-      assert {:ok, coordinator_pid} = ClusterRegistry.lookup_agent(coordinator_id)
-      assert {:ok, worker_pid} = ClusterRegistry.lookup_agent(worker_id)
+      assert {:ok, coordinator_pid, _coordinator_metadata} =
+               ClusterRegistry.lookup_agent(coordinator_id)
+
+      assert {:ok, worker_pid, _worker_metadata} = ClusterRegistry.lookup_agent(worker_id)
       assert is_pid(coordinator_pid)
       assert is_pid(worker_pid)
 
@@ -197,7 +233,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
       # Verify all agents are discoverable cluster-wide
       for agent_id <- started_agents do
-        assert {:ok, _pid} = ClusterRegistry.lookup_agent(agent_id)
+        assert {:ok, _pid, _metadata} = ClusterRegistry.lookup_agent(agent_id)
       end
 
       # Test agent discovery by type
@@ -227,14 +263,19 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       # Initially will fail until Horde migration is implemented
 
       # Start agent on current node
-      {:ok, agent_id} =
+      agent_id = "resilient-agent-001"
+
+      {:ok, _pid} =
         ClusterSupervisor.start_agent(%{
-          id: "resilient-agent-001",
+          id: agent_id,
           module: TestResilientAgent,
           args: [state: %{important_data: "must_preserve"}],
           restart_strategy: :permanent,
           metadata: %{critical: true}
         })
+
+      # Wait for registration to complete
+      :timer.sleep(100)
 
       # Get initial agent info
       {:ok, original_info} = ClusterSupervisor.get_agent_info(agent_id)
@@ -242,9 +283,10 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       original_pid = original_info.pid
 
       IO.puts("Agent started on node: #{original_node}")
+      IO.puts("Agent PID: #{inspect(original_pid)}")
 
       # Verify agent is running and has state
-      assert {:ok, state} = GenServer.call(original_pid, :get_state)
+      state = GenServer.call(original_pid, :get_state)
       assert state.important_data == "must_preserve"
 
       # For single-node test, simulate node failure by testing migration capability
@@ -255,15 +297,15 @@ defmodule Arbor.Core.ClusterIntegrationTest do
         target_nodes = available_nodes -- [original_node]
         target_node = List.first(target_nodes)
 
-        # Trigger manual migration (simulating failure response)
-        assert {:ok, new_pid} = ClusterSupervisor.migrate_agent(agent_id, target_node)
+        # Trigger manual restoration (simulating failure response)
+        assert {:ok, {new_pid, recovery_status}} = Arbor.Core.HordeSupervisor.restore_agent(agent_id)
 
         # Verify agent migrated to different node
         assert node(new_pid) == target_node
         assert new_pid != original_pid
 
         # Verify state was preserved during migration
-        assert {:ok, preserved_state} = GenServer.call(new_pid, :get_state)
+        preserved_state = GenServer.call(new_pid, :get_state)
         assert preserved_state.important_data == "must_preserve"
 
         # Verify registry was updated
@@ -271,15 +313,16 @@ defmodule Arbor.Core.ClusterIntegrationTest do
         assert migrated_info.node == target_node
         assert migrated_info.pid == new_pid
       else
-        # Single-node scenario: test migration readiness
-        IO.puts("Single node detected - testing migration capability only")
+        # Single-node scenario: test restoration capability
+        IO.puts("Single node detected - testing restoration capability only")
 
-        # Verify agent can extract state for migration
-        assert {:ok, extracted_state} = ClusterSupervisor.extract_agent_state(agent_id)
-        assert is_map(extracted_state)
-
-        # Verify agent can restore state after migration
-        assert {:ok, _restored} = ClusterSupervisor.restore_agent_state(agent_id, extracted_state)
+        # Verify agent can be restored with state preservation
+        assert {:ok, {new_pid, recovery_status}} = Arbor.Core.HordeSupervisor.restore_agent(agent_id)
+        assert new_pid != original_pid
+        
+        # Verify state was preserved during restoration
+        preserved_state = GenServer.call(new_pid, :get_state)
+        assert preserved_state.important_data == "must_preserve"
       end
     end
 
@@ -330,7 +373,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
       # Verify all agents are still accessible
       for agent_id <- initial_agents do
-        assert {:ok, _pid} = ClusterRegistry.lookup_agent(agent_id)
+        assert {:ok, _pid, _metadata} = ClusterRegistry.lookup_agent(agent_id)
       end
 
       # Clean up
@@ -436,7 +479,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       registered_count =
         Enum.count(successful_agents, fn agent_id ->
           case ClusterRegistry.lookup_agent(agent_id) do
-            {:ok, _pid} -> true
+            {:ok, _pid, _metadata} -> true
             _ -> false
           end
         end)
@@ -461,7 +504,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       remaining_count =
         Enum.count(successful_agents, fn agent_id ->
           case ClusterRegistry.lookup_agent(agent_id) do
-            {:ok, _pid} -> true
+            {:ok, _pid, _metadata} -> true
             _ -> false
           end
         end)
@@ -599,8 +642,9 @@ defmodule TestWorkerAgent do
 
   def handle_info({:task_completed_internal, task_id, result}, state) do
     # Notify coordinator or test process
-    if Process.whereis(:test_worker_proc) do
-      send(:test_worker_proc, {:task_completed, self(), task_id, result})
+    # For this test, we'll send directly to the test process
+    if Process.whereis(:test_coordinator_proc) do
+      send(:test_coordinator_proc, {:task_completed, "worker-001", task_id, result})
     end
 
     {:noreply, state}
@@ -632,12 +676,32 @@ defmodule TestResilientAgent do
   end
 
   def init(args) do
-    state = Keyword.get(args, :state, %{})
-    {:ok, state}
+    # Check if we have recovered state from a restore operation
+    case Keyword.get(args, :recovered_state) do
+      nil ->
+        # Normal initialization
+        state = Keyword.get(args, :state, %{})
+        {:ok, state}
+      recovered_state ->
+        # Use recovered state from checkpoint
+        {:ok, recovered_state}
+    end
   end
 
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
+  end
+
+  def handle_call(:extract_state, _from, state) do
+    {:reply, state, state}
+  end
+
+  def handle_call(:prepare_checkpoint, _from, state) do
+    {:reply, state, state}
+  end
+
+  def handle_call({:restore_state, new_state}, _from, _state) do
+    {:reply, :ok, new_state}
   end
 end
 

@@ -1,221 +1,570 @@
 defmodule Arbor.Core.HordeSupervisor do
   @moduledoc """
-  Production implementation of distributed agent supervision using Horde.DynamicSupervisor.
-
-  This module provides distributed agent lifecycle management using Horde's
-  CRDT-based supervision for fault-tolerant, cluster-wide agent supervision.
-
-  PRODUCTION: This replaces the LocalSupervisor mock for distributed operation!
-
-  Features:
-  - Distributed supervision with automatic failover
-  - Process handoff during node failures
-  - Load balancing across cluster nodes
-  - State preservation during migration
-  - Graceful shutdown coordination
+  Stateless wrapper around Horde.DynamicSupervisor for distributed agent management.
+  
+  This module provides the same API as the stateful HordeSupervisor but stores all
+  agent metadata in the distributed Horde.Registry instead of local GenServer state.
+  This eliminates the single point of failure while maintaining fault tolerance.
+  
+  ## Agent Process Lifecycle and Restart Strategy
+  
+  This system employs a two-tiered strategy to ensure both rapid recovery from 
+  transient faults and long-term consistency with the desired state.
+  
+  ### Tier 1: HordeSupervisor - Immediate Liveness
+  
+  The HordeSupervisor is responsible for the immediate liveness of agent processes.
+  
+  - **Strategy:** `:one_for_one`
+  - **Responsibility:** If an agent process exits, HordeSupervisor will restart it
+    according to its defined `restart_strategy` (`:permanent`, `:transient`, or `:temporary`).
+  - **Scope:** Handles local process failures with millisecond-level recovery time.
+  - **Limitation:** Unaware of global desired state, node failures, or config changes.
+  
+  ### Tier 2: AgentReconciler - Global State Reconciliation
+  
+  The AgentReconciler is a cluster-wide singleton responsible for ensuring the 
+  entire population of agents matches the centrally defined configuration.
+  
+  - **Strategy:** Periodically scans all running agents vs desired specifications
+  - **Responsibility:** Handles coarse-grained, systemic changes including:
+    - **Node Failures:** Redistributing agents from failed nodes to healthy nodes
+    - **Specification Changes:** Rolling restarts when agent configuration updates
+    - **Scaling:** Starting new agents when specs added, stopping when removed
+    - **Consistency Audits:** Correcting drift from desired state
+  
+  ### Separation of Responsibilities
+  
+  | Concern | HordeSupervisor (Local) | AgentReconciler (Global) |
+  |---------|-------------------------|--------------------------|
+  | **Trigger** | Abnormal process exit | Periodic timer, node events, spec changes |
+  | **Action** | Immediately restart failed process | Start/stop/move processes to match desired state |
+  | **Recovery Time** | Milliseconds | Seconds to minutes (reconciliation interval) |
+  | **Example** | Agent crashes due to bug | Node disconnects from cluster |
+  
+  ## Design
+  
+  - Agent specs are stored as persistent entries in Horde.Registry
+  - Agent PIDs are registered separately for runtime lookups
+  - AgentReconciler (singleton) ensures desired state matches actual state
+  - No local state means no single point of failure
+  
+  ## Registry Key Structure
+  
+  - `{:agent, agent_id}` - Live agent PID and runtime metadata
+  - `{:agent_spec, agent_id}` - Persistent agent specification for restarts
   """
 
   use GenServer
+  alias Arbor.Contracts.Agent.Lifecycle
+  alias Arbor.Contracts.Cluster.Supervisor, as: SupervisorContract
+  alias Arbor.Core.{HordeRegistry, AgentCheckpoint, ClusterEvents}
+
   require Logger
 
-  alias Arbor.Contracts.Cluster.Supervisor, as: SupervisorContract
-  alias Arbor.Core.HordeRegistry
-
   @behaviour SupervisorContract
+  @behaviour Lifecycle
 
-  # Supervisor configuration
+  # Configuration
   @supervisor_name Arbor.Core.HordeAgentSupervisor
-  @supervisor_registry Arbor.Core.HordeSupervisorRegistry
   @registry_name Arbor.Core.HordeAgentRegistry
 
-  # State for tracking agent metadata and lifecycle
-  defstruct [
-    :agent_metadata,
-    :migration_state,
-    :health_metrics
-  ]
-
-  @type state :: %__MODULE__{
-          agent_metadata: %{binary() => agent_metadata()},
-          migration_state: %{binary() => migration_info()},
-          health_metrics: %{node() => health_info()}
-        }
-
-  @type agent_metadata :: %{
-          id: binary(),
-          module: module(),
-          args: term(),
-          restart_strategy: :permanent | :temporary | :transient,
-          metadata: map(),
-          started_at: integer(),
-          node: node(),
-          migrations: non_neg_integer()
-        }
-
-  @type migration_info :: %{
-          agent_id: binary(),
-          source_node: node(),
-          target_node: node(),
-          state: :preparing | :migrating | :completed | :failed,
-          started_at: integer()
-        }
-
-  @type health_info :: %{
-          agent_count: non_neg_integer(),
-          load_average: float(),
-          last_updated: integer()
-        }
-
-  # Client API - Supervisor Contract Implementation
-
-  def start_link(_opts \\ []) do
-    GenServer.start_link(__MODULE__, [], name: __MODULE__)
-  end
-
-  # Compatibility API for ClusterSupervisor (with state parameter)
-
-  @impl SupervisorContract
-  def start_agent(agent_spec, _state \\ nil) do
-    GenServer.call(__MODULE__, {:start_agent, agent_spec})
-  end
-
-  @impl SupervisorContract
-  def stop_agent(agent_id, timeout \\ 5000, _state \\ nil) do
-    GenServer.call(__MODULE__, {:stop_agent, agent_id, timeout})
-  end
-
-  @impl SupervisorContract
-  def restart_agent(agent_id, _state \\ nil) do
-    GenServer.call(__MODULE__, {:restart_agent, agent_id})
-  end
-
-  @impl SupervisorContract
-  def get_agent_info(agent_id, _state \\ nil) do
-    GenServer.call(__MODULE__, {:get_agent_info, agent_id})
-  end
-
-  @impl SupervisorContract
-  def list_agents(_state \\ nil) do
-    GenServer.call(__MODULE__, :list_agents)
-  end
-
-  def list_agents_by_node(node, _state \\ nil) do
-    GenServer.call(__MODULE__, {:list_agents_by_node, node})
-  end
-
-  def get_supervision_health(_state \\ nil) do
-    GenServer.call(__MODULE__, :get_supervision_health)
-  end
-
-  @impl SupervisorContract
-  def migrate_agent(agent_id, target_node, _state \\ nil) do
-    GenServer.call(__MODULE__, {:migrate_agent, agent_id, target_node}, 30_000)
-  end
-
-  def extract_agent_state(agent_id, _state \\ nil) do
-    GenServer.call(__MODULE__, {:extract_agent_state, agent_id})
-  end
-
-  def restore_agent_state(agent_id, extracted_state, _state \\ nil) do
-    GenServer.call(__MODULE__, {:restore_agent_state, agent_id, extracted_state})
-  end
-
-  def handle_agent_event(agent_id, event, metadata, _state \\ nil) do
-    GenServer.cast(__MODULE__, {:agent_event, agent_id, event, metadata})
-  end
-
-  # Missing Supervisor contract implementations
-
-  @impl SupervisorContract
-  def health_metrics(_state) do
-    GenServer.call(__MODULE__, :health_metrics)
-  end
-
-  @impl SupervisorContract
-  def set_event_handler(event_type, callback, _state) do
-    GenServer.call(__MODULE__, {:set_event_handler, event_type, callback})
-  end
-
-  @impl SupervisorContract
-  def handle_agent_handoff(agent_id, operation, state_data, _state) do
-    GenServer.call(__MODULE__, {:handle_agent_handoff, agent_id, operation, state_data})
-  end
-
-  @impl SupervisorContract
-  def update_agent_spec(agent_id, updates, _state) do
-    GenServer.call(__MODULE__, {:update_agent_spec, agent_id, updates})
-  end
-
-  @impl SupervisorContract
-  def start_supervisor(_opts) do
-    # For HordeSupervisor, the component initialization is handled during application startup
-    # This callback provides the initial state for the contract
-    {:ok, nil}
-  end
-
-  @impl SupervisorContract
-  def stop_supervisor(reason, _state) do
-    Logger.info("HordeSupervisor terminating", reason: reason)
-    # Cleanup is handled by the Horde infrastructure automatically
-    :ok
-  end
-
-  # Distributed supervisor management
+  # ================================
+  # GenServer API
+  # ================================
 
   @doc """
-  Start the Horde distributed supervisor.
-
-  This should be called during application startup to initialize
-  the distributed supervision infrastructure.
+  Starts the HordeSupervisor GenServer.
   """
-  @spec start_supervisor() :: {:ok, pid()} | {:error, term()}
-  def start_supervisor() do
-    children = [
-      {Horde.Registry,
-       [
-         name: @supervisor_registry,
-         keys: :unique,
-         members: :auto
-       ]},
-      {Horde.DynamicSupervisor,
-       [
-         name: @supervisor_name,
-         strategy: :one_for_one,
-         distribution_strategy: Horde.UniformRandomDistribution,
-         process_redistribution: :active,
-         members: :auto,
-         delta_crdt_options: [sync_interval: 100]
-       ]},
-      {__MODULE__, []}
-    ]
-
-    Supervisor.start_link(children, strategy: :one_for_one)
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc """
-  Join a node to the supervisor cluster.
+  Centrally registers a running agent process.
+  This is called by agents themselves after they have successfully started.
   """
-  @spec join_supervisor(node()) :: :ok
-  def join_supervisor(node) do
-    Horde.Cluster.set_members(@supervisor_name, [node() | [node]])
-    Horde.Cluster.set_members(@supervisor_registry, [node() | [node]])
+  def register_agent(pid, agent_id, agent_specific_metadata) do
+    GenServer.call(__MODULE__, {:register_agent, pid, agent_id, agent_specific_metadata})
+  end
+
+  # ================================
+  # SupervisorContract Implementation
+  # ================================
+
+  @impl SupervisorContract
+  def start_agent(agent_spec) do
+    agent_id = agent_spec.id
+
+    # 1. Store the agent spec persistently FIRST
+    spec_metadata = %{
+      module: agent_spec.module,
+      args: agent_spec.args,
+      restart_strategy: Map.get(agent_spec, :restart_strategy, :temporary),
+      metadata: Map.get(agent_spec, :metadata, %{}),
+      created_at: System.system_time(:millisecond)
+    }
+
+    # Register the spec in a way that persists beyond process death
+    case register_agent_spec(agent_id, spec_metadata) do
+      :ok ->
+        # Synchronously verify that the spec is readable before starting the agent
+        # to prevent a race condition where the agent starts before its spec is
+        # visible in the CRDT.
+        case verify_spec_registration(agent_id) do
+          :ok ->
+            # 2. Start the actual process via Horde
+            child_spec = %{
+              id: agent_id,
+              start:
+                {agent_spec.module, :start_link,
+                 [enhance_args(agent_spec.args, agent_id, spec_metadata)]},
+              restart: spec_metadata.restart_strategy, # Respect the agent's restart strategy
+              type: :worker
+            }
+
+            case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
+              {:ok, pid} ->
+                Logger.info(
+                  "Started agent #{agent_id} on #{node(pid)} (PID: #{inspect(pid)}), awaiting registration."
+                )
+
+                # The agent will now call back to register itself.
+                {:ok, pid}
+
+              {:error, {:already_started, pid}} ->
+                # Agent already started. It should have registered itself or will do so.
+                # The reconciler will handle any inconsistencies.
+                Logger.debug("Agent already running during start_agent call",
+                  agent_id: agent_id,
+                  pid: inspect(pid)
+                )
+
+                {:ok, pid}
+
+              {:error, reason} ->
+                # Let AgentReconciler handle cleanup of failed specs to avoid
+                # conflicts with Horde's transient restart strategy
+                {:error, reason}
+            end
+
+          {:error, :spec_not_visible} ->
+            # If the spec isn't visible, starting the agent will fail.
+            # Clean up the spec we attempted to register to avoid orphans.
+            unregister_agent_spec(agent_id)
+
+            Logger.error(
+              "Aborting agent start for #{agent_id}: spec not visible in registry after registration."
+            )
+
+            {:error, :spec_not_visible}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl SupervisorContract
+  def stop_agent(agent_id, _timeout \\ 5000) do
+    # First look up the agent PID
+    case HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, pid, _metadata} ->
+        # Terminate using the PID
+        # Unregister from runtime registry first (centralized unregistration)
+        HordeRegistry.unregister_agent_name(agent_id)
+
+        case Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid) do
+          :ok ->
+            # Remove the persistent spec
+            unregister_agent_spec(agent_id)
+            # Clean up any checkpoint data
+            AgentCheckpoint.remove_checkpoint(agent_id)
+
+            # Broadcast agent stop event
+            ClusterEvents.broadcast(:agent_stopped, %{
+              agent_id: agent_id,
+              pid: pid,
+              node: node(pid)
+            })
+
+            Logger.info("Stopped and cleaned up agent #{agent_id}")
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("Failed to stop agent #{agent_id}: #{inspect(reason)}")
+            {:error, reason}
+        end
+
+      {:error, :not_registered} ->
+        # Agent not running, just clean up the spec and checkpoint
+        unregister_agent_spec(agent_id)
+        AgentCheckpoint.remove_checkpoint(agent_id)
+        Logger.info("Cleaned up spec for non-running agent #{agent_id}")
+        :ok
+    end
+  end
+
+  @impl SupervisorContract
+  def restart_agent(agent_id) do
+    case lookup_agent_spec(agent_id) do
+      {:ok, spec_metadata} ->
+        # Stop if running, then start with original spec (no state recovery)
+        _ = stop_agent(agent_id)
+
+        agent_spec = %{
+          id: agent_id,
+          module: spec_metadata.module,
+          args: spec_metadata.args,
+          restart_strategy: spec_metadata.restart_strategy,
+          metadata: spec_metadata.metadata
+        }
+
+        start_agent(agent_spec)
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  @impl SupervisorContract
+  def restore_agent(agent_id) do
+    case lookup_agent_spec(agent_id) do
+      {:ok, spec_metadata} ->
+        # Attempt to capture state before stopping
+        current_state =
+          case HordeRegistry.lookup_agent_name(agent_id) do
+            {:ok, pid, _metadata} ->
+              # Ask the agent to prepare its state for checkpointing.
+              try do
+                GenServer.call(pid, :prepare_checkpoint, 5000)
+              rescue
+                # Agent may not support this call, which is fine.
+                _ -> nil
+              end
+
+            _ ->
+              nil
+          end
+
+        # Perform a "soft stop" if the agent is running (don't delete spec or checkpoint)
+        termination_result =
+          case HordeRegistry.lookup_agent_name(agent_id) do
+            {:ok, pid, _metadata} ->
+              ref = Process.monitor(pid)
+              HordeRegistry.unregister_agent_name(agent_id)
+              Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
+
+              # Reliably wait for the process to terminate to avoid race conditions
+              receive do
+                {:DOWN, ^ref, :process, _pid, _reason} ->
+                  :ok
+
+                # Process terminated successfully
+              after
+                5000 ->
+                  # The process did not terminate in time, abort restore
+                  Logger.warning(
+                    "Timeout waiting for agent #{agent_id} (PID: #{inspect(pid)}) to terminate during restore. Aborting restore."
+                  )
+
+                  Process.demonitor(ref, [:flush])
+                  {:error, :terminate_timeout}
+              end
+
+            _ ->
+              :ok # Agent not running, proceed with restore
+          end
+
+        case termination_result do
+          :ok ->
+            # Prepare args with recovery data if available and determine recovery status
+            {enhanced_args, recovery_status} =
+              case current_state do
+                nil ->
+                  {spec_metadata.args, :fresh_start}
+
+                state_data ->
+                  {spec_metadata.args |> Keyword.put(:recovered_state, state_data),
+                   :state_restored}
+              end
+
+            agent_spec = %{
+              id: agent_id,
+              module: spec_metadata.module,
+              args: enhanced_args,
+              restart_strategy: spec_metadata.restart_strategy,
+              metadata: spec_metadata.metadata
+            }
+
+            case start_agent(agent_spec) do
+              {:ok, pid} ->
+                Logger.info(
+                  "Restored agent #{agent_id} with recovery status: #{recovery_status}"
+                )
+
+                {:ok, {pid, recovery_status}}
+
+              error ->
+                error
+            end
+
+          {:error, :terminate_timeout} ->
+            # Propagate the error. The agent is in a zombie state (unregistered but possibly alive).
+            # The reconciler will eventually handle this.
+            {:error, :terminate_timeout}
+        end
+
+      {:error, :not_found} ->
+        {:error, :agent_not_found}
+    end
+  end
+
+  @impl SupervisorContract
+  def get_agent_info(agent_id) do
+    with {:ok, spec_metadata} <- lookup_agent_spec(agent_id),
+         {:ok, pid, runtime_metadata} <- HordeRegistry.lookup_agent_name(agent_id) do
+      info = %{
+        id: agent_id,
+        pid: pid,
+        node: node(pid),
+        module: spec_metadata.module,
+        restart_strategy: spec_metadata.restart_strategy,
+        metadata: Map.merge(spec_metadata.metadata, runtime_metadata),
+        created_at: spec_metadata.created_at,
+        started_at: Map.get(runtime_metadata, :started_at, spec_metadata.created_at)
+      }
+
+      {:ok, info}
+    else
+      {:error, :not_found} -> {:error, :not_found}
+      {:error, :not_registered} -> {:error, :not_found}
+    end
+  end
+
+  @impl SupervisorContract
+  def list_agents() do
+    # Get all agent specs
+    case list_all_agent_specs() do
+      {:ok, specs} ->
+        agents =
+          specs
+          |> Enum.map(fn {agent_id, spec_metadata} ->
+            case HordeRegistry.lookup_agent_name(agent_id) do
+              {:ok, pid, runtime_metadata} ->
+                %{
+                  id: agent_id,
+                  pid: pid,
+                  node: node(pid),
+                  module: spec_metadata.module,
+                  restart_strategy: spec_metadata.restart_strategy,
+                  metadata: Map.merge(spec_metadata.metadata, runtime_metadata),
+                  status: :running
+                }
+
+              {:error, :not_registered} ->
+                %{
+                  id: agent_id,
+                  pid: nil,
+                  node: nil,
+                  module: spec_metadata.module,
+                  restart_strategy: spec_metadata.restart_strategy,
+                  metadata: spec_metadata.metadata,
+                  status: :not_running
+                }
+            end
+          end)
+
+        {:ok, agents}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl SupervisorContract
+  def health_metrics() do
+    cluster_members = Horde.Cluster.members(@supervisor_name)
+    children = Horde.DynamicSupervisor.which_children(@supervisor_name)
+
+    specs =
+      case list_all_agent_specs() do
+        {:ok, s} ->
+          s
+
+        {:error, _reason} ->
+          # If spec lookup fails, we can't count total agents but can still report running ones.
+          # Defaulting to an empty list allows the health check to succeed with partial data.
+          Logger.warning(
+            "Could not retrieve agent specs for health metrics. Reporting total_agents as 0."
+          )
+
+          []
+      end
+
+    metrics = %{
+      total_agents: length(specs),
+      running_agents: length(children),
+      cluster_members: cluster_members,
+      node_count: length(cluster_members)
+    }
+
+    {:ok, metrics}
+  end
+
+  @impl SupervisorContract
+  def set_event_handler(_event_type, _callback) do
+    # Event handling can be implemented via Phoenix.PubSub in Phase 3
     :ok
   end
 
-  @doc """
-  Leave the supervisor cluster.
-  """
-  @spec leave_supervisor(node()) :: :ok
-  def leave_supervisor(node) do
-    current_supervisor_members = Horde.Cluster.members(@supervisor_name)
-    current_registry_members = Horde.Cluster.members(@supervisor_registry)
+  @impl SupervisorContract
+  def handle_agent_handoff(agent_id, operation, state_data) do
+    case operation do
+      :handoff ->
+        # Try to extract state from running agent
+        case HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, pid, _metadata} ->
+            try do
+              case GenServer.call(pid, :extract_state, 5000) do
+                extracted when is_map(extracted) -> {:ok, extracted}
+                _ -> {:ok, %{}}
+              end
+            catch
+              _, _ -> {:ok, %{}}
+            end
 
-    new_supervisor_members = List.delete(current_supervisor_members, node)
-    new_registry_members = List.delete(current_registry_members, node)
+          _ ->
+            {:error, :agent_not_found}
+        end
 
-    Horde.Cluster.set_members(@supervisor_name, new_supervisor_members)
-    Horde.Cluster.set_members(@supervisor_registry, new_registry_members)
+      :takeover ->
+        case HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, pid, _metadata} ->
+            try do
+              GenServer.call(pid, {:restore_state, state_data}, 5000)
+            catch
+              _, _ -> :ok
+            end
+
+          _ ->
+            {:error, :agent_not_found}
+        end
+    end
+  end
+
+  @impl SupervisorContract
+  def update_agent_spec(agent_id, updates) do
+    case lookup_agent_spec(agent_id) do
+      {:ok, current_spec} ->
+        updated_spec = Map.merge(current_spec, updates)
+        register_agent_spec(agent_id, updated_spec)
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
+  # ================================
+  # Agent.Lifecycle Implementation
+  # ================================
+
+  @impl Lifecycle
+  def on_start(agent_spec) do
+    start_agent(agent_spec)
+  end
+
+  @impl Lifecycle
+  def on_register(pid, agent_spec) do
+    metadata = Map.get(agent_spec, :metadata, %{})
+
+    case register_agent(pid, agent_spec.id, metadata) do
+      {:ok, _pid} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @impl Lifecycle
+  def on_stop(pid, reason) do
+    case find_agent_id_by_pid(pid) do
+      {:ok, agent_id} ->
+        Logger.info("Stopping agent #{agent_id} (PID: #{inspect(pid)}) due to: #{inspect(reason)}")
+        stop_agent(agent_id)
+
+      {:error, :not_found} ->
+        Logger.warning(
+          "Attempted to stop an agent with PID #{inspect(pid)} that is not registered or its spec is missing."
+        )
+
+        :ok
+    end
+  end
+
+  @impl Lifecycle
+  def on_restart(agent_spec, reason) do
+    Logger.info("Restarting agent #{agent_spec.id} due to: #{inspect(reason)}")
+    restart_agent(agent_spec.id)
+  end
+
+  @impl Lifecycle
+  def on_fail(agent_spec, reason) do
+    Logger.error("Agent #{agent_spec.id} failed. Reason: #{inspect(reason)}")
+
+    ClusterEvents.broadcast(:agent_failed, %{
+      agent_id: agent_spec.id,
+      reason: reason,
+      agent_spec: agent_spec
+    })
+
     :ok
+  end
+
+  @impl Lifecycle
+  def get_current_state(agent_spec) do
+    cond do
+      is_running?(agent_spec) ->
+        :running
+
+      match?({:ok, _}, lookup_agent_spec(agent_spec.id)) ->
+        :specified
+
+      true ->
+        # If spec is not found, it's considered stopped or never existed.
+        :stopped
+    end
+  end
+
+  @impl Lifecycle
+  def is_running?(agent_spec) do
+    case HordeRegistry.lookup_agent_name(agent_spec.id) do
+      {:ok, pid, _metadata} -> Process.alive?(pid)
+      _ -> false
+    end
+  end
+
+  @doc """
+  Look up agent specification from the distributed registry.
+  
+  Returns the stored agent specification that was registered when the agent was started.
+  This includes the module, args, restart strategy, and metadata.
+  
+  ## Parameters
+  
+  - `agent_id` - ID of the agent to look up
+  
+  ## Returns
+  
+  - `{:ok, spec_metadata}` - Agent spec found
+  - `{:error, :not_found}` - Agent spec not in registry
+  """
+  @spec lookup_agent_spec(binary()) :: {:ok, map()} | {:error, :not_found}
+  def lookup_agent_spec(agent_id) do
+    spec_key = {:agent_spec, agent_id}
+
+    case Horde.Registry.lookup(@registry_name, spec_key) do
+      [] -> {:error, :not_found}
+      [{_owner_pid, spec_metadata}] -> {:ok, spec_metadata}
+    end
   end
 
   @doc """
@@ -259,606 +608,323 @@ defmodule Arbor.Core.HordeSupervisor do
     end
   end
 
-  # GenServer callbacks
+  # Compatibility functions for the current API
+
+  def list_agents_by_node(node, _state \\ nil) do
+    {:ok, agents} = list_agents()
+    node_agents = Enum.filter(agents, fn agent -> agent.node == node end)
+    {:ok, node_agents}
+  end
+
+  def extract_agent_state(agent_id, _state \\ nil) do
+    handle_agent_handoff(agent_id, :handoff, nil)
+  end
+
+  def restore_agent_state(agent_id, state_data, _state \\ nil) do
+    handle_agent_handoff(agent_id, :takeover, state_data)
+  end
+
+  # ================================
+  # GenServer Callbacks
+  # ================================
 
   @impl GenServer
   def init(_opts) do
-    state = %__MODULE__{
-      agent_metadata: %{},
-      migration_state: %{},
-      health_metrics: %{}
-    }
-
-    # Monitor supervisor for child events
-    :ok = monitor_supervisor_events()
-
-    {:ok, state}
+    {:ok, %{}} # Stateless
   end
 
   @impl GenServer
-  def handle_call({:start_agent, agent_spec}, _from, state) do
-    case do_start_agent(agent_spec, state) do
-      {:ok, pid, updated_state} ->
-        {:reply, {:ok, pid}, updated_state}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:stop_agent, agent_id, timeout}, _from, state) do
-    case do_stop_agent(agent_id, timeout, state) do
-      {:ok, updated_state} ->
-        {:reply, :ok, updated_state}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:restart_agent, agent_id}, _from, state) do
-    case do_restart_agent(agent_id, state) do
-      {:ok, pid, updated_state} ->
-        {:reply, {:ok, pid}, updated_state}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:get_agent_info, agent_id}, _from, state) do
-    case Map.get(state.agent_metadata, agent_id) do
-      nil ->
-        {:reply, {:error, :not_found}, state}
-
-      metadata ->
-        # Get current pid from registry
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, registry_metadata} ->
-            agent_info = %{
-              id: agent_id,
-              pid: pid,
-              node: node(pid),
-              module: metadata.module,
-              restart_strategy: metadata.restart_strategy,
-              metadata: Map.merge(metadata.metadata, registry_metadata),
-              started_at: metadata.started_at,
-              migrations: metadata.migrations
-            }
-
-            {:reply, {:ok, agent_info}, state}
-
-          {:error, :not_registered} ->
-            {:reply, {:error, :not_found}, state}
-        end
-    end
-  end
-
-  @impl GenServer
-  def handle_call(:list_agents, _from, state) do
-    agents =
-      Enum.map(state.agent_metadata, fn {agent_id, metadata} ->
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, registry_metadata} ->
-            %{
-              id: agent_id,
-              pid: pid,
-              node: node(pid),
-              module: metadata.module,
-              restart_strategy: metadata.restart_strategy,
-              metadata: Map.merge(metadata.metadata, registry_metadata),
-              started_at: metadata.started_at
-            }
-
-          {:error, :not_registered} ->
-            nil
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    {:reply, {:ok, agents}, state}
-  end
-
-  @impl GenServer
-  def handle_call({:list_agents_by_node, target_node}, _from, state) do
-    agents =
-      state.agent_metadata
-      |> Enum.filter(fn {_agent_id, metadata} -> metadata.node == target_node end)
-      |> Enum.map(fn {agent_id, metadata} ->
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, registry_metadata} ->
-            %{
-              id: agent_id,
-              pid: pid,
-              node: node(pid),
-              module: metadata.module,
-              restart_strategy: metadata.restart_strategy,
-              metadata: Map.merge(metadata.metadata, registry_metadata)
-            }
-
-          {:error, :not_registered} ->
-            nil
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    {:reply, {:ok, agents}, state}
-  end
-
-  @impl GenServer
-  def handle_call(:get_supervision_health, _from, state) do
-    total_agents = map_size(state.agent_metadata)
-    active_agents = length(Horde.DynamicSupervisor.which_children(@supervisor_name))
-
-    health = %{
-      total_agents: total_agents,
-      active_agents: active_agents,
-      health_status: if(active_agents == total_agents, do: :healthy, else: :degraded),
-      nodes: Map.values(state.health_metrics),
-      cluster_members: Horde.Cluster.members(@supervisor_name)
-    }
-
-    {:reply, {:ok, health}, state}
-  end
-
-  @impl GenServer
-  def handle_call({:migrate_agent, agent_id, target_node}, _from, state) do
-    case do_migrate_agent(agent_id, target_node, state) do
-      {:ok, new_pid, updated_state} ->
-        {:reply, {:ok, new_pid}, updated_state}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:extract_agent_state, agent_id}, _from, state) do
-    case HordeRegistry.lookup_agent_name(agent_id) do
-      {:ok, pid, _metadata} ->
-        # Try to extract state from agent (if it supports it)
-        try do
-          case GenServer.call(pid, :extract_state, 5000) do
-            state_data when is_map(state_data) ->
-              {:reply, {:ok, state_data}, state}
-
-            _ ->
-              # Fallback: return basic metadata
-              metadata = Map.get(state.agent_metadata, agent_id, %{})
-              {:reply, {:ok, %{metadata: metadata}}, state}
-          end
-        catch
-          _, _ ->
-            # Agent doesn't support state extraction
-            metadata = Map.get(state.agent_metadata, agent_id, %{})
-            {:reply, {:ok, %{metadata: metadata}}, state}
-        end
-
-      {:error, :not_registered} ->
-        {:reply, {:error, :not_found}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:restore_agent_state, agent_id, extracted_state}, _from, state) do
-    case HordeRegistry.lookup_agent_name(agent_id) do
-      {:ok, pid, _metadata} ->
-        # Try to restore state to agent (if it supports it)
-        try do
-          case GenServer.call(pid, {:restore_state, extracted_state}, 5000) do
-            :ok ->
-              {:reply, {:ok, :restored}, state}
-
-            {:error, reason} ->
-              {:reply, {:error, reason}, state}
-          end
-        catch
-          _, reason ->
-            {:reply, {:error, {:restore_failed, reason}}, state}
-        end
-
-      {:error, :not_registered} ->
-        {:reply, {:error, :not_found}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call(:health_metrics, _from, state) do
-    metrics = %{
-      total_agents: map_size(state.agent_metadata),
-      active_agents: length(Horde.DynamicSupervisor.which_children(@supervisor_name)),
-      nodes: Map.values(state.health_metrics),
-      cluster_members: Horde.Cluster.members(@supervisor_name)
-    }
-
-    {:reply, {:ok, metrics}, state}
-  end
-
-  @impl GenServer
-  def handle_call({:set_event_handler, event_type, callback}, _from, state) do
-    # Store event handler for the specified event type
-    # This is a simplified implementation - in production you might want more sophisticated handler management
-    Logger.info("Event handler registered for #{event_type}")
-    {:reply, :ok, state}
-  end
-
-  @impl GenServer
-  def handle_call({:handle_agent_handoff, agent_id, operation, state_data}, _from, state) do
-    # Handle agent handoff operations during migration
-    case operation do
-      :extract_state ->
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, _metadata} ->
-            case extract_agent_state_internal(pid) do
-              {:ok, extracted_state} ->
-                {:reply, {:ok, extracted_state}, state}
-
-              {:error, reason} ->
-                {:reply, {:error, reason}, state}
-            end
-
-          {:error, :not_registered} ->
-            {:reply, {:error, :agent_not_found}, state}
-        end
-
-      :restore_state ->
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, _metadata} ->
-            case restore_agent_state_internal(pid, state_data) do
-              :ok ->
-                {:reply, :ok, state}
-
-              {:error, reason} ->
-                {:reply, {:error, reason}, state}
-            end
-
-          {:error, :not_registered} ->
-            {:reply, {:error, :agent_not_found}, state}
-        end
-
-      _ ->
-        {:reply, {:error, :unknown_operation}, state}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:update_agent_spec, agent_id, updates}, _from, state) do
-    case Map.get(state.agent_metadata, agent_id) do
-      nil ->
-        {:reply, {:error, :not_found}, state}
-
-      metadata ->
-        updated_metadata = Map.merge(metadata, updates)
-        new_agent_metadata = Map.put(state.agent_metadata, agent_id, updated_metadata)
-        new_state = %{state | agent_metadata: new_agent_metadata}
-        {:reply, :ok, new_state}
-    end
-  end
-
-  @impl GenServer
-  def handle_cast({:agent_event, agent_id, event, metadata}, state) do
-    # Update agent metadata based on event
-    updated_metadata =
-      case Map.get(state.agent_metadata, agent_id) do
-        nil ->
-          state.agent_metadata
-
-        agent_meta ->
-          updated_meta = handle_agent_lifecycle_event(agent_meta, event, metadata)
-          Map.put(state.agent_metadata, agent_id, updated_meta)
-      end
-
-    new_state = %{state | agent_metadata: updated_metadata}
-    {:noreply, new_state}
-  end
-
-  @impl GenServer
-  def handle_info({:supervisor_event, event}, state) do
-    # Handle supervisor events (child started, stopped, etc.)
-    updated_state = handle_supervisor_event(event, state)
-    {:noreply, updated_state}
-  end
-
-  @impl GenServer
-  def handle_info(_msg, state) do
-    {:noreply, state}
-  end
-
-  # Private implementation functions
-
-  defp do_start_agent(agent_spec, state) do
-    agent_id = agent_spec.id
-
-    # Check if agent already exists
-    case HordeRegistry.lookup_agent_name(agent_id) do
-      {:ok, _pid, _metadata} ->
-        {:error, :already_exists}
-
-      {:error, :not_registered} ->
-        # Prepare agent metadata
-        metadata = %{
-          id: agent_id,
-          module: agent_spec.module,
-          args: agent_spec.args,
-          restart_strategy: Map.get(agent_spec, :restart_strategy, :temporary),
-          metadata: Map.get(agent_spec, :metadata, %{}),
-          started_at: System.system_time(:millisecond),
-          node: node(),
-          migrations: 0
-        }
-
-        # Include agent_id and metadata in the args for self-registration
-        enhanced_args =
-          Keyword.merge(
-            agent_spec.args,
-            agent_id: agent_id,
-            agent_metadata: metadata.metadata,
-            restart_strategy: metadata.restart_strategy
-          )
-
-        # Start agent via Horde supervisor
-        child_spec = %{
-          id: agent_id,
-          start: {agent_spec.module, :start_link, [enhanced_args]},
-          restart: metadata.restart_strategy,
-          type: :worker
-        }
-
-        case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
-          {:ok, pid} ->
-            # Agent will self-register in its init callback
-            # We just need to update our local metadata
-            updated_metadata = Map.put(state.agent_metadata, agent_id, metadata)
-            updated_state = %{state | agent_metadata: updated_metadata}
-
-            # Wait briefly for agent to self-register
-            # This ensures registry is updated before we return
-            Process.sleep(50)
-
-            # Verify registration succeeded
-            case HordeRegistry.lookup_agent_name(agent_id) do
-              {:ok, ^pid, _reg_metadata} ->
-                {:ok, pid, updated_state}
-
-              _ ->
-                # Agent failed to self-register, clean up
-                Logger.error("Agent failed to self-register", agent_id: agent_id)
-                Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
-                {:error, :registration_failed}
-            end
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-    end
-  end
-
-  defp do_stop_agent(agent_id, _timeout, state) do
-    case HordeRegistry.lookup_agent_name(agent_id) do
-      {:ok, pid, _metadata} ->
-        # Unregister from registry first
-        :ok = HordeRegistry.unregister_name(agent_id)
-
-        # Stop the process
-        case Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid) do
-          :ok ->
-            updated_metadata = Map.delete(state.agent_metadata, agent_id)
-            updated_state = %{state | agent_metadata: updated_metadata}
-            {:ok, updated_state}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      {:error, :not_registered} ->
-        {:error, :not_found}
-    end
-  end
-
-  defp do_restart_agent(agent_id, state) do
-    case Map.get(state.agent_metadata, agent_id) do
-      nil ->
-        {:error, :not_found}
-
-      metadata ->
-        # Stop existing agent if running
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, _pid, _registry_metadata} ->
-            case do_stop_agent(agent_id, 5000, state) do
-              {:ok, intermediate_state} ->
-                # Start agent again with original spec
-                agent_spec = %{
-                  id: agent_id,
-                  module: metadata.module,
-                  args: metadata.args,
-                  restart_strategy: metadata.restart_strategy,
-                  metadata: metadata.metadata
-                }
-
-                do_start_agent(agent_spec, intermediate_state)
-
-              {:error, reason} ->
-                {:error, reason}
-            end
-
-          {:error, :not_registered} ->
-            # Agent not running, just start it
-            agent_spec = %{
-              id: agent_id,
-              module: metadata.module,
-              args: metadata.args,
-              restart_strategy: metadata.restart_strategy,
-              metadata: metadata.metadata
-            }
-
-            do_start_agent(agent_spec, state)
-        end
-    end
-  end
-
-  defp do_migrate_agent(agent_id, target_node, state) do
-    case HordeRegistry.lookup_agent_name(agent_id) do
-      {:ok, current_pid, _metadata} ->
-        current_node = node(current_pid)
-
-        if current_node == target_node do
-          {:ok, current_pid, state}
-        else
-          # Extract agent state
-          case extract_agent_state_internal(current_pid) do
-            {:ok, agent_state} ->
-              # Get agent metadata
-              case Map.get(state.agent_metadata, agent_id) do
-                nil ->
-                  {:error, :metadata_not_found}
-
-                metadata ->
-                  # Stop current agent
-                  case do_stop_agent(agent_id, 5000, state) do
-                    {:ok, intermediate_state} ->
-                      # Start agent on target node
-                      agent_spec = %{
-                        id: agent_id,
-                        module: metadata.module,
-                        args: metadata.args,
-                        restart_strategy: metadata.restart_strategy,
-                        metadata: metadata.metadata
-                      }
-
-                      case do_start_agent(agent_spec, intermediate_state) do
-                        {:ok, new_pid, updated_state} ->
-                          # Restore agent state
-                          case restore_agent_state_internal(new_pid, agent_state) do
-                            :ok ->
-                              # Update migration count
-                              updated_metadata =
-                                Map.update!(updated_state.agent_metadata, agent_id, fn meta ->
-                                  %{meta | migrations: meta.migrations + 1, node: target_node}
-                                end)
-
-                              final_state = %{updated_state | agent_metadata: updated_metadata}
-                              {:ok, new_pid, final_state}
-
-                            {:error, reason} ->
-                              {:error, {:state_restore_failed, reason}}
-                          end
-
-                        {:error, reason} ->
-                          {:error, {:restart_failed, reason}}
-                      end
-
-                    {:error, reason} ->
-                      {:error, {:stop_failed, reason}}
+  def handle_call({:register_agent, pid, agent_id, agent_specific_metadata}, _from, state) do
+    if Process.alive?(pid) do
+      case lookup_agent_spec(agent_id) do
+        {:ok, spec_metadata} ->
+          # Merge all metadata sources
+          runtime_metadata = %{
+            module: spec_metadata.module,
+            restart_strategy: spec_metadata.restart_strategy,
+            started_at: System.system_time(:millisecond)
+          }
+
+          full_metadata =
+            spec_metadata.metadata
+            |> Map.merge(agent_specific_metadata)
+            |> Map.merge(runtime_metadata)
+
+          case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+            {:ok, ^pid} ->
+              reply_with_registration_success(
+                pid,
+                agent_id,
+                spec_metadata,
+                state,
+                "Agent registered in runtime registry"
+              )
+
+            {:error, :name_taken} ->
+              # Idempotency check: if already registered to the same pid, it's ok.
+              # Also handle stale registrations where the old PID is dead.
+              case HordeRegistry.lookup_agent_name_raw(agent_id) do
+                {:ok, ^pid, _} ->
+                  # Case 1: Already registered to the same PID. This is idempotent.
+                  Logger.debug("Agent already registered with correct PID", agent_id: agent_id)
+                  {:reply, {:ok, pid}, state}
+
+                {:ok, existing_pid, _} ->
+                  # Case 2: Registered to a different PID.
+                  if Process.alive?(existing_pid) do
+                    # The existing PID is alive, so the name is genuinely taken.
+                    Logger.error("Agent name already taken by another process",
+                      agent_id: agent_id,
+                      existing_pid: inspect(existing_pid),
+                      new_pid: inspect(pid)
+                    )
+
+                    {:reply, {:error, :name_taken}, state}
+                  else
+                    # The existing PID is dead. This is a stale registration.
+                    # Unregister the dead one and try registering the new one.
+                    Logger.info(
+                      "Found stale registration for agent #{agent_id} with dead PID #{inspect(existing_pid)}. Cleaning up."
+                    )
+
+                    HordeRegistry.unregister_agent_name(agent_id)
+
+                    # Re-attempt registration. This could still fail due to a race condition.
+                    case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+                      {:ok, ^pid} ->
+                        reply_with_registration_success(
+                          pid,
+                          agent_id,
+                          spec_metadata,
+                          state,
+                          "Agent registered after cleaning stale entry"
+                        )
+
+                      {:error, :name_taken} ->
+                        Logger.error(
+                          "Failed to register agent #{agent_id} due to race condition after cleaning stale entry."
+                        )
+
+                        {:reply, {:error, :name_taken}, state}
+
+                      error ->
+                        {:reply, error, state}
+                    end
+                  end
+
+                {:error, :not_registered} ->
+                  # Race condition: The name was taken, but now it's free.
+                  # We can safely try to register again.
+                  case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+                    {:ok, ^pid} ->
+                      reply_with_registration_success(
+                        pid,
+                        agent_id,
+                        spec_metadata,
+                        state,
+                        "Agent registered after race condition resolution"
+                      )
+
+                    {:error, :name_taken} ->
+                      Logger.error(
+                        "Failed to register agent #{agent_id} due to race condition (name taken again)."
+                      )
+
+                      {:reply, {:error, :name_taken}, state}
+
+                    error ->
+                      {:reply, error, state}
                   end
               end
-              
-            {:error, reason} ->
-              {:error, {:state_extraction_failed, reason}}
+
+            error ->
+              {:reply, error, state}
           end
-        end
 
-      {:error, :not_registered} ->
-        {:error, :not_found}
-    end
-  end
-
-  defp extract_agent_state_internal(pid) do
-    try do
-      case GenServer.call(pid, :extract_state, 5000) do
-        state_data when is_map(state_data) ->
-          {:ok, state_data}
-
-        _ ->
-          {:ok, %{}}
+        {:error, :not_found} ->
+          Logger.error("Could not find spec for agent #{agent_id} during registration.")
+          {:reply, {:error, :spec_not_found}, state}
       end
-    catch
-      :exit, {:timeout, _} ->
-        {:error, :extract_timeout}
-        
-      :exit, {:noproc, _} ->
-        {:error, :process_not_found}
-        
-      kind, reason ->
-        Logger.error("Failed to extract agent state",
-          pid: inspect(pid),
-          kind: kind,
-          reason: inspect(reason)
-        )
-        {:error, {:extract_failed, {kind, reason}}}
+    else
+      Logger.warning("Attempted to register a non-alive process",
+        agent_id: agent_id,
+        pid: inspect(pid)
+      )
+
+      {:reply, {:error, :process_not_alive}, state}
     end
   end
 
-  defp restore_agent_state_internal(pid, state_data) do
-    try do
-      GenServer.call(pid, {:restore_state, state_data}, 5000)
-    catch
-      _, _ ->
-        # Ignore if agent doesn't support state restoration
-        :ok
-    end
-  end
-
-  defp handle_agent_lifecycle_event(metadata, event, event_metadata) do
-    case event do
-      :started ->
-        %{metadata | started_at: System.system_time(:millisecond)}
-
-      :stopped ->
-        metadata
-
-      :migrated ->
-        new_node = Map.get(event_metadata, :target_node, metadata.node)
-        %{metadata | node: new_node, migrations: metadata.migrations + 1}
-
-      _ ->
-        metadata
-    end
-  end
-
-  defp handle_supervisor_event(_event, state) do
-    # Handle supervisor events like child_started, child_terminated, etc.
-    # Update health metrics and internal state as needed
-    state
-  end
-
-  defp monitor_supervisor_events() do
-    # Monitor supervisor events via telemetry
-    # Horde emits telemetry events for child lifecycle
-    :telemetry.attach_many(
-      "arbor-horde-supervisor-events",
-      [
-        [:horde, :supervisor, :start_child],
-        [:horde, :supervisor, :terminate_child],
-        [:horde, :supervisor, :restart_child],
-        [:horde, :supervisor, :shutdown]
-      ],
-      &handle_telemetry_event/4,
-      nil
+  defp reply_with_registration_success(pid, agent_id, spec_metadata, state, log_message) do
+    Logger.debug(log_message,
+      agent_id: agent_id,
+      pid: inspect(pid)
     )
 
-    Logger.info("Monitoring supervisor events enabled")
+    # Broadcast agent start event
+    ClusterEvents.broadcast(:agent_started, %{
+      agent_id: agent_id,
+      pid: pid,
+      node: node(pid),
+      module: spec_metadata.module,
+      restart_strategy: spec_metadata.restart_strategy
+    })
+
+    {:reply, {:ok, pid}, state}
+  end
+
+  # Private functions for spec management
+
+  defp register_agent_spec(agent_id, spec_metadata) do
+    spec_key = {:agent_spec, agent_id}
+
+    case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
+      {:ok, _} ->
+        :ok
+
+      {:error, {:already_registered, _}} ->
+        # Update existing spec
+        Horde.Registry.unregister(@registry_name, spec_key)
+
+        case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  defp unregister_agent_spec(agent_id) do
+    spec_key = {:agent_spec, agent_id}
+    Horde.Registry.unregister(@registry_name, spec_key)
     :ok
   end
 
-  defp handle_telemetry_event(event, measurements, metadata, _config) do
-    Logger.info("Supervisor event",
-      event: event,
-      measurements: inspect(measurements),
-      metadata: inspect(metadata)
-    )
+  defp list_all_agent_specs() do
+    pattern = {{:agent_spec, :"$1"}, :"$2", :"$3"}
+    guard = []
+    body = [{{:"$1", :"$3"}}]
 
-    # Send internal message to update state if needed
-    case event do
-      [:horde, :supervisor, :restart_child] ->
-        if agent_id = Map.get(metadata, :child_id) do
-          GenServer.cast(__MODULE__, {:agent_event, agent_id, :restarted, metadata})
-        end
+    specs = Horde.Registry.select(@registry_name, [{pattern, guard, body}])
+    {:ok, specs}
+  rescue
+    # This broad rescue is necessary because Horde.Registry.select can raise
+    # various (and undocumented) exceptions if the underlying Horde processes
+    # are unavailable or if there's a CRDT sync issue. We catch the exception,
+    # log it for debugging, and return an error tuple for graceful handling.
+    exception ->
+      Logger.error(
+        "Failed to retrieve agent specs from Horde.Registry. This may indicate a cluster health issue.",
+        exception: inspect(exception),
+        stacktrace: __STACKTRACE__
+      )
 
-      _ ->
-        :ok
+      {:error, exception}
+  end
+
+  defp enhance_args(args, agent_id, spec_metadata) do
+    # Add agent identity to args so agents can conditionally self-register
+    # when restarted by Horde or reconciler (not on initial start)
+    enhanced_args =
+      args
+      |> Keyword.put(:agent_id, agent_id)
+      |> Keyword.put(:agent_metadata, spec_metadata)
+
+    enhanced_args
+  end
+
+  defp find_agent_id_by_pid(pid) do
+    case list_all_agent_specs() do
+      {:ok, specs} ->
+        Enum.find_value(specs, {:error, :not_found}, fn {agent_id, _spec} ->
+          case HordeRegistry.lookup_agent_name(agent_id) do
+            {:ok, ^pid, _metadata} -> {:ok, agent_id}
+            _ -> nil
+          end
+        end)
+
+      {:error, _reason} ->
+        {:error, :not_found}
     end
+  end
+
+  @doc """
+  Verifies that an agent's spec is visible in the registry after registration.
+  This polls with exponential backoff to account for CRDT sync delays.
+  """
+  defp verify_spec_registration(agent_id, retries \\ 5, backoff \\ 20) do
+    case lookup_agent_spec(agent_id) do
+      {:ok, _spec} ->
+        :ok
+
+      {:error, :not_found} when retries > 0 ->
+        Process.sleep(backoff)
+        verify_spec_registration(agent_id, retries - 1, backoff * 2)
+
+      {:error, :not_found} ->
+        Logger.error(
+          "Spec for agent #{agent_id} not visible in registry after multiple retries. This may indicate a CRDT sync issue."
+        )
+
+        {:error, :spec_not_visible}
+    end
+  end
+
+  # Supervisor management functions
+
+  @doc """
+  Start the Horde supervisor infrastructure.
+  """
+  def start_supervisor() do
+    children = [
+      {Horde.Registry,
+       [
+         name: @registry_name,
+         keys: :unique,
+         members: :auto,
+         delta_crdt_options: [sync_interval: 100]
+       ]},
+      {Horde.DynamicSupervisor,
+       [
+         name: @supervisor_name,
+         strategy: :one_for_one,
+         distribution_strategy: Horde.UniformRandomDistribution,
+         process_redistribution: :active,
+         members: :auto,
+         delta_crdt_options: [sync_interval: 100]
+       ]},
+      # Central registration handler
+      {Arbor.Core.HordeSupervisor, []}
+      # Note: AgentReconciler disabled for basic testing
+      # TODO: Re-enable when Highlander dependency issue is resolved
+    ]
+
+    Supervisor.start_link(children,
+      strategy: :one_for_one,
+      name: Arbor.Core.HordeSupervisorSupervisor
+    )
+  end
+
+  @doc """
+  Join a node to the supervisor cluster.
+  """
+  def join_supervisor(node) do
+    Horde.Cluster.set_members(@supervisor_name, [node() | [node]])
+    Horde.Cluster.set_members(@registry_name, [node() | [node]])
+    :ok
+  end
+
+  @doc """
+  Remove a node from the supervisor cluster.
+  """
+  def leave_supervisor(node) do
+    current_supervisor_members = Horde.Cluster.members(@supervisor_name)
+    current_registry_members = Horde.Cluster.members(@registry_name)
+
+    new_supervisor_members = List.delete(current_supervisor_members, node)
+    new_registry_members = List.delete(current_registry_members, node)
+
+    Horde.Cluster.set_members(@supervisor_name, new_supervisor_members)
+    Horde.Cluster.set_members(@registry_name, new_registry_members)
+    :ok
   end
 end

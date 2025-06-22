@@ -80,11 +80,12 @@ defmodule Arbor.Core.Sessions.Session do
     session_id = Keyword.fetch!(opts, :session_id)
 
     # For testing, use regular Registry instead of Horde
+    # Use dedicated session registry
     name =
       if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
-        {:via, Registry, {Arbor.Core.Registry, session_id}}
+        {:via, Registry, {Arbor.Core.MockSessionRegistry, session_id}}
       else
-        {:via, Horde.Registry, {Arbor.Core.Registry, session_id}}
+        {:via, Horde.Registry, {Arbor.Core.SessionRegistry, session_id}}
       end
 
     GenServer.start_link(__MODULE__, opts, name: name)
@@ -121,6 +122,26 @@ defmodule Arbor.Core.Sessions.Session do
   @spec get_state(GenServer.server()) :: {:ok, map()}
   def get_state(session) do
     GenServer.call(session, :get_state)
+  end
+
+  @doc """
+  Get session as a contract-compliant struct.
+
+  Transforms the session's internal state into the Session.t() struct
+  required by the Arbor.Contracts.Session.Manager behaviour.
+
+  ## Parameters
+
+  - `session` - Session PID or registered name
+
+  ## Returns
+
+  - `{:ok, Session.t()}` - Session struct
+  - `{:error, reason}` - Failed to get struct
+  """
+  @spec to_struct(GenServer.server()) :: {:ok, Arbor.Contracts.Core.Session.t()} | {:error, term()}
+  def to_struct(session) do
+    GenServer.call(session, :to_struct)
   end
 
   @doc """
@@ -237,6 +258,35 @@ defmodule Arbor.Core.Sessions.Session do
       last_activity: DateTime.utc_now()
     }
 
+    # Register in the distributed session registry with metadata
+    metadata_for_registry = %{
+      created_at: state.created_at,
+      created_by: state.created_by,
+      timeout: state.timeout,
+      metadata: state.metadata
+    }
+
+    # Register with the SessionRegistry for distributed lookup
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        # For tests, register with mock registry
+        Registry.register(Arbor.Core.MockSessionRegistry, state.session_id, metadata_for_registry)
+      _ ->
+        # For production, register with distributed SessionRegistry
+        case Arbor.Core.SessionRegistry.register_session(state.session_id, self(), metadata_for_registry) do
+          :ok -> :ok
+          {:error, {:session_conflict, existing_pid}} ->
+            # Another session with this ID already exists - this is a serious conflict
+            # Better to fail fast than to continue with a conflicted state
+            Logger.error("Session registration conflict",
+              session_id: state.session_id,
+              existing_pid: existing_pid,
+              current_pid: self()
+            )
+            exit({:session_conflict, existing_pid})
+        end
+    end
+
     {:ok, state}
   end
 
@@ -251,10 +301,26 @@ defmodule Arbor.Core.Sessions.Session do
       active_agents: MapSet.to_list(state.active_agents),
       execution_count: length(state.execution_history),
       last_activity: state.last_activity,
-      uptime_seconds: DateTime.diff(DateTime.utc_now(), state.created_at)
+      uptime_seconds: DateTime.diff(DateTime.utc_now(), state.created_at),
+      timeout: state.timeout
     }
 
     {:reply, {:ok, external_state}, update_activity(state)}
+  end
+
+  @impl true
+  def handle_call(:to_struct, _from, state) do
+    case build_session_struct(state) do
+      {:ok, session_struct} ->
+        {:reply, {:ok, session_struct}, update_activity(state)}
+      
+      {:error, reason} ->
+        Logger.error("Failed to build session struct", 
+          session_id: state.session_id, 
+          reason: reason
+        )
+        {:reply, {:error, reason}, state}
+    end
   end
 
   @impl true
@@ -456,6 +522,16 @@ defmodule Arbor.Core.Sessions.Session do
       uptime_seconds: DateTime.diff(DateTime.utc_now(), state.created_at)
     )
 
+    # Clean up distributed registry registration
+    case Application.get_env(:arbor_core, :registry_impl, :auto) do
+      :mock ->
+        # For tests, unregister from mock registry
+        Registry.unregister(Arbor.Core.MockSessionRegistry, state.session_id)
+      _ ->
+        # For production, unregister from distributed SessionRegistry
+        Arbor.Core.SessionRegistry.unregister_session(state.session_id)
+    end
+
     # Broadcast termination event
     broadcast_session_event(state.session_id, :terminated, %{reason: reason})
 
@@ -513,5 +589,68 @@ defmodule Arbor.Core.Sessions.Session do
     }
 
     Phoenix.PubSub.broadcast(Arbor.Core.PubSub, "session:#{session_id}", {:session_event, event})
+  end
+
+  defp build_session_struct(state) do
+    try do
+      alias Arbor.Contracts.Core.Session, as: SessionContract
+      
+      # Map session GenServer state to Session.t() struct
+      session_struct = %SessionContract{
+        id: state.session_id,
+        user_id: state.created_by || "unknown",
+        purpose: Map.get(state.metadata, :purpose, "General session"),
+        status: determine_session_status(state),
+        context: Map.get(state.metadata, :context, %{}),
+        capabilities: [], # TODO: Map from security_context.capabilities
+        agents: build_agents_map(state),
+        max_agents: Map.get(state.metadata, :max_agents, 10),
+        agent_count: MapSet.size(state.active_agents),
+        created_at: state.created_at,
+        updated_at: state.last_activity,
+        expires_at: calculate_session_expiry(state),
+        terminated_at: nil, # Session is active if we can call this function
+        timeout: state.timeout,
+        cleanup_policy: :graceful,
+        metadata: state.metadata
+      }
+      
+      {:ok, session_struct}
+    rescue
+      e ->
+        {:error, {:struct_build_failed, Exception.message(e)}}
+    end
+  end
+
+  defp determine_session_status(state) do
+    # Simple status determination based on activity
+    time_since_activity = DateTime.diff(DateTime.utc_now(), state.last_activity)
+    
+    cond do
+      time_since_activity > state.timeout / 1000 -> :suspended
+      MapSet.size(state.active_agents) > 0 -> :active
+      true -> :active
+    end
+  end
+
+  defp build_agents_map(state) do
+    # Convert MapSet of agent_ids to a map with basic info
+    state.active_agents
+    |> MapSet.to_list()
+    |> Enum.into(%{}, fn agent_id ->
+      {agent_id, %{
+        joined_at: DateTime.utc_now(), # Placeholder - would need to track this
+        type: :unknown,
+        status: :active
+      }}
+    end)
+  end
+
+  defp calculate_session_expiry(state) do
+    if state.timeout do
+      DateTime.add(state.created_at, state.timeout, :millisecond)
+    else
+      nil
+    end
   end
 end

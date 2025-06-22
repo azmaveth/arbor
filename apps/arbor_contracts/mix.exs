@@ -27,7 +27,8 @@ defmodule Arbor.Contracts.MixProject do
   defp deps do
     [
       {:typed_struct, "~> 0.3.0"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:norm, "~> 0.13"}
     ]
   end
 end

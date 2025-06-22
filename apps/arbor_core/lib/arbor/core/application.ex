@@ -37,6 +37,14 @@ defmodule Arbor.Core.Application do
           Application.get_env(:arbor_core, :env, :prod) != :test
       end
 
+    # Session registry configuration (only for non-mock environments)
+    session_registry_children =
+      if use_horde do
+        [Arbor.Core.SessionRegistry]
+      else
+        []
+      end
+
     # Base children that always start
     base_children = [
       # Phoenix PubSub (needed by coordination)
@@ -51,7 +59,7 @@ defmodule Arbor.Core.Application do
 
       # Telemetry (placeholder for now)
       {Task, fn -> setup_telemetry() end}
-    ]
+    ] ++ session_registry_children
 
     # Distributed components (only in production/dev with Horde)
     distributed_children =
@@ -63,12 +71,7 @@ defmodule Arbor.Core.Application do
           # Cluster management (coordinates Horde components)
           Arbor.Core.ClusterManager,
 
-          # Distributed process management infrastructure
-          %{
-            id: Arbor.Core.HordeRegistry,
-            start: {Arbor.Core.HordeRegistry, :start_registry, []},
-            type: :supervisor
-          },
+          # Distributed process management infrastructure (includes Registry + Supervisor + HordeSupervisor)
           %{
             id: Arbor.Core.HordeSupervisor,
             start: {Arbor.Core.HordeSupervisor, :start_supervisor, []},

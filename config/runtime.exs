@@ -103,6 +103,31 @@ if System.get_env("CLUSTER_STRATEGY") do
     ]
 end
 
+# Agent registration retry configuration
+# This allows overriding the default retry settings from prod/test configs
+agent_retry_config = Application.get_env(:arbor_core, :agent_retry, [])
+
+env_overrides =
+  []
+  |> then(fn acc ->
+    case System.get_env("AGENT_RETRY_RETRIES") do
+      nil -> acc
+      val -> Keyword.put(acc, :retries, String.to_integer(val))
+    end
+  end)
+  |> then(fn acc ->
+    case System.get_env("AGENT_RETRY_INITIAL_DELAY_MS") do
+      nil -> acc
+      val -> Keyword.put(acc, :initial_delay, String.to_integer(val))
+    end
+  end)
+
+if env_overrides != [] do
+  config :arbor_core,
+    :agent_retry,
+    Keyword.merge(agent_retry_config, env_overrides)
+end
+
 # Telemetry and observability configuration
 config :arbor_core,
   telemetry: [
@@ -135,6 +160,11 @@ config :arbor_security,
     System.get_env("ENCRYPTION_KEY") ||
       "dev_default_encryption_key_unsafe_32b",
   enable_audit_logging: System.get_env("ENABLE_AUDIT_LOGGING", "true") == "true"
+
+# Contract validation configuration
+if enable_validation = System.get_env("ENABLE_CONTRACT_VALIDATION") do
+  config :arbor_contracts, :enable_validation, enable_validation == "true"
+end
 
 # Application-specific environment variables
 if port = System.get_env("PORT") do

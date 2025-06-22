@@ -1,3 +1,16 @@
+# ⚠️ ARCHIVED/OUTDATED DOCUMENTATION ⚠️
+
+> **NOTE:** This document describes a previous architecture implementation and is **NO LONGER CURRENT**.  
+> 
+> **For current architecture information, refer to:**
+> - `/docs/arbor/01-overview/architecture-overview.md` - Current architectural overview
+> - Implementation code in `/apps/arbor_core/lib/arbor/core/` - Source of truth for current design
+> - Contract definitions in `/apps/arbor_contracts/` - Current behavioral contracts
+>
+> This document is preserved for historical reference but should not be used for implementation guidance.
+
+---
+
 # Arbor Agent Architecture
 ## Two-Tiered Agent System with OTP Supervision
 

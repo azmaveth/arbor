@@ -70,7 +70,17 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     end)
   end
 
-  @impl Arbor.Contracts.Cluster.Supervisor
+  def init(_opts) do
+    state = %__MODULE__{
+      agents: %{},
+      event_handlers: %{},
+      restart_counts: %{},
+      node_assignments: %{}
+    }
+
+    {:ok, state}
+  end
+
   def start_supervisor(_opts) do
     state = %__MODULE__{
       agents: %{},
@@ -83,7 +93,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def start_agent(agent_spec, _state) do
+  def start_agent(agent_spec) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_spec.id) do
         nil ->
@@ -120,7 +130,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def stop_agent(agent_id, _timeout, _state) do
+  def stop_agent(agent_id, _timeout) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -151,7 +161,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def restart_agent(agent_id, _state) do
+  def restart_agent(agent_id) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -202,7 +212,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def list_agents(_state) do
+  def list_agents() do
     Agent.get(__MODULE__, fn state ->
       agents =
         state.agents
@@ -223,7 +233,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def get_agent_info(agent_id, _state) do
+  def get_agent_info(agent_id) do
     Agent.get(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -259,8 +269,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     end)
   end
 
-  @impl Arbor.Contracts.Cluster.Supervisor
-  def migrate_agent(agent_id, target_node, _state) do
+  def migrate_agent(agent_id, target_node) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -310,7 +319,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def update_agent_spec(agent_id, updates, _state) do
+  def update_agent_spec(agent_id, updates) do
     Agent.get_and_update(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -330,7 +339,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def health_metrics(_state) do
+  def health_metrics() do
     Agent.get(__MODULE__, fn state ->
       agents = Map.values(state.agents)
 
@@ -386,7 +395,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def set_event_handler(event_type, callback, _state) do
+  def set_event_handler(event_type, callback) do
     Agent.update(__MODULE__, fn state ->
       current_handlers = Map.get(state.event_handlers, event_type, [])
       updated_handlers = [callback | current_handlers]
@@ -399,7 +408,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def handle_agent_handoff(agent_id, operation, state_data, _state) do
+  def handle_agent_handoff(agent_id, operation, state_data) do
     Agent.get(__MODULE__, fn state ->
       case Map.get(state.agents, agent_id) do
         nil ->
@@ -430,9 +439,57 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def stop_supervisor(_reason, _state) do
-    Agent.stop(__MODULE__)
-    :ok
+  def restore_agent(agent_id) do
+    Agent.get_and_update(__MODULE__, fn state ->
+      case Map.get(state.agents, agent_id) do
+        nil ->
+          {{:error, :agent_not_found}, state}
+
+        agent_record ->
+          # Stop existing process
+          if Process.alive?(agent_record.pid) do
+            Process.exit(agent_record.pid, :normal)
+          end
+
+          # Start new process with state recovery
+          module = Map.get(agent_record.spec, :module, Arbor.Test.Mocks.TestAgent)
+          {:ok, new_pid} = module.start_link(agent_record.spec.args)
+
+          # Unregister old entry and register new PID
+          ClusterRegistry.unregister_agent(agent_id)
+          metadata = Map.get(agent_record.spec, :metadata, %{})
+          ClusterRegistry.register_agent(agent_id, new_pid, metadata)
+
+          # Update restart tracking
+          restart_event = %{
+            timestamp: System.system_time(:millisecond),
+            reason: :restore
+          }
+
+          updated_record = %{
+            agent_record
+            | pid: new_pid,
+              status: :running,
+              restart_count: agent_record.restart_count + 1,
+              restart_history: [restart_event | agent_record.restart_history]
+          }
+
+          updated_agents = Map.put(state.agents, agent_id, updated_record)
+          updated_state = %{state | agents: updated_agents}
+
+          {{:ok, new_pid}, updated_state}
+      end
+    end)
+  end
+
+  # Additional functions for ClusterSupervisor compatibility
+
+  def extract_agent_state(agent_id, _state \\ nil) do
+    handle_agent_handoff(agent_id, :handoff, nil)
+  end
+
+  def restore_agent_state(agent_id, state_data, _state \\ nil) do
+    handle_agent_handoff(agent_id, :takeover, state_data)
   end
 
   # Helper functions
