@@ -130,7 +130,7 @@ defmodule Arbor.Types do
   """
   @spec generate_id(String.t()) :: String.t()
   def generate_id(prefix) when is_binary(prefix) do
-    random_part = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+    random_part = Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
     prefix <> random_part
   end
 

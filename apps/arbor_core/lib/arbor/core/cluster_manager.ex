@@ -697,8 +697,7 @@ defmodule Arbor.Core.ClusterManager do
   end
 
   defp count_healthy_nodes(health_data) do
-    health_data
-    |> Enum.count(fn {_node, data} ->
+    Enum.count(health_data, fn {_node, data} ->
       (data.connected and not Map.has_key?(data, :ping_status)) or
         data[:ping_status] == :reachable
     end)

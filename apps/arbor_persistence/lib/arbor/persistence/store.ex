@@ -196,10 +196,9 @@ defmodule Arbor.Persistence.Store do
 
   @impl true
   def transaction(fun, _opts, %{backend: :postgresql} = state) do
-    Repo.transaction(fn ->
-      fun.(state)
-    end)
-    |> case do
+    case Repo.transaction(fn ->
+           fun.(state)
+         end) do
       {:ok, result} -> result
       {:error, reason} -> {:error, reason}
     end

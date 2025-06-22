@@ -119,8 +119,7 @@ defmodule Arbor.Persistence.Schemas.Event do
     }
 
     # Only include non-nil optional fields
-    base_map
-    |> maybe_put(:causation_id, contract_event.causation_id)
+    maybe_put(base_map, :causation_id, contract_event.causation_id)
   end
 
   defp maybe_put(map, _key, nil), do: map

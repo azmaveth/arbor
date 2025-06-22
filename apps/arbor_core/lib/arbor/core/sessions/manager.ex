@@ -572,8 +572,9 @@ defmodule Arbor.Core.Sessions.Manager do
     active_sessions =
       case Application.get_env(:arbor_core, :registry_impl, :auto) do
         :mock ->
-          Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [true]}])
-          |> length()
+          length(
+            Registry.select(Arbor.Core.MockSessionRegistry, [{{:"$1", :"$2", :"$3"}, [], [true]}])
+          )
 
         _ ->
           Arbor.Core.SessionRegistry.session_count()
@@ -718,12 +719,13 @@ defmodule Arbor.Core.Sessions.Manager do
       session_pids =
         case Application.get_env(:arbor_core, :registry_impl, :auto) do
           :mock ->
-            Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}])
-            |> Enum.map(fn {_session_id, {pid, _metadata}} -> pid end)
+            Enum.map(
+              Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}]),
+              fn {_session_id, {pid, _metadata}} -> pid end
+            )
 
           _ ->
-            Arbor.Core.SessionRegistry.list_all_sessions()
-            |> case do
+            case Arbor.Core.SessionRegistry.list_all_sessions() do
               {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
               {:error, _} -> []
             end

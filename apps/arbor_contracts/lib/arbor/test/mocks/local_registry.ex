@@ -202,8 +202,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
 
     # Clean up dead ones
     dead_entries =
-      entries
-      |> Enum.reject(fn {_, pid, _, _} -> Process.alive?(pid) end)
+      Enum.reject(entries, fn {_, pid, _, _} -> Process.alive?(pid) end)
 
     Enum.each(dead_entries, fn {group, pid, _, _} ->
       unregister_group(group, pid, state)
@@ -301,7 +300,7 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
     names_count = :ets.info(state.names_table, :size)
 
     groups_count =
-      length(:ets.select(state.groups_table, [{{:"$1", :_, :_, :_}, [], [:"$1"]}]) |> Enum.uniq())
+      length(Enum.uniq(:ets.select(state.groups_table, [{{:"$1", :_, :_, :_}, [], [:"$1"]}])))
 
     health = %{
       node_count: map_size(state.node_status),

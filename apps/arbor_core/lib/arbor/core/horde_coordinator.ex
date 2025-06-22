@@ -308,8 +308,7 @@ defmodule Arbor.Core.HordeCoordinator do
   def handle_call({:join_coordination, joining_node}, _from, state) do
     # Update local state
     updated_coordinators =
-      [joining_node | state.sync_status.coordinator_nodes]
-      |> Enum.uniq()
+      Enum.uniq([joining_node | state.sync_status.coordinator_nodes])
 
     updated_sync_status = %{state.sync_status | coordinator_nodes: updated_coordinators}
     new_state = %{state | sync_status: updated_sync_status}

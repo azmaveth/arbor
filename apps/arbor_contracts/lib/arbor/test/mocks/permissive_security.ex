@@ -330,8 +330,10 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @spec get_authorization_attempts(map()) :: {:ok, [map()]}
   def get_authorization_attempts(state) do
     attempts =
-      :ets.match_object(state.authorization_attempts, {:attempt, :_})
-      |> Enum.map(fn {:attempt, attempt} -> attempt end)
+      Enum.map(:ets.match_object(state.authorization_attempts, {:attempt, :_}), fn {:attempt,
+                                                                                    attempt} ->
+        attempt
+      end)
 
     {:ok, attempts}
   end

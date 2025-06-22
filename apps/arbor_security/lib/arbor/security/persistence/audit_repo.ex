@@ -129,10 +129,9 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   end
 
   defp insert_changesets_in_transaction(changesets) do
-    Repo.transaction(fn ->
-      Enum.each(changesets, &insert_or_rollback/1)
-    end)
-    |> case do
+    case Repo.transaction(fn ->
+           Enum.each(changesets, &insert_or_rollback/1)
+         end) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
