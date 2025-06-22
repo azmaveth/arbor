@@ -579,10 +579,12 @@ end
 defmodule TestCoordinatorAgent do
   use GenServer
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map()}
   def init(args) do
     state = %{
       coordination_mode: Keyword.get(args, :coordination_mode, :secondary),
@@ -602,6 +604,7 @@ defmodule TestCoordinatorAgent do
     {:reply, :ok, %{state | delegated_tasks: updated_tasks}}
   end
 
+  @spec handle_info({:task_delegated, String.t(), map()}, map()) :: {:noreply, map()}
   def handle_info({:task_delegated, worker_id, task_spec}, state) do
     # Forward to test process if running in test
     if Process.whereis(:test_coordinator_proc) do
@@ -611,6 +614,7 @@ defmodule TestCoordinatorAgent do
     {:noreply, state}
   end
 
+  @spec handle_info({:task_completed, String.t(), String.t(), any()}, map()) :: {:noreply, map()}
   def handle_info({:task_completed, worker_id, task_id, result}, state) do
     # Forward to test process if running in test
     if Process.whereis(:test_coordinator_proc) do
@@ -676,10 +680,12 @@ end
 defmodule TestResilientAgent do
   use GenServer
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map()}
   def init(args) do
     # Check if we have recovered state from a restore operation
     case Keyword.get(args, :recovered_state) do

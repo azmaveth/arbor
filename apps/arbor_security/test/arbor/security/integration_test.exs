@@ -625,6 +625,7 @@ defmodule Arbor.Security.IntegrationTest do
   defmodule TestAgent do
     use GenServer
 
+    @spec init(String.t()) :: {:ok, map()}
     def init(agent_id) do
       {:ok, %{agent_id: agent_id}}
     end
@@ -634,6 +635,7 @@ defmodule Arbor.Security.IntegrationTest do
       {:reply, state.agent_id, state}
     end
 
+    @spec handle_info(any(), map()) :: {:noreply, map()}
     def handle_info(_msg, state) do
       {:noreply, state}
     end

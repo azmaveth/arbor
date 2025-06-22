@@ -382,10 +382,12 @@ end
 defmodule TestAgent do
   use GenServer
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map()}
   def init(args) do
     state = %{
       agent_id: Keyword.get(args, :agent_id),
@@ -402,6 +404,7 @@ defmodule TestAgent do
     {:reply, state, state}
   end
 
+  @spec terminate(any(), map()) :: :ok
   def terminate(_reason, _state) do
     # No self-cleanup - handled by supervisor
     :ok

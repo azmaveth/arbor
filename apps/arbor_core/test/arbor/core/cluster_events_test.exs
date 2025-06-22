@@ -376,10 +376,12 @@ defmodule ClusterTestAgent do
 
   alias Arbor.Core.HordeRegistry
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec init(keyword()) :: {:ok, map()}
   def init(args) do
     agent_id = Keyword.get(args, :agent_id)
 
@@ -404,6 +406,7 @@ defmodule ClusterTestAgent do
     {:ok, state}
   end
 
+  @spec terminate(any(), map()) :: :ok
   def terminate(_reason, state) do
     if state.agent_id do
       HordeRegistry.unregister_agent_name(state.agent_id)

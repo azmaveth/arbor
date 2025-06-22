@@ -60,6 +60,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     )
   end
 
+  @spec clear() :: :ok
   def clear do
     Agent.update(__MODULE__, fn _state ->
       %__MODULE__{
