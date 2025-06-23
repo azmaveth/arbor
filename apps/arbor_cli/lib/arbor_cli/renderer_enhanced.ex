@@ -39,14 +39,13 @@ defmodule ArborCli.RendererEnhanced do
     agent_id = result.result # result contains the agent ID directly
     agent_type = result.agent_type
 
-    [
+    puts([
       "Agent ",
       tag("spawned", @color_scheme.success),
       ": ",
       tag(ArborCli.FormatHelpers.format_agent_id(agent_id), @color_scheme.agent),
       " (type: #{agent_type})"
-    ]
-    |> puts()
+    ])
   end
 
   @doc """
@@ -81,7 +80,7 @@ defmodule ArborCli.RendererEnhanced do
           ]
         end)
 
-      Owl.Table.new(rows, headers) |> puts()
+      puts(Owl.Table.new(rows, headers))
     end
   end
 
@@ -134,8 +133,7 @@ defmodule ArborCli.RendererEnhanced do
   def show_command_output_box(output) do
     content = if is_binary(output), do: output, else: Kernel.inspect(output)
 
-    Owl.Box.new(content, title: "Command Output", border: :heavy)
-    |> puts()
+    puts(Owl.Box.new(content, title: "Command Output", border: :heavy))
   end
 
   @doc """

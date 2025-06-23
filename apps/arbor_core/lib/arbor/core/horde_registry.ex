@@ -321,8 +321,7 @@ defmodule Arbor.Core.HordeRegistry do
     all_entries =
       Horde.Registry.select(@registry_name, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$3"}}]}])
 
-    all_entries
-    |> Enum.flat_map(fn
+    Enum.flat_map(all_entries, fn
       {agent_id, {pid, metadata}} when is_binary(agent_id) ->
         [{agent_id, pid, metadata}]
 
@@ -449,8 +448,7 @@ defmodule Arbor.Core.HordeRegistry do
       Horde.Registry.select(@registry_name, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$3"}}]}])
 
     result =
-      all_entries
-      |> Enum.find(fn
+      Enum.find(all_entries, fn
         {agent_id, {pid, _metadata}} when is_binary(agent_id) ->
           pid == target_pid
 

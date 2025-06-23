@@ -214,11 +214,9 @@ defmodule ArborCli.Renderer do
     # Simple table rendering without external dependencies
     if length(rows) > 0 do
       # Calculate column widths
-      widths = rows
-        |> Enum.reduce([], fn row, acc ->
-          row
-          |> Enum.with_index()
-          |> Enum.map(fn {cell, idx} ->
+      widths =
+        Enum.reduce(rows, [], fn row, acc ->
+          Enum.map(Enum.with_index(row), fn {cell, idx} ->
             current_width = String.length(to_string(cell))
             case Enum.at(acc, idx) do
               nil -> current_width
@@ -231,13 +229,14 @@ defmodule ArborCli.Renderer do
       rows
       |> Enum.with_index()
       |> Enum.each(fn {row, idx} ->
-        formatted_row = row
-          |> Enum.with_index()
-          |> Enum.map(fn {cell, col_idx} ->
-            width = Enum.at(widths, col_idx, 0)
-            String.pad_trailing(to_string(cell), width)
-          end)
-          |> Enum.join("  ")
+        formatted_row =
+          Enum.join(
+            Enum.map(Enum.with_index(row), fn {cell, col_idx} ->
+              width = Enum.at(widths, col_idx, 0)
+              String.pad_trailing(to_string(cell), width)
+            end),
+            "  "
+          )
 
         IO.puts(formatted_row)
 

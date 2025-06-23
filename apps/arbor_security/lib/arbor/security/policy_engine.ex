@@ -309,8 +309,10 @@ defmodule Arbor.Security.Policies.TimeRestrictions do
 
     # Convert numeric day to atom
     day_atom =
-      [:monday, :tuesday, :wednesday, :thursday, :friday, :saturday, :sunday]
-      |> Enum.at(day_of_week - 1)
+      Enum.at(
+        [:monday, :tuesday, :wednesday, :thursday, :friday, :saturday, :sunday],
+        day_of_week - 1
+      )
 
     # Check day
     day_allowed = day_atom in restrictions.allowed_days

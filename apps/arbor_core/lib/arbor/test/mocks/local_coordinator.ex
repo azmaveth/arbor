@@ -115,7 +115,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
   end
 
   @spec clear() :: :ok
-  def clear() do
+  def clear do
     Agent.update(__MODULE__, fn _state ->
       %__MODULE__{
         nodes: %{},
@@ -359,15 +359,13 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     Agent.get(__MODULE__, fn state ->
       # Find overloaded nodes (load > 80% of capacity OR capacity < 50)
       overloaded_nodes =
-        state.nodes
-        |> Enum.filter(fn {_node, info} ->
+        Enum.filter(state.nodes, fn {_node, info} ->
           info.status == :active and
             (info.current_load / max(info.capacity, 1) > 0.8 or info.capacity < 50)
         end)
 
       agents_to_migrate =
-        overloaded_nodes
-        |> Enum.flat_map(fn {node, _info} ->
+        Enum.flat_map(overloaded_nodes, fn {node, _info} ->
           state.agents
           |> Enum.filter(fn {_id, agent} -> agent.node == node end)
           |> Enum.map(fn {id, _agent} -> id end)
@@ -566,18 +564,19 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
         end)
 
       underutilized_nodes =
-        state.nodes
-        |> Enum.filter(fn {_node, info} ->
-          info.status == :active and info.current_load < 30
-        end)
-        |> Enum.map(fn {node, info} ->
-          %{
-            node: node,
-            current_load: info.current_load,
-            capacity: info.capacity,
-            recommended_action: :accept_migrations
-          }
-        end)
+        Enum.map(
+          Enum.filter(state.nodes, fn {_node, info} ->
+            info.status == :active and info.current_load < 30
+          end),
+          fn {node, info} ->
+            %{
+              node: node,
+              current_load: info.current_load,
+              capacity: info.capacity,
+              recommended_action: :accept_migrations
+            }
+          end
+        )
 
       optimization_plan = %{
         overloaded_nodes: overloaded_nodes,

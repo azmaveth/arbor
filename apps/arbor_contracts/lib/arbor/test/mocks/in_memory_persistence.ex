@@ -321,6 +321,6 @@ defmodule Arbor.Test.Mocks.InMemoryPersistence do
   end
 
   defp generate_snapshot_id do
-    "snap_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+    "snap_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
   end
 end

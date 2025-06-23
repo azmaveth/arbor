@@ -355,7 +355,7 @@ defmodule Arbor.Core.ClusterManager do
       end)
 
       # Update state
-      updated_nodes = [node | state.connected_nodes] |> Enum.uniq()
+      updated_nodes = Enum.uniq([node | state.connected_nodes])
       {:noreply, %{state | connected_nodes: updated_nodes}}
     else
       {:noreply, state}
@@ -599,7 +599,7 @@ defmodule Arbor.Core.ClusterManager do
     Logger.debug("Performing cluster health check")
 
     # Collect health data for all nodes (current + connected)
-    all_nodes = [node() | state.connected_nodes] |> Enum.uniq()
+    all_nodes = Enum.uniq([node() | state.connected_nodes])
 
     new_health_data =
       all_nodes

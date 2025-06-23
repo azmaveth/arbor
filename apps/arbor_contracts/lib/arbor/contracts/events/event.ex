@@ -214,12 +214,12 @@ defmodule Arbor.Contracts.Events.Event do
   defp parse_map_fields(map) do
     [
       id: get_field(map, :id),
-      type: get_field(map, :type) |> atomize_safely(),
+      type: atomize_safely(get_field(map, :type)),
       version: get_field(map, :version),
       aggregate_id: get_field(map, :aggregate_id),
-      aggregate_type: get_field(map, :aggregate_type) |> atomize_safely(),
+      aggregate_type: atomize_safely(get_field(map, :aggregate_type)),
       data: get_field(map, :data),
-      timestamp: get_field(map, :timestamp) |> parse_timestamp(),
+      timestamp: parse_timestamp(get_field(map, :timestamp)),
       causation_id: get_field(map, :causation_id),
       correlation_id: get_field(map, :correlation_id),
       trace_id: get_field(map, :trace_id),
@@ -237,7 +237,7 @@ defmodule Arbor.Contracts.Events.Event do
   # Private functions
 
   defp generate_event_id do
-    "event_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+    "event_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
   end
 
   defp infer_aggregate_type(aggregate_id) when is_binary(aggregate_id) do

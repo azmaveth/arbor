@@ -158,7 +158,7 @@ defmodule Arbor.Contracts.Core.Capability do
   # Private functions
 
   defp generate_capability_id do
-    "cap_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+    "cap_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
   end
 
   defp validate_capability(%__MODULE__{} = cap) do

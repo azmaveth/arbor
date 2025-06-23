@@ -300,7 +300,7 @@ defmodule Arbor.Contracts.Security.AuditEvent do
   # Private functions
 
   defp generate_event_id do
-    "audit_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+    "audit_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
   end
 
   defp validate_event(%__MODULE__{} = event) do

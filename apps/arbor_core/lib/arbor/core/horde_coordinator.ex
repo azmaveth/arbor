@@ -523,15 +523,13 @@ defmodule Arbor.Core.HordeCoordinator do
   def handle_call(:suggest_redistribution, _from, state) do
     # Find overloaded nodes
     overloaded_nodes =
-      state.nodes
-      |> Enum.filter(fn {_node, info} ->
+      Enum.filter(state.nodes, fn {_node, info} ->
         info.status == :active and
           (info.current_load / max(info.capacity, 1) > 0.8 or info.capacity < 50)
       end)
 
     agents_to_migrate =
-      overloaded_nodes
-      |> Enum.flat_map(fn {node, _info} ->
+      Enum.flat_map(overloaded_nodes, fn {node, _info} ->
         state.agents
         |> Enum.filter(fn {_id, agent} -> agent.node == node end)
         |> Enum.map(fn {id, _agent} -> id end)
@@ -828,7 +826,7 @@ defmodule Arbor.Core.HordeCoordinator do
   # Private helper functions
 
   defp generate_node_id() do
-    :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
   end
 
   defp broadcast_coordination_event(event) do
@@ -938,16 +936,14 @@ defmodule Arbor.Core.HordeCoordinator do
     case event do
       {:coordinator_started, coordinator_node, _node_id} ->
         updated_coordinators =
-          [coordinator_node | state.sync_status.coordinator_nodes]
-          |> Enum.uniq()
+          Enum.uniq([coordinator_node | state.sync_status.coordinator_nodes])
 
         updated_sync_status = %{state.sync_status | coordinator_nodes: updated_coordinators}
         %{state | sync_status: updated_sync_status}
 
       {:coordinator_joined, coordinator_node} ->
         updated_coordinators =
-          [coordinator_node | state.sync_status.coordinator_nodes]
-          |> Enum.uniq()
+          Enum.uniq([coordinator_node | state.sync_status.coordinator_nodes])
 
         updated_sync_status = %{state.sync_status | coordinator_nodes: updated_coordinators}
         %{state | sync_status: updated_sync_status}

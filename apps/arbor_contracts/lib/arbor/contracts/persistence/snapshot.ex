@@ -217,11 +217,11 @@ defmodule Arbor.Contracts.Persistence.Snapshot do
     [
       id: get_field(map, :id),
       aggregate_id: get_field(map, :aggregate_id),
-      aggregate_type: get_field(map, :aggregate_type) |> atomize_safely(),
+      aggregate_type: atomize_safely(get_field(map, :aggregate_type)),
       aggregate_version: get_field(map, :aggregate_version),
       state: get_field(map, :state),
       state_hash: get_field(map, :state_hash),
-      created_at: get_field(map, :created_at) |> parse_timestamp(),
+      created_at: parse_timestamp(get_field(map, :created_at)),
       snapshot_version: get_field(map, :snapshot_version),
       metadata: get_field(map, :metadata) || %{}
     ]
@@ -234,7 +234,7 @@ defmodule Arbor.Contracts.Persistence.Snapshot do
   # Private functions
 
   defp generate_snapshot_id do
-    "snap_" <> (:crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower))
+    "snap_" <> Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
   end
 
   defp calculate_state_hash(state) do
