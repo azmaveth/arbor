@@ -90,8 +90,7 @@ defmodule Arbor.Contracts.Validation do
   end
 
   defp format_validation_errors(errors) do
-    errors
-    |> Enum.map(fn error ->
+    Enum.map_join(errors, "; ", fn error ->
       case error do
         %{path: path, message: message} ->
           "#{Enum.join(path, ".")}: #{message}"
@@ -114,7 +113,6 @@ defmodule Arbor.Contracts.Validation do
           "Unknown validation error: #{inspect(error)}"
       end
     end)
-    |> Enum.join("; ")
   end
 
   defp log_validation_failure(data, schema, reason) do

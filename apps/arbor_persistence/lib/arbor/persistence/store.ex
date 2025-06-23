@@ -22,13 +22,13 @@ defmodule Arbor.Persistence.Store do
 
   @behaviour Arbor.Contracts.Persistence.Store
 
+  import Ecto.Query
+
   alias Arbor.Contracts.Events.Event, as: ContractEvent
   alias Arbor.Contracts.Persistence.Snapshot, as: ContractSnapshot
   alias Arbor.Persistence.{HotCache, Repo}
   alias Arbor.Persistence.Schemas.{Event, Snapshot}
   alias Arbor.Test.Mocks.InMemoryPersistence
-
-  import Ecto.Query
 
   @type backend :: :in_memory | :postgresql
   @type store_state :: %{

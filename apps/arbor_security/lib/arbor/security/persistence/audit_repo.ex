@@ -6,11 +6,11 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   but uses Ecto and a real database for durable, compliant audit storage.
   """
 
+  import Ecto.Query
+
   alias Arbor.Contracts.Security.AuditEvent, as: CoreAuditEvent
   alias Arbor.Security.Repo
   alias Arbor.Security.Schemas.AuditEvent, as: SchemaAuditEvent
-
-  import Ecto.Query
 
   @doc """
   Insert audit events into the database.

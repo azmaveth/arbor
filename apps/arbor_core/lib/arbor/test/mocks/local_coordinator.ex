@@ -16,6 +16,8 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
   use Agent
 
+  alias Arbor.Core.ClusterHealth
+
   defstruct [
     :nodes,
     :agents,
@@ -581,7 +583,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
       optimization_plan = %{
         overloaded_nodes: overloaded_nodes,
         underutilized_nodes: underutilized_nodes,
-        balance_score: calculate_balance_score(state.nodes),
+        balance_score: ClusterHealth.calculate_balance_score(state.nodes),
         recommended_migrations: []
       }
 
@@ -605,7 +607,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
       updated_health = %{updated_health | last_updated: health_update.timestamp}
 
       # Generate alerts for critical values
-      alerts = generate_alerts(health_update, current_health.alerts)
+      alerts = ClusterHealth.generate_health_alerts(health_update, current_health.alerts)
       updated_health = %{updated_health | alerts: alerts}
 
       updated_health_metrics = Map.put(state.health_metrics, health_update.node, updated_health)
@@ -628,7 +630,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
               last_updated: 0
             })
 
-          health_status = determine_health_status(health_data)
+          health_status = ClusterHealth.determine_node_health_status(health_data)
 
           %{
             node: node,
@@ -643,8 +645,8 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
 
       cluster_health = %{
         nodes: nodes_health,
-        overall_status: calculate_overall_health(nodes_health),
-        critical_alerts: count_critical_alerts(nodes_health)
+        overall_status: ClusterHealth.calculate_overall_health_status(nodes_health),
+        critical_alerts: ClusterHealth.count_critical_alerts(nodes_health)
       }
 
       {:ok, cluster_health}
@@ -703,92 +705,6 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
   end
 
   # Helper functions
-
-  defp calculate_balance_score(nodes) do
-    active_nodes = Enum.filter(nodes, fn {_node, info} -> info.status == :active end)
-
-    case length(active_nodes) do
-      0 ->
-        0
-
-      count ->
-        loads = Enum.map(active_nodes, fn {_node, info} -> info.current_load end)
-        avg_load = Enum.sum(loads) / count
-        variance = Enum.sum(Enum.map(loads, fn load -> :math.pow(load - avg_load, 2) end)) / count
-        # Lower variance = higher balance score
-        max(0, 100 - variance)
-    end
-  end
-
-  defp generate_alerts(health_update, existing_alerts) do
-    new_alert =
-      case {health_update.metric, health_update.value} do
-        {:memory_usage, value} when value >= 95 ->
-          %{
-            metric: :memory_usage,
-            severity: :critical,
-            threshold_exceeded: true,
-            timestamp: health_update.timestamp
-          }
-
-        {:memory_usage, value} when value >= 80 ->
-          %{
-            metric: :memory_usage,
-            severity: :high,
-            threshold_exceeded: true,
-            timestamp: health_update.timestamp
-          }
-
-        {:cpu_usage, value} when value >= 90 ->
-          %{
-            metric: :cpu_usage,
-            severity: :high,
-            threshold_exceeded: true,
-            timestamp: health_update.timestamp
-          }
-
-        _ ->
-          nil
-      end
-
-    case new_alert do
-      nil -> existing_alerts
-      # Keep last 5 alerts
-      alert -> [alert | Enum.take(existing_alerts, 4)]
-    end
-  end
-
-  defp determine_health_status(health_data) do
-    critical_alerts = Enum.count(health_data.alerts, fn alert -> alert.severity == :critical end)
-    high_alerts = Enum.count(health_data.alerts, fn alert -> alert.severity == :high end)
-
-    cond do
-      critical_alerts > 0 -> :critical
-      high_alerts > 0 -> :warning
-      health_data.memory_usage > 70 or health_data.cpu_usage > 70 -> :caution
-      true -> :healthy
-    end
-  end
-
-  defp calculate_overall_health(nodes_health) do
-    critical_count = Enum.count(nodes_health, fn node -> node.health_status == :critical end)
-    warning_count = Enum.count(nodes_health, fn node -> node.health_status == :warning end)
-
-    cond do
-      critical_count > 0 -> :critical
-      warning_count > length(nodes_health) / 2 -> :degraded
-      warning_count > 0 -> :warning
-      true -> :healthy
-    end
-  end
-
-  defp count_critical_alerts(nodes_health) do
-    Enum.sum(
-      Enum.map(nodes_health, fn node ->
-        Enum.count(node.alerts, fn alert -> alert.severity == :critical end)
-      end)
-    )
-  end
 
   defp process_event(event, state) do
     case event do

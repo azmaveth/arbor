@@ -12,6 +12,7 @@ defmodule Arbor.Core.AgentCheckpointTest do
   @moduletag timeout: 30_000
 
   alias Arbor.Core.{HordeSupervisor, AgentCheckpoint, StatefulTestAgent, AgentReconciler}
+  alias Arbor.Test.Support.AsyncHelpers
 
   # Test configuration
   @registry_name Arbor.Core.HordeAgentRegistry
@@ -331,22 +332,7 @@ defmodule Arbor.Core.AgentCheckpointTest do
   # Helper functions
 
   defp assert_eventually(fun, message, max_attempts \\ 10) do
-    assert_eventually_helper(fun, message, max_attempts, 1)
-  end
-
-  defp assert_eventually_helper(fun, message, max_attempts, attempt)
-       when attempt <= max_attempts do
-    case fun.() do
-      :retry when attempt < max_attempts ->
-        :timer.sleep(100)
-        assert_eventually_helper(fun, message, max_attempts, attempt + 1)
-
-      :retry ->
-        flunk("#{message} - max attempts (#{max_attempts}) exceeded")
-
-      result ->
-        result
-    end
+    AsyncHelpers.assert_eventually(fun, message, max_attempts: max_attempts)
   end
 
   defp ensure_horde_infrastructure do

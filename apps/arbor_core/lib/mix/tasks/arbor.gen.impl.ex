@@ -56,15 +56,13 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   end
 
   defp to_module(str, type) do
-    try do
-      # Parse as module path - this works even if module doesn't exist yet
-      parts = String.split(str, ".")
-      module = Module.concat(parts)
-      {:ok, module}
-    rescue
-      ArgumentError ->
-        {:error, "Invalid #{type} module name: #{str}"}
-    end
+    # Parse as module path - this works even if module doesn't exist yet
+    parts = String.split(str, ".")
+    module = Module.concat(parts)
+    {:ok, module}
+  rescue
+    ArgumentError ->
+      {:error, "Invalid #{type} module name: #{str}"}
   end
 
   defp generate_implementation(contract_module, implementation_module) do

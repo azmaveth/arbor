@@ -1210,50 +1210,89 @@ defmodule Arbor.Core.Gateway do
   end
 
   defp handle_agent_command_execution(params) do
+    with {:ok, {agent_id, command, args}} <- validate_agent_command_params(params),
+         {:ok, _agent_id} <- lookup_target_agent(agent_id),
+         {:ok, result} <- execute_command_on_agent(agent_id, command, args) do
+      response = format_agent_command_response(agent_id, command, args, result)
+      {:ok, response}
+    else
+      error -> handle_agent_command_errors(error)
+    end
+  end
+
+  defp validate_agent_command_params(params) do
+    {agent_id, command, args} = extract_command_params(params)
+
+    with :ok <- check_missing_params(agent_id, command),
+         :ok <- check_agent_id_type(agent_id) do
+      {:ok, {agent_id, command, args}}
+    end
+  end
+
+  defp extract_command_params(params) do
     agent_id = params["agent_id"] || params[:agent_id]
     command = params["command"] || params[:command]
     args = params["args"] || params[:args] || []
+    {agent_id, command, args}
+  end
 
-    if agent_id && command do
-      # Try to find the agent via registry first
-      case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
-        {:ok, pid, _metadata} ->
-          # For CodeAnalyzer agents, call the exec function
-          case agent_id do
-            agent_id when is_binary(agent_id) ->
-              try do
-                result = Arbor.Agents.CodeAnalyzer.exec(agent_id, command, args)
+  defp check_missing_params(agent_id, command) do
+    missing =
+      []
+      |> add_if_missing(agent_id, :agent_id)
+      |> add_if_missing(command, :command)
 
-                {:ok,
-                 %{
-                   agent_id: agent_id,
-                   command: command,
-                   args: args,
-                   result: result
-                 }}
-              rescue
-                e ->
-                  {:error, {:agent_command_failed, Exception.message(e)}}
-              catch
-                :exit, reason ->
-                  {:error, {:agent_command_failed, reason}}
-              end
-
-            _ ->
-              {:error, :invalid_agent_id}
-          end
-
-        {:error, :not_registered} ->
-          {:error, :agent_not_found}
-
-        {:error, reason} ->
-          {:error, {:agent_lookup_failed, reason}}
-      end
+    if Enum.empty?(missing) do
+      :ok
     else
-      missing = []
-      missing = if(!agent_id, do: [:agent_id | missing], else: missing)
-      missing = if(!command, do: [:command | missing], else: missing)
       {:error, {:missing_params, missing}}
     end
+  end
+
+  defp add_if_missing(list, value, key) do
+    if is_nil(value), do: [key | list], else: list
+  end
+
+  defp check_agent_id_type(agent_id) when is_binary(agent_id), do: :ok
+  defp check_agent_id_type(_agent_id), do: {:error, :invalid_agent_id}
+
+  defp lookup_target_agent(agent_id) do
+    case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, _pid, _metadata} ->
+        # We don't need pid or metadata, just confirmation of registration
+        {:ok, agent_id}
+
+      {:error, :not_registered} ->
+        {:error, :agent_not_found}
+
+      {:error, reason} ->
+        {:error, {:agent_lookup_failed, reason}}
+    end
+  end
+
+  defp execute_command_on_agent(agent_id, command, args) do
+    try do
+      result = Arbor.Agents.CodeAnalyzer.exec(agent_id, command, args)
+      {:ok, result}
+    rescue
+      e -> {:error, {:agent_command_failed, Exception.message(e)}}
+    catch
+      :exit, reason -> {:error, {:agent_command_failed, reason}}
+    end
+  end
+
+  defp format_agent_command_response(agent_id, command, args, result) do
+    %{
+      agent_id: agent_id,
+      command: command,
+      args: args,
+      result: result
+    }
+  end
+
+  defp handle_agent_command_errors({:error, _reason} = error) do
+    # This function centralizes error handling for the agent command execution flow.
+    # For now, it passes the error through, but can be used for logging or transformation.
+    error
   end
 end

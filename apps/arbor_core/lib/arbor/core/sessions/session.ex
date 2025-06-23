@@ -603,36 +603,34 @@ defmodule Arbor.Core.Sessions.Session do
   end
 
   defp build_session_struct(state) do
-    try do
-      alias Arbor.Contracts.Core.Session, as: SessionContract
+    alias Arbor.Contracts.Core.Session, as: SessionContract
 
-      # Map session GenServer state to Session.t() struct
-      session_struct = %SessionContract{
-        id: state.session_id,
-        user_id: state.created_by || "unknown",
-        purpose: Map.get(state.metadata, :purpose, "General session"),
-        status: determine_session_status(state),
-        context: Map.get(state.metadata, :context, %{}),
-        # TODO: Map from security_context.capabilities
-        capabilities: [],
-        agents: build_agents_map(state),
-        max_agents: Map.get(state.metadata, :max_agents, 10),
-        agent_count: MapSet.size(state.active_agents),
-        created_at: state.created_at,
-        updated_at: state.last_activity,
-        expires_at: calculate_session_expiry(state),
-        # Session is active if we can call this function
-        terminated_at: nil,
-        timeout: state.timeout,
-        cleanup_policy: :graceful,
-        metadata: state.metadata
-      }
+    # Map session GenServer state to Session.t() struct
+    session_struct = %SessionContract{
+      id: state.session_id,
+      user_id: state.created_by || "unknown",
+      purpose: Map.get(state.metadata, :purpose, "General session"),
+      status: determine_session_status(state),
+      context: Map.get(state.metadata, :context, %{}),
+      # TODO: Map from security_context.capabilities
+      capabilities: [],
+      agents: build_agents_map(state),
+      max_agents: Map.get(state.metadata, :max_agents, 10),
+      agent_count: MapSet.size(state.active_agents),
+      created_at: state.created_at,
+      updated_at: state.last_activity,
+      expires_at: calculate_session_expiry(state),
+      # Session is active if we can call this function
+      terminated_at: nil,
+      timeout: state.timeout,
+      cleanup_policy: :graceful,
+      metadata: state.metadata
+    }
 
-      {:ok, session_struct}
-    rescue
-      e ->
-        {:error, {:struct_build_failed, Exception.message(e)}}
-    end
+    {:ok, session_struct}
+  rescue
+    e ->
+      {:error, {:struct_build_failed, Exception.message(e)}}
   end
 
   defp determine_session_status(state) do

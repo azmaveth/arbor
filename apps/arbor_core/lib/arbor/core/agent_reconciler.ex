@@ -14,7 +14,7 @@ defmodule Arbor.Core.AgentReconciler do
   require Logger
 
   alias Arbor.Contracts.Agent.Reconciler
-  alias Arbor.Core.{AgentCheckpoint, ClusterEvents}
+  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, TelemetryHelper}
 
   @behaviour Arbor.Contracts.Agent.Reconciler
 
@@ -104,29 +104,27 @@ defmodule Arbor.Core.AgentReconciler do
 
   @impl GenServer
   def handle_call(:force_reconcile, _from, state) do
-    try do
-      do_reconcile_agents()
+    do_reconcile_agents()
 
-      # Update state to reflect the forced reconciliation
+    # Update state to reflect the forced reconciliation
+    new_state = %{
+      state
+      | last_reconcile: System.system_time(:millisecond),
+        reconcile_count: state.reconcile_count + 1,
+        errors: []
+    }
+
+    {:reply, :ok, new_state}
+  rescue
+    error ->
+      # Add error to state
       new_state = %{
         state
-        | last_reconcile: System.system_time(:millisecond),
-          reconcile_count: state.reconcile_count + 1,
-          errors: []
+        | # Keep last 10 errors
+          errors: [error | Enum.take(state.errors, 9)]
       }
 
-      {:reply, :ok, new_state}
-    rescue
-      error ->
-        # Add error to state
-        new_state = %{
-          state
-          | # Keep last 10 errors
-            errors: [error | Enum.take(state.errors, 9)]
-        }
-
-        {:reply, {:error, error}, new_state}
-    end
+      {:reply, {:error, error}, new_state}
   end
 
   # Public API
@@ -237,44 +235,109 @@ defmodule Arbor.Core.AgentReconciler do
     start_time = System.monotonic_time(:millisecond)
     node_name = node()
 
-    # Emit reconciliation start event with detailed context
-    :telemetry.execute(
-      [:arbor, :reconciliation, :start],
-      %{
-        start_time: start_time
-      },
-      %{
-        node: node_name,
-        reconciler: __MODULE__
-      }
-    )
+    # Emit start telemetry and broadcast event
+    emit_reconciliation_start(start_time, node_name)
 
-    # Broadcast reconciliation start event
-    ClusterEvents.broadcast(:reconciliation_started, %{
-      reconciler: __MODULE__
-    })
-
-    # Get all agent specs from registry with error handling
+    # Gather data about agents and processes
     {agent_specs, spec_lookup_duration} = time_operation(fn -> get_all_agent_specs() end)
 
-    # Get all running processes from supervisor with error handling
     {running_children, supervisor_lookup_duration} =
       time_operation(fn -> get_running_children() end)
 
     # Emit lookup performance metrics
-    :telemetry.execute(
-      [:arbor, :reconciliation, :lookup_performance],
-      %{
-        spec_lookup_duration_ms: spec_lookup_duration,
-        supervisor_lookup_duration_ms: supervisor_lookup_duration,
-        specs_found: length(agent_specs),
-        running_processes: length(running_children)
-      },
-      %{
-        node: node_name
-      }
+    emit_lookup_performance_metrics(
+      spec_lookup_duration,
+      supervisor_lookup_duration,
+      length(agent_specs),
+      length(running_children),
+      node_name
     )
 
+    # Analyze agent state discrepancies
+    analysis = analyze_agent_discrepancies(agent_specs, running_children)
+
+    # Emit discovery metrics
+    emit_discovery_metrics(analysis, node_name)
+
+    # Clean up stale registry entries
+    {stale_cleaned, stale_errors} = cleanup_stale_entries(analysis.missing_agents)
+
+    Logger.debug("Cleaned up stale registry entries",
+      cleaned: stale_cleaned,
+      errors: length(stale_errors)
+    )
+
+    # Process missing agents (restart them)
+    {missing_restarted, restart_errors} =
+      process_missing_agents(
+        analysis.missing_agents,
+        agent_specs,
+        node_name
+      )
+
+    # Process undefined children (cleanup)
+    {undefined_cleaned, undefined_errors} =
+      process_undefined_children(
+        analysis.undefined_children,
+        node_name
+      )
+
+    # Process orphaned agents (cleanup)
+    {orphaned_cleaned, cleanup_errors} =
+      process_orphaned_agents(
+        analysis.orphaned_agents,
+        analysis.identified_children,
+        node_name
+      )
+
+    # Combine cleanup errors
+    all_cleanup_errors = undefined_errors ++ cleanup_errors
+
+    # Calculate total duration
+    duration_ms = System.monotonic_time(:millisecond) - start_time
+
+    # Log completion summary
+    log_reconciliation_summary(
+      length(agent_specs),
+      length(running_children),
+      MapSet.size(analysis.missing_agents),
+      MapSet.size(analysis.orphaned_agents),
+      missing_restarted,
+      orphaned_cleaned + undefined_cleaned,
+      length(restart_errors),
+      length(all_cleanup_errors),
+      duration_ms
+    )
+
+    # Log errors if any
+    log_reconciliation_errors(restart_errors, all_cleanup_errors, node_name)
+
+    # Emit completion telemetry
+    emit_reconciliation_complete(
+      missing_restarted,
+      orphaned_cleaned + undefined_cleaned,
+      duration_ms,
+      analysis,
+      spec_lookup_duration,
+      supervisor_lookup_duration,
+      restart_errors,
+      all_cleanup_errors,
+      node_name
+    )
+
+    # Broadcast completion event
+    broadcast_reconciliation_complete(
+      missing_restarted,
+      orphaned_cleaned + undefined_cleaned,
+      duration_ms,
+      analysis,
+      restart_errors,
+      all_cleanup_errors
+    )
+  end
+
+  # Analyze discrepancies between specs and running processes
+  defp analyze_agent_discrepancies(agent_specs, running_children) do
     # Separate undefined children from properly identified ones
     {undefined_children, identified_children} =
       Enum.split_with(running_children, fn
@@ -290,240 +353,268 @@ defmodule Arbor.Core.AgentReconciler do
     missing_agents = MapSet.difference(spec_ids, running_ids)
 
     # Find running agents without specs (orphans)
-    # This includes both identified agents without specs AND all undefined children
     orphaned_agents = MapSet.difference(running_ids, spec_ids)
 
-    # Emit discovery metrics
-    :telemetry.execute(
-      [:arbor, :reconciliation, :agent_discovery],
+    %{
+      spec_ids: spec_ids,
+      running_ids: running_ids,
+      missing_agents: missing_agents,
+      orphaned_agents: orphaned_agents,
+      undefined_children: undefined_children,
+      identified_children: identified_children
+    }
+  end
+
+  # Process missing agents by restarting them
+  defp process_missing_agents(missing_agents, agent_specs, node_name) do
+    Enum.reduce(missing_agents, {0, []}, fn agent_id, {success_count, errors} ->
+      restart_start = System.monotonic_time(:millisecond)
+
+      case List.keyfind(agent_specs, agent_id, 0) do
+        {^agent_id, spec_metadata} ->
+          case restart_missing_agent(agent_id, spec_metadata) do
+            {:ok, _pid} ->
+              restart_duration = System.monotonic_time(:millisecond) - restart_start
+              emit_agent_restart_success(agent_id, spec_metadata, restart_duration, node_name)
+              {success_count + 1, errors}
+
+            {:error, reason} ->
+              restart_duration = System.monotonic_time(:millisecond) - restart_start
+              error = %{agent_id: agent_id, reason: reason, duration_ms: restart_duration}
+              emit_agent_restart_failed(agent_id, spec_metadata, restart_duration, node_name)
+              {success_count, [error | errors]}
+          end
+
+        nil ->
+          error = %{agent_id: agent_id, reason: :spec_not_found}
+          Logger.warning("Missing agent spec during reconciliation", agent_id: agent_id)
+          emit_agent_restart_error(agent_id, node_name)
+          {success_count, [error | errors]}
+      end
+    end)
+  end
+
+  # Process undefined children by cleaning them up
+  defp process_undefined_children(undefined_children, node_name) do
+    Enum.reduce(undefined_children, {0, []}, fn {:undefined, pid}, {success_count, errors} ->
+      cleanup_start = System.monotonic_time(:millisecond)
+
+      Logger.debug("Processing undefined child", pid: inspect(pid))
+
+      case cleanup_orphaned_agent(:undefined, pid) do
+        true ->
+          cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
+          emit_agent_cleanup_success(:undefined, pid, cleanup_duration, node_name)
+          {success_count + 1, errors}
+
+        false ->
+          cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
+
+          error = %{
+            agent_id: :undefined,
+            reason: :cleanup_failed,
+            duration_ms: cleanup_duration
+          }
+
+          emit_agent_cleanup_failed(:undefined, pid, cleanup_duration, node_name)
+          {success_count, [error | errors]}
+      end
+    end)
+  end
+
+  # Process orphaned agents by cleaning them up
+  defp process_orphaned_agents(orphaned_agents, identified_children, node_name) do
+    Enum.reduce(orphaned_agents, {0, []}, fn agent_id, {success_count, errors} ->
+      cleanup_start = System.monotonic_time(:millisecond)
+
+      Logger.debug("Processing orphaned agent", agent_id: agent_id)
+
+      case List.keyfind(identified_children, agent_id, 0) do
+        {^agent_id, pid} ->
+          case cleanup_orphaned_agent(agent_id, pid) do
+            true ->
+              cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
+              emit_agent_cleanup_success(agent_id, pid, cleanup_duration, node_name)
+              {success_count + 1, errors}
+
+            false ->
+              cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
+
+              error = %{
+                agent_id: agent_id,
+                reason: :cleanup_failed,
+                duration_ms: cleanup_duration
+              }
+
+              emit_agent_cleanup_failed(agent_id, pid, cleanup_duration, node_name)
+              {success_count, [error | errors]}
+          end
+
+        nil ->
+          error = %{agent_id: agent_id, reason: :process_not_found}
+          Logger.warning("Orphaned agent not found during cleanup", agent_id: agent_id)
+          emit_agent_cleanup_error(agent_id, node_name)
+          {success_count, [error | errors]}
+      end
+    end)
+  end
+
+  # Clean up stale registry entries
+  defp cleanup_stale_entries(missing_agents) do
+    Enum.reduce(missing_agents, {0, []}, fn agent_id, {success_count, errors} ->
+      case cleanup_stale_registry_entry(agent_id) do
+        true -> {success_count + 1, errors}
+        false -> {success_count, [{agent_id, :stale_cleanup_failed} | errors]}
+      end
+    end)
+  end
+
+  # Telemetry emission functions
+  defp emit_reconciliation_start(start_time, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :start,
+      %{start_time: start_time},
+      %{node: node_name, reconciler: __MODULE__}
+    )
+
+    ClusterEvents.broadcast(:reconciliation_started, %{
+      reconciler: __MODULE__
+    })
+  end
+
+  defp emit_lookup_performance_metrics(
+         spec_duration,
+         supervisor_duration,
+         spec_count,
+         running_count,
+         node_name
+       ) do
+    TelemetryHelper.emit_reconciliation_event(
+      :lookup_performance,
       %{
-        total_specs: MapSet.size(spec_ids),
-        total_running: MapSet.size(running_ids),
-        missing_count: MapSet.size(missing_agents),
-        orphaned_count: MapSet.size(orphaned_agents)
+        spec_lookup_duration_ms: spec_duration,
+        supervisor_lookup_duration_ms: supervisor_duration,
+        specs_found: spec_count,
+        running_processes: running_count
+      },
+      %{node: node_name}
+    )
+  end
+
+  defp emit_discovery_metrics(analysis, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_discovery,
+      %{
+        total_specs: MapSet.size(analysis.spec_ids),
+        total_running: MapSet.size(analysis.running_ids),
+        missing_count: MapSet.size(analysis.missing_agents),
+        orphaned_count: MapSet.size(analysis.orphaned_agents)
       },
       %{
         node: node_name,
-        missing_agents: Enum.to_list(missing_agents),
-        orphaned_agents: Enum.to_list(orphaned_agents)
+        missing_agents: Enum.to_list(analysis.missing_agents),
+        orphaned_agents: Enum.to_list(analysis.orphaned_agents)
       }
     )
+  end
 
-    # Clean up stale registry entries for missing agents before attempting restart
-    {stale_cleaned, stale_errors} =
-      Enum.reduce(missing_agents, {0, []}, fn agent_id, {success_count, errors} ->
-        case cleanup_stale_registry_entry(agent_id) do
-          true -> {success_count + 1, errors}
-          false -> {success_count, [{agent_id, :stale_cleanup_failed} | errors]}
-        end
-      end)
-
-    Logger.debug("Cleaned up stale registry entries",
-      cleaned: stale_cleaned,
-      errors: length(stale_errors)
+  defp emit_agent_restart_success(agent_id, spec_metadata, duration, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_restart_success,
+      %{duration_ms: duration},
+      %{
+        agent_id: agent_id,
+        restart_strategy: spec_metadata.restart_strategy,
+        node: node_name
+      }
     )
+  end
 
-    # Count successful operations
-    _missing_restarted = 0
-    _orphaned_cleaned = 0
+  defp emit_agent_restart_failed(agent_id, spec_metadata, duration, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_restart_failed,
+      %{duration_ms: duration},
+      %{
+        agent_id: agent_id,
+        restart_strategy: spec_metadata.restart_strategy,
+        node: node_name
+      }
+    )
+  end
 
-    # Restart missing agents with detailed tracking
-    {missing_restarted, restart_errors} =
-      Enum.reduce(missing_agents, {0, []}, fn agent_id, {success_count, errors} ->
-        restart_start = System.monotonic_time(:millisecond)
+  defp emit_agent_restart_error(agent_id, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_restart_error,
+      %{},
+      %{
+        agent_id: agent_id,
+        error: :spec_not_found,
+        node: node_name
+      }
+    )
+  end
 
-        case List.keyfind(agent_specs, agent_id, 0) do
-          {^agent_id, spec_metadata} ->
-            case restart_missing_agent(agent_id, spec_metadata) do
-              {:ok, _pid} ->
-                restart_duration = System.monotonic_time(:millisecond) - restart_start
+  defp emit_agent_cleanup_success(agent_id, pid, duration, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_cleanup_success,
+      %{duration_ms: duration},
+      %{
+        agent_id: agent_id,
+        pid: inspect(pid),
+        node: node_name
+      }
+    )
+  end
 
-                :telemetry.execute(
-                  [:arbor, :reconciliation, :agent_restart_success],
-                  %{
-                    duration_ms: restart_duration
-                  },
-                  %{
-                    agent_id: agent_id,
-                    restart_strategy: spec_metadata.restart_strategy,
-                    node: node_name
-                  }
-                )
+  defp emit_agent_cleanup_failed(agent_id, pid, duration, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_cleanup_failed,
+      %{duration_ms: duration},
+      %{
+        agent_id: agent_id,
+        pid: inspect(pid),
+        node: node_name
+      }
+    )
+  end
 
-                {success_count + 1, errors}
+  defp emit_agent_cleanup_error(agent_id, node_name) do
+    TelemetryHelper.emit_reconciliation_event(
+      :agent_cleanup_error,
+      %{},
+      %{
+        agent_id: agent_id,
+        error: :process_not_found,
+        node: node_name
+      }
+    )
+  end
 
-              {:error, reason} ->
-                restart_duration = System.monotonic_time(:millisecond) - restart_start
-                error = %{agent_id: agent_id, reason: reason, duration_ms: restart_duration}
-
-                :telemetry.execute(
-                  [:arbor, :reconciliation, :agent_restart_failed],
-                  %{
-                    duration_ms: restart_duration
-                  },
-                  %{
-                    agent_id: agent_id,
-                    restart_strategy: spec_metadata.restart_strategy,
-                    node: node_name
-                  }
-                )
-
-                {success_count, [error | errors]}
-            end
-
-          nil ->
-            error = %{agent_id: agent_id, reason: :spec_not_found}
-            Logger.warning("Missing agent spec during reconciliation", agent_id: agent_id)
-
-            :telemetry.execute(
-              [:arbor, :reconciliation, :agent_restart_error],
-              %{},
-              %{
-                agent_id: agent_id,
-                error: :spec_not_found,
-                node: node_name
-              }
-            )
-
-            {success_count, [error | errors]}
-        end
-      end)
-
-    # First clean up all undefined children - these are definitely orphans
-    {_undefined_cleaned, _undefined_errors} =
-      Enum.reduce(undefined_children, {0, []}, fn {:undefined, pid}, {success_count, errors} ->
-        cleanup_start = System.monotonic_time(:millisecond)
-
-        Logger.debug("Processing undefined child", pid: inspect(pid))
-
-        case cleanup_orphaned_agent(:undefined, pid) do
-          true ->
-            cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-
-            :telemetry.execute(
-              [:arbor, :reconciliation, :agent_cleanup_success],
-              %{
-                duration_ms: cleanup_duration
-              },
-              %{
-                agent_id: :undefined,
-                pid: inspect(pid),
-                node: node_name
-              }
-            )
-
-            {success_count + 1, errors}
-
-          false ->
-            cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-
-            error = %{
-              agent_id: :undefined,
-              reason: :cleanup_failed,
-              duration_ms: cleanup_duration
-            }
-
-            :telemetry.execute(
-              [:arbor, :reconciliation, :agent_cleanup_failed],
-              %{
-                duration_ms: cleanup_duration
-              },
-              %{
-                agent_id: :undefined,
-                pid: inspect(pid),
-                node: node_name
-              }
-            )
-
-            {success_count, [error | errors]}
-        end
-      end)
-
-    # Clean up orphaned agents with detailed tracking
-    {orphaned_cleaned, cleanup_errors} =
-      Enum.reduce(orphaned_agents, {0, []}, fn agent_id, {success_count, errors} ->
-        cleanup_start = System.monotonic_time(:millisecond)
-
-        Logger.debug("Processing orphaned agent", agent_id: agent_id)
-
-        case List.keyfind(identified_children, agent_id, 0) do
-          {^agent_id, pid} ->
-            case cleanup_orphaned_agent(agent_id, pid) do
-              true ->
-                cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-
-                :telemetry.execute(
-                  [:arbor, :reconciliation, :agent_cleanup_success],
-                  %{
-                    duration_ms: cleanup_duration
-                  },
-                  %{
-                    agent_id: agent_id,
-                    pid: inspect(pid),
-                    node: node_name
-                  }
-                )
-
-                {success_count + 1, errors}
-
-              false ->
-                cleanup_duration = System.monotonic_time(:millisecond) - cleanup_start
-
-                error = %{
-                  agent_id: agent_id,
-                  reason: :cleanup_failed,
-                  duration_ms: cleanup_duration
-                }
-
-                :telemetry.execute(
-                  [:arbor, :reconciliation, :agent_cleanup_failed],
-                  %{
-                    duration_ms: cleanup_duration
-                  },
-                  %{
-                    agent_id: agent_id,
-                    pid: inspect(pid),
-                    node: node_name
-                  }
-                )
-
-                {success_count, [error | errors]}
-            end
-
-          nil ->
-            error = %{agent_id: agent_id, reason: :process_not_found}
-            Logger.warning("Orphaned agent not found during cleanup", agent_id: agent_id)
-
-            :telemetry.execute(
-              [:arbor, :reconciliation, :agent_cleanup_error],
-              %{},
-              %{
-                agent_id: agent_id,
-                error: :process_not_found,
-                node: node_name
-              }
-            )
-
-            {success_count, [error | errors]}
-        end
-      end)
-
-    duration_ms = System.monotonic_time(:millisecond) - start_time
-
-    # Enhanced completion logging with error details
+  defp log_reconciliation_summary(
+         specs,
+         running,
+         missing,
+         orphaned,
+         restarted,
+         cleaned,
+         restart_errors,
+         cleanup_errors,
+         duration
+       ) do
     Logger.debug("Reconciliation complete",
-      specs: length(agent_specs),
-      running: length(running_children),
-      missing: MapSet.size(missing_agents),
-      orphaned: MapSet.size(orphaned_agents),
-      restarted: missing_restarted,
-      cleaned: orphaned_cleaned,
-      restart_errors: length(restart_errors),
-      cleanup_errors: length(cleanup_errors),
-      duration_ms: duration_ms
+      specs: specs,
+      running: running,
+      missing: missing,
+      orphaned: orphaned,
+      restarted: restarted,
+      cleaned: cleaned,
+      restart_errors: restart_errors,
+      cleanup_errors: cleanup_errors,
+      duration_ms: duration
     )
+  end
 
-    # Log individual errors if any occurred
+  defp log_reconciliation_errors(restart_errors, cleanup_errors, node_name) do
     if restart_errors != [] do
       Logger.warning("Agent restart errors during reconciliation",
         errors: restart_errors,
@@ -537,8 +628,19 @@ defmodule Arbor.Core.AgentReconciler do
         node: node_name
       )
     end
+  end
 
-    # Comprehensive reconciliation completion event
+  defp emit_reconciliation_complete(
+         missing_restarted,
+         orphaned_cleaned,
+         duration_ms,
+         analysis,
+         spec_lookup_duration,
+         supervisor_lookup_duration,
+         restart_errors,
+         cleanup_errors,
+         node_name
+       ) do
     :telemetry.execute(
       [:arbor, :reconciliation, :complete],
       %{
@@ -546,10 +648,10 @@ defmodule Arbor.Core.AgentReconciler do
         missing_agents_restarted: missing_restarted,
         orphaned_agents_cleaned: orphaned_cleaned,
         duration_ms: duration_ms,
-        total_specs: MapSet.size(spec_ids),
-        total_running: MapSet.size(running_ids),
-        missing_count: MapSet.size(missing_agents),
-        orphaned_count: MapSet.size(orphaned_agents),
+        total_specs: MapSet.size(analysis.spec_ids),
+        total_running: MapSet.size(analysis.running_ids),
+        missing_count: MapSet.size(analysis.missing_agents),
+        orphaned_count: MapSet.size(analysis.orphaned_agents),
         # Performance metrics
         spec_lookup_duration_ms: spec_lookup_duration,
         supervisor_lookup_duration_ms: supervisor_lookup_duration,
@@ -561,13 +663,13 @@ defmodule Arbor.Core.AgentReconciler do
           calculate_efficiency(
             missing_restarted,
             orphaned_cleaned,
-            MapSet.size(missing_agents),
-            MapSet.size(orphaned_agents)
+            MapSet.size(analysis.missing_agents),
+            MapSet.size(analysis.orphaned_agents)
           ),
         system_health_score:
           calculate_health_score(
-            MapSet.size(spec_ids),
-            MapSet.size(running_ids),
+            MapSet.size(analysis.spec_ids),
+            MapSet.size(analysis.running_ids),
             length(restart_errors),
             length(cleanup_errors)
           )
@@ -579,8 +681,16 @@ defmodule Arbor.Core.AgentReconciler do
         cleanup_errors: cleanup_errors
       }
     )
+  end
 
-    # Broadcast reconciliation completion event
+  defp broadcast_reconciliation_complete(
+         missing_restarted,
+         orphaned_cleaned,
+         duration_ms,
+         analysis,
+         restart_errors,
+         cleanup_errors
+       ) do
     event_type =
       if length(restart_errors) > 0 or length(cleanup_errors) > 0 do
         :reconciliation_failed
@@ -599,8 +709,8 @@ defmodule Arbor.Core.AgentReconciler do
         calculate_efficiency(
           missing_restarted,
           orphaned_cleaned,
-          MapSet.size(missing_agents),
-          MapSet.size(orphaned_agents)
+          MapSet.size(analysis.missing_agents),
+          MapSet.size(analysis.orphaned_agents)
         )
     })
   end
@@ -640,15 +750,12 @@ defmodule Arbor.Core.AgentReconciler do
     Logger.info("Restarting missing agent", agent_id: agent_id)
 
     # Emit telemetry for agent restart attempt with enhanced metadata
-    :telemetry.execute(
-      [:arbor, :agent, :restart_attempt],
+    TelemetryHelper.emit_agent_event(
+      :restart_attempt,
+      agent_id,
+      %{start_time: start_time},
       %{
-        start_time: start_time
-      },
-      %{
-        agent_id: agent_id,
         restart_strategy: spec_metadata.restart_strategy,
-        node: node(),
         module: spec_metadata.module,
         created_at: spec_metadata.created_at
       }
@@ -720,16 +827,15 @@ defmodule Arbor.Core.AgentReconciler do
               duration_ms: restart_duration
             )
 
-            :telemetry.execute(
-              [:arbor, :agent, :restarted],
+            TelemetryHelper.emit_agent_event(
+              :restarted,
+              agent_id,
               %{
                 restart_duration_ms: restart_duration,
                 memory_usage: get_process_memory(pid)
               },
               %{
-                agent_id: agent_id,
                 pid: inspect(pid),
-                node: node(),
                 module: spec_metadata.module,
                 restart_strategy: spec_metadata.restart_strategy
               }
@@ -789,16 +895,15 @@ defmodule Arbor.Core.AgentReconciler do
               duration_ms: restart_duration
             )
 
-            :telemetry.execute(
-              [:arbor, :agent, :restart_failed],
+            TelemetryHelper.emit_agent_event(
+              :restart_failed,
+              agent_id,
               %{
                 restart_duration_ms: restart_duration,
                 error_category: classify_error(reason)
               },
               %{
-                agent_id: agent_id,
                 reason: inspect(reason),
-                node: node(),
                 module: spec_metadata.module,
                 restart_strategy: spec_metadata.restart_strategy
               }
@@ -868,11 +973,12 @@ defmodule Arbor.Core.AgentReconciler do
     Logger.warning("Cleaning up orphaned agent", agent_id: agent_id, pid: inspect(pid))
 
     # Emit telemetry for orphaned agent cleanup
-    :telemetry.execute([:arbor, :agent, :cleanup_attempt], %{}, %{
-      agent_id: agent_id,
-      pid: inspect(pid),
-      node: node()
-    })
+    TelemetryHelper.emit_agent_event(
+      :cleanup_attempt,
+      agent_id,
+      %{},
+      %{pid: inspect(pid)}
+    )
 
     # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
     # Only unregister if agent_id is not :undefined
@@ -885,11 +991,12 @@ defmodule Arbor.Core.AgentReconciler do
       :ok ->
         Logger.info("Successfully cleaned up orphaned agent", agent_id: agent_id)
 
-        :telemetry.execute([:arbor, :agent, :cleaned_up], %{}, %{
-          agent_id: agent_id,
-          pid: inspect(pid),
-          node: node()
-        })
+        TelemetryHelper.emit_agent_event(
+          :cleaned_up,
+          agent_id,
+          %{},
+          %{pid: inspect(pid)}
+        )
 
         true
 
@@ -899,12 +1006,12 @@ defmodule Arbor.Core.AgentReconciler do
           reason: inspect(reason)
         )
 
-        :telemetry.execute([:arbor, :agent, :cleanup_failed], %{}, %{
-          agent_id: agent_id,
-          pid: inspect(pid),
-          reason: inspect(reason),
-          node: node()
-        })
+        TelemetryHelper.emit_agent_event(
+          :cleanup_failed,
+          agent_id,
+          %{},
+          %{pid: inspect(pid), reason: inspect(reason)}
+        )
 
         false
     end

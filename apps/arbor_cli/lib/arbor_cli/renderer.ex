@@ -230,21 +230,16 @@ defmodule ArborCli.Renderer do
       |> Enum.with_index()
       |> Enum.each(fn {row, idx} ->
         formatted_row =
-          Enum.join(
-            Enum.map(Enum.with_index(row), fn {cell, col_idx} ->
-              width = Enum.at(widths, col_idx, 0)
-              String.pad_trailing(to_string(cell), width)
-            end),
-            "  "
-          )
+          Enum.map_join(Enum.with_index(row), "  ", fn {cell, col_idx} ->
+            width = Enum.at(widths, col_idx, 0)
+            String.pad_trailing(to_string(cell), width)
+          end)
 
         IO.puts(formatted_row)
 
         # Add separator after header
         if idx == 0 and length(rows) > 1 do
-          separator = widths
-            |> Enum.map(fn width -> String.duplicate("-", width) end)
-            |> Enum.join("  ")
+          separator = Enum.map_join(widths, "  ", fn width -> String.duplicate("-", width) end)
           IO.puts(separator)
         end
       end)

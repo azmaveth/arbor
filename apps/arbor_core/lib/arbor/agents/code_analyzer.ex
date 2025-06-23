@@ -361,8 +361,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
         analyses =
           files
           |> Enum.map(&Path.join(dir_path, &1))
-          |> Enum.filter(&File.regular?/1)
-          |> Enum.filter(&has_supported_extension?/1)
+          |> Enum.filter(fn path -> File.regular?(path) && has_supported_extension?(path) end)
           |> Enum.map(&perform_file_analysis/1)
           |> Enum.filter(fn
             {:ok, _} -> true

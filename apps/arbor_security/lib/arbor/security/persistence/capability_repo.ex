@@ -6,11 +6,11 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   but uses Ecto and a real database for durable storage.
   """
 
+  import Ecto.Query
+
   alias Arbor.Contracts.Core.Capability, as: CoreCapability
   alias Arbor.Security.Repo
   alias Arbor.Security.Schemas.Capability, as: SchemaCapability
-
-  import Ecto.Query
 
   @doc """
   Insert a capability into the database.

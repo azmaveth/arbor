@@ -39,9 +39,7 @@ defmodule Arbor.CodeGen.ImplementationGenerator do
   end
 
   defp generate_callbacks(callbacks) do
-    callbacks
-    |> Enum.map(&generate_callback/1)
-    |> Enum.join("\n\n")
+    Enum.map_join(callbacks, "\n\n", &generate_callback/1)
   end
 
   defp generate_callback(callback) do
@@ -68,8 +66,6 @@ defmodule Arbor.CodeGen.ImplementationGenerator do
   defp generate_args(0), do: ""
 
   defp generate_args(arity) when arity > 0 do
-    1..arity
-    |> Enum.map(&"arg#{&1}")
-    |> Enum.join(", ")
+    Enum.map_join(1..arity, ", ", &"arg#{&1}")
   end
 end

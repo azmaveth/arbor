@@ -46,7 +46,69 @@ config :logger, :console,
     :event,
     :measurements,
     :ref,
-    :result
+    :result,
+
+    # Process and system info
+    :pid,
+    :node,
+    :existing_pid,
+    :new_pid,
+    :current_pid,
+
+    # HTTP/Request fields
+    :method,
+    :path,
+    :body_size,
+    :endpoint,
+    :pool_size,
+
+    # Error tracking
+    :error,
+    :errors,
+    :exception,
+    :stacktrace,
+    :validation_enabled,
+
+    # Performance metrics
+    :duration_ms,
+    :delay_ms,
+    :retries_left,
+
+    # Code analysis
+    :args,
+    :args_count,
+    :working_dir,
+    :files_analyzed,
+    :language,
+    :function,
+    :schema,
+    :type,
+    :subcommand,
+    :command_type,
+
+    # Supervisor/Registry
+    :supervisor_status,
+    :registry_status,
+    :horde_supervisor_status,
+    :restart_strategy,
+
+    # Agent reconciliation
+    :specs,
+    :running,
+    :missing,
+    :orphaned,
+    :restarted,
+    :cleaned,
+    :remaining_agents,
+    :recovered,
+    :checkpoint_count,
+    :children,
+    :count,
+    :counter,
+    :data,
+    :options,
+    :restart_errors,
+    :cleanup_errors
   ]
 
 # Configure Arbor Persistence Ecto Repository
