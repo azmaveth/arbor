@@ -53,7 +53,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
 
   alias Arbor.Contracts.Core.Capability
   alias Arbor.Contracts.Security.AuditEvent
-  alias Arbor.Types
+  alias Arbor.Identifiers
 
   defstruct [
     :authorization_attempts,
@@ -129,7 +129,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @impl true
   def grant_capability(principal_id, resource_uri, constraints, granter_id, state) do
     capability = %Capability{
-      id: Types.generate_capability_id(),
+      id: Identifiers.generate_capability_id(),
       resource_uri: resource_uri,
       principal_id: principal_id,
       granted_at: DateTime.utc_now(),
@@ -186,7 +186,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
       {:error, :delegation_depth_exhausted}
     else
       delegated = %Capability{
-        id: Types.generate_capability_id(),
+        id: Identifiers.generate_capability_id(),
         resource_uri: parent_capability.resource_uri,
         principal_id: delegate_to,
         granted_at: DateTime.utc_now(),

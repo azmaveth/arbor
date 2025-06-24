@@ -1,6 +1,8 @@
 defmodule Arbor.Core.ClusterManagerTest do
   use ExUnit.Case, async: false
 
+  @moduletag :integration
+
   alias Arbor.Core.ClusterManager
 
   setup_all do
@@ -90,7 +92,7 @@ defmodule Arbor.Core.ClusterManagerTest do
     test "reforms cluster by disconnecting and reconnecting nodes" do
       # Get initial status
       assert initial_status = ClusterManager.cluster_status()
-      initial_count = initial_status.connected_nodes
+      _initial_count = initial_status.connected_nodes
 
       # Reform cluster
       assert :ok = ClusterManager.reform_cluster()

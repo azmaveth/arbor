@@ -45,6 +45,14 @@ defmodule Arbor.Core.Application do
         []
       end
 
+    # HTTP API (only in dev/prod)
+    http_children =
+      if Application.get_env(:arbor_core, :http_api, enabled: true)[:enabled] do
+        [{Plug.Cowboy, scheme: :http, plug: Arbor.Core.GatewayHTTP, options: [port: 4000]}]
+      else
+        []
+      end
+
     # Base children that always start
     base_children =
       [
@@ -60,7 +68,7 @@ defmodule Arbor.Core.Application do
 
         # Telemetry (placeholder for now)
         {Task, fn -> setup_telemetry() end}
-      ] ++ session_registry_children
+      ] ++ session_registry_children ++ http_children
 
     # Distributed components (only in production/dev with Horde)
     distributed_children =

@@ -80,7 +80,33 @@ cd arbor
 
 # Performance benchmarks
 ./scripts/benchmark.sh
+
+# Run distributed tests (multi-node cluster tests)
+./scripts/test-distributed.sh
 ```
+
+### Testing Infrastructure
+
+Arbor uses a **hybrid testing approach** that balances fast feedback with comprehensive distributed system verification:
+
+- **Single-node tests** (default): Fast unit and integration tests that run in isolation
+- **Distributed tests** (`@tag :distributed`): Multi-node tests that verify cluster behavior
+
+#### Distributed Testing Capabilities
+
+The distributed test suite validates critical distributed system behaviors:
+
+- **CRDT Synchronization**: Ensures distributed data structures converge correctly across nodes
+- **Failover Scenarios**: Verifies agents migrate properly when nodes crash
+- **Race Condition Handling**: Tests concurrent operations maintain consistency
+- **Split-Brain Recovery**: Validates cluster healing after network partitions
+
+Test helpers in `test/support/` provide utilities for:
+- Multi-node cluster orchestration
+- Network partition simulation
+- Cascading failure scenarios
+- CRDT convergence verification
+- Race condition detection
 
 ### Using Docker
 

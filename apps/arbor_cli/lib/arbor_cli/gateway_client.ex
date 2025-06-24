@@ -143,7 +143,7 @@ defmodule ArborCli.GatewayClient do
   """
   @spec stream_execution_events(String.t()) :: Enumerable.t()
   def stream_execution_events(execution_id) do
-    EventStream.create(execution_id)
+    GenServer.call(__MODULE__, {:stream_execution_events, execution_id})
   end
 
   @doc """
@@ -238,6 +238,12 @@ defmodule ArborCli.GatewayClient do
   def handle_call({:get_execution_status, execution_id}, _from, state) do
     result = Session.get_execution_status(state.connection_pool, execution_id)
     {:reply, result, state}
+  end
+
+  @impl GenServer
+  def handle_call({:stream_execution_events, execution_id}, _from, state) do
+    stream = EventStream.create(state.connection_pool, execution_id)
+    {:reply, stream, state}
   end
 
   @impl GenServer

@@ -5,6 +5,7 @@ defmodule Arbor.Persistence.EventJournalTest do
   alias Arbor.Persistence.EventJournal
 
   @moduletag journal: :batching
+  @moduletag :integration
 
   setup do
     # Create temporary directory for test journals

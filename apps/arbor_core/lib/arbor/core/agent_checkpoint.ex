@@ -69,7 +69,7 @@ defmodule Arbor.Core.AgentCheckpoint do
   alias Arbor.Types
   require Logger
 
-  @registry_name Arbor.Core.HordeAgentRegistry
+  @registry_name Arbor.Core.HordeCheckpointRegistry
 
   @type checkpoint_data :: any()
   @type agent_state :: any()
@@ -110,9 +110,9 @@ defmodule Arbor.Core.AgentCheckpoint do
 
     checkpoint_key = {:agent_checkpoint, agent_id}
 
-    # Simply register the new value. Horde will handle the update atomically.
-    case Horde.Registry.register(@registry_name, checkpoint_key, checkpoint_data) do
-      {:ok, _} ->
+    # Use the stable anchor process to save the checkpoint
+    case Arbor.Core.HordeCheckpointRegistry.save_checkpoint(checkpoint_key, checkpoint_data) do
+      :ok ->
         :telemetry.execute(
           [:arbor, :checkpoint, :saved],
           %{
@@ -126,22 +126,9 @@ defmodule Arbor.Core.AgentCheckpoint do
 
         :ok
 
-      {:error, {:already_registered, _}} ->
-        # Horde CRDT will handle the update by overwriting. This should not typically
-        # happen since we're using the agent ID as the key and each checkpoint should
-        # be unique, but we'll treat it as a successful save.
-        :telemetry.execute(
-          [:arbor, :checkpoint, :updated],
-          %{
-            size_bytes: estimate_size(checkpoint_data)
-          },
-          %{
-            agent_id: agent_id,
-            node: node()
-          }
-        )
-
-        :ok
+      {:error, reason} ->
+        Logger.warning("Failed to save checkpoint for agent #{agent_id}: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -150,13 +137,25 @@ defmodule Arbor.Core.AgentCheckpoint do
 
   Returns the previously saved state or {:error, :not_found} if no
   checkpoint exists for the agent.
+
+  Due to the eventually consistent nature of Horde's CRDT, this function
+  includes a retry mechanism for recently saved checkpoints.
   """
   @spec load_checkpoint(Types.agent_id()) :: {:ok, agent_state()} | {:error, :not_found | term()}
   def load_checkpoint(agent_id) when is_binary(agent_id) do
+    load_checkpoint_with_retry(agent_id, 5, 100)
+  end
+
+  defp load_checkpoint_with_retry(agent_id, retries, delay) when retries > 0 do
     checkpoint_key = {:agent_checkpoint, agent_id}
 
-    case Horde.Registry.lookup(@registry_name, checkpoint_key) do
-      [{_pid, checkpoint_data}] ->
+    # Use select instead of lookup to avoid process liveness check
+    pattern = {checkpoint_key, :"$1", :"$2"}
+    guard = []
+    body = [:"$2"]
+
+    case Horde.Registry.select(@registry_name, [{pattern, guard, body}]) do
+      [checkpoint_data] ->
         :telemetry.execute(
           [:arbor, :checkpoint, :loaded],
           %{
@@ -173,12 +172,9 @@ defmodule Arbor.Core.AgentCheckpoint do
         {:ok, checkpoint_data.state}
 
       [] ->
-        :telemetry.execute([:arbor, :checkpoint, :not_found], %{}, %{
-          agent_id: agent_id,
-          node: node()
-        })
-
-        {:error, :not_found}
+        # Retry with exponential backoff for CRDT synchronization
+        Process.sleep(delay)
+        load_checkpoint_with_retry(agent_id, retries - 1, delay * 2)
     end
   rescue
     error ->
@@ -189,6 +185,15 @@ defmodule Arbor.Core.AgentCheckpoint do
       })
 
       {:error, error}
+  end
+
+  defp load_checkpoint_with_retry(agent_id, _retries, _delay) do
+    :telemetry.execute([:arbor, :checkpoint, :not_found], %{}, %{
+      agent_id: agent_id,
+      node: node()
+    })
+
+    {:error, :not_found}
   end
 
   @doc """
@@ -244,6 +249,10 @@ defmodule Arbor.Core.AgentCheckpoint do
     if extract_exported and restore_exported do
       case load_checkpoint(agent_id) do
         {:ok, checkpoint_data} ->
+          Logger.info("Loaded checkpoint for recovery",
+            agent_id: agent_id
+          )
+
           try do
             # Reconstruct initial state from args
             initial_state = %{
@@ -254,6 +263,10 @@ defmodule Arbor.Core.AgentCheckpoint do
 
             # Use the agent's restore callback
             restored_state = agent_module.restore_from_checkpoint(checkpoint_data, initial_state)
+
+            Logger.info("Restored state from checkpoint",
+              agent_id: agent_id
+            )
 
             :telemetry.execute([:arbor, :recovery, :success], %{}, %{
               agent_id: agent_id,
@@ -275,9 +288,15 @@ defmodule Arbor.Core.AgentCheckpoint do
           end
 
         {:error, :not_found} ->
+          Logger.warning("No checkpoint found for recovery", agent_id: agent_id)
           {:error, :no_checkpoint}
 
         {:error, reason} ->
+          Logger.error("Failed to load checkpoint for recovery",
+            agent_id: agent_id,
+            reason: inspect(reason)
+          )
+
           {:error, reason}
       end
     else
@@ -296,8 +315,13 @@ defmodule Arbor.Core.AgentCheckpoint do
   def get_checkpoint_info(agent_id) when is_binary(agent_id) do
     checkpoint_key = {:agent_checkpoint, agent_id}
 
-    case Horde.Registry.lookup(@registry_name, checkpoint_key) do
-      [{_pid, checkpoint_data}] ->
+    # Use select instead of lookup to avoid process liveness check
+    pattern = {checkpoint_key, :"$1", :"$2"}
+    guard = []
+    body = [:"$2"]
+
+    case Horde.Registry.select(@registry_name, [{pattern, guard, body}]) do
+      [checkpoint_data] ->
         info = %{
           timestamp: checkpoint_data.timestamp,
           node: checkpoint_data.node,

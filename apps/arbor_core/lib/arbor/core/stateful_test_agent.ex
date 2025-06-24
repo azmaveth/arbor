@@ -11,7 +11,7 @@ defmodule Arbor.Core.StatefulTestAgent do
 
   use GenServer
 
-  alias Arbor.Core.{AgentCheckpoint, HordeRegistry}
+  alias Arbor.Core.AgentCheckpoint
   require Logger
 
   # Client API
@@ -101,7 +101,28 @@ defmodule Arbor.Core.StatefulTestAgent do
       counter: state.counter
     )
 
-    {:ok, state}
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    # Register the agent with the HordeSupervisor
+    agent_metadata = %{
+      counter: state.counter,
+      recovered: state.recovered,
+      checkpoint_count: state.checkpoint_count,
+      started_at: state.started_at
+    }
+
+    case Arbor.Core.HordeSupervisor.register_agent(self(), state.agent_id, agent_metadata) do
+      {:ok, _pid} ->
+        Logger.info("StatefulTestAgent #{state.agent_id} registered successfully")
+        {:noreply, state}
+
+      {:error, reason} ->
+        Logger.error("Failed to register StatefulTestAgent #{state.agent_id}: #{inspect(reason)}")
+        {:noreply, state}
+    end
   end
 
   @impl GenServer
@@ -121,20 +142,16 @@ defmodule Arbor.Core.StatefulTestAgent do
 
   @impl GenServer
   def handle_cast(:checkpoint, state) do
-    case AgentCheckpoint.save_checkpoint(state.agent_id, state) do
-      :ok ->
-        new_state = %{state | checkpoint_count: state.checkpoint_count + 1}
-        Logger.debug("Saved checkpoint #{new_state.checkpoint_count} for agent #{state.agent_id}")
+    # save_checkpoint always returns :ok according to its spec
+    :ok = AgentCheckpoint.save_checkpoint(state.agent_id, state)
 
-        # Schedule next automatic checkpoint
-        AgentCheckpoint.enable_auto_checkpoint(self(), 10_000)
+    new_state = %{state | checkpoint_count: state.checkpoint_count + 1}
+    Logger.debug("Saved checkpoint #{new_state.checkpoint_count} for agent #{state.agent_id}")
 
-        {:noreply, new_state}
+    # Schedule next automatic checkpoint
+    AgentCheckpoint.enable_auto_checkpoint(self(), 10_000)
 
-      {:error, reason} ->
-        Logger.warning("Failed to save checkpoint: #{inspect(reason)}")
-        {:noreply, state}
-    end
+    {:noreply, new_state}
   end
 
   @impl GenServer
@@ -188,13 +205,15 @@ defmodule Arbor.Core.StatefulTestAgent do
 
   @impl AgentCheckpoint
   def restore_from_checkpoint(checkpoint_data, _current_state) do
-    # Reconstruct state from checkpoint data
+    # Reconstruct full state from checkpoint data
+    # Use Map.get to safely access keys
     %{
-      agent_id: checkpoint_data.agent_id,
-      counter: checkpoint_data.counter,
-      data: checkpoint_data.data,
-      checkpoint_count: checkpoint_data.checkpoint_count,
-      last_checkpoint: checkpoint_data.last_checkpoint,
+      agent_id: Map.get(checkpoint_data, :agent_id),
+      counter: Map.get(checkpoint_data, :counter, 0),
+      data: Map.get(checkpoint_data, :data, %{}),
+      checkpoint_count: Map.get(checkpoint_data, :checkpoint_count, 0),
+      started_at: Map.get(checkpoint_data, :last_checkpoint, System.system_time(:millisecond)),
+      recovered: true,
       recovered_at: System.system_time(:millisecond)
     }
   end

@@ -1,5 +1,6 @@
 defmodule Arbor.Contracts.Core.CapabilityTest do
   use ExUnit.Case, async: true
+  @moduletag :contract
 
   alias Arbor.Contracts.Core.Capability
 

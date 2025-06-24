@@ -8,19 +8,31 @@ defmodule ArborCli.GatewayClient.Session do
 
   require Logger
 
+  alias ArborCli.GatewayClient.Connection
+
   @doc """
   Create a new session with the Gateway.
   """
   @spec create(pid(), keyword()) :: {:ok, map()} | {:error, any()}
-  def create(_connection_pool, opts) do
-    Logger.info("Creating session through Gateway")
+  def create(conn, opts) do
+    Logger.info("Creating session through Gateway HTTP API")
 
-    # Call the Gateway directly to create session
-    case GenServer.call(Arbor.Core.Gateway, {:create_session, opts}) do
-      {:ok, session_info} ->
-        {:ok, session_info}
-      {:error, reason} = error ->
-        Logger.error("Failed to create Gateway session", reason: reason)
+    body = %{
+      metadata: Keyword.get(opts, :metadata, %{}),
+      timeout: Keyword.get(opts, :timeout, 3_600_000)
+    }
+
+    case Connection.request(conn, :post, "/sessions", Jason.encode!(body)) do
+      {:ok, %{status: 201, body: body}} ->
+        {:ok, Jason.decode!(body)}
+
+      {:ok, %{status: status, body: body}} ->
+        error = Jason.decode!(body)
+        Logger.error("Failed to create Gateway session", status: status, error: error)
+        {:error, error["error"]}
+
+      {:error, _reason} = error ->
+        Logger.error("HTTP request failed", reason: error)
         error
     end
   end
@@ -29,15 +41,24 @@ defmodule ArborCli.GatewayClient.Session do
   End a session.
   """
   @spec end_session(pid(), String.t()) :: :ok | {:error, any()}
-  def end_session(_connection_pool, session_id) do
-    Logger.info("Ending session through Gateway", session_id: session_id)
+  def end_session(conn, session_id) do
+    Logger.info("Ending session through Gateway HTTP API", session_id: session_id)
 
-    # Call the Gateway directly to end session
-    case GenServer.call(Arbor.Core.Gateway, {:end_session, session_id}) do
-      :ok ->
+    case Connection.request(conn, :delete, "/sessions/#{session_id}") do
+      {:ok, %{status: 204}} ->
         :ok
-      {:error, reason} = error ->
-        Logger.error("Failed to end Gateway session", session_id: session_id, reason: reason)
+
+      {:ok, %{status: status, body: body}} ->
+        error = Jason.decode!(body)
+        Logger.error("Failed to end Gateway session",
+          session_id: session_id,
+          status: status,
+          error: error
+        )
+        {:error, error["error"]}
+
+      {:error, _reason} = error ->
+        Logger.error("HTTP request failed", reason: error)
         error
     end
   end
@@ -149,25 +170,6 @@ defmodule ArborCli.GatewayClient.Session do
     Logger.info("Execution cancelled",
       execution_id: execution_id,
       reason: reason
-    )
-    :ok
-  end
-
-  # Private functions
-
-  @spec simulate_command_execution(String.t(), String.t(), map()) :: :ok
-  defp simulate_command_execution(execution_id, session_id, command) do
-    Logger.info("Simulating command execution",
-      execution_id: execution_id,
-      session_id: session_id,
-      command_type: command.type
-    )
-
-    # Simulate some processing time
-    Process.sleep(2000)
-
-    Logger.info("Command execution completed",
-      execution_id: execution_id
     )
     :ok
   end

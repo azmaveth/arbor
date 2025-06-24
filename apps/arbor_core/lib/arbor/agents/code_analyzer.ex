@@ -29,6 +29,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
       {:ok, files} = Arbor.Agents.CodeAnalyzer.list_files("analyzer_001", ".")
   """
 
+  @compile {:nowarn_unused_function, [handle_restore_result: 2]}
   use Arbor.Core.AgentBehavior
 
   # 10MB

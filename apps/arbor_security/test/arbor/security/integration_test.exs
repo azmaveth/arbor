@@ -20,7 +20,7 @@ defmodule Arbor.Security.IntegrationTest do
   alias Ecto.Migrator
 
   # These tests require real PostgreSQL database for full integration testing
-  @moduletag integration: true
+  @moduletag :integration
   @moduletag timeout: 10_000
 
   setup_all do

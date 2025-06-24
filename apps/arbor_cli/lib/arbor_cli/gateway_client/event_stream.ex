@@ -8,94 +8,83 @@ defmodule ArborCli.GatewayClient.EventStream do
 
   require Logger
 
+  alias ArborCli.GatewayClient.Connection
+
   @doc """
   Create an event stream for an execution.
   """
-  @spec create(String.t()) :: Enumerable.t()
-  def create(execution_id) do
-    Stream.unfold({execution_id, :started}, &generate_next_event/1)
+  @spec create(pid(), String.t()) :: Enumerable.t()
+  def create(conn, execution_id) do
+    # Create a stream that polls the execution status
+    Stream.resource(
+      fn -> {execution_id, 0} end,
+      fn
+        {exec_id, _} = acc ->
+          case get_execution_status(conn, exec_id) do
+            {:ok, status} when status.status in [:completed, :failed] ->
+              # End stream on completion or failure
+              {:halt, acc}
+
+            {:ok, status} ->
+              # Continue streaming while in progress
+              {[status], {exec_id, status.progress || 0}}
+
+            {:error, reason} ->
+              Logger.error("Failed to get execution status",
+                execution_id: exec_id,
+                reason: reason
+              )
+              {:halt, acc}
+          end
+      end,
+      fn _ -> :ok end
+    )
+  end
+
+  @doc """
+  Subscribe to execution events via WebSocket.
+  """
+  @spec subscribe(pid(), String.t()) :: {:ok, pid()} | {:error, any()}
+  def subscribe(_conn, execution_id) do
+    ws_url =
+      Application.get_env(:arbor_cli, :gateway_endpoint)
+      |> String.replace("http", "ws")
+
+    WebSockex.start_link(
+      "#{ws_url}/executions/#{execution_id}/events",
+      __MODULE__.WebSocket,
+      %{parent: self()}
+    )
   end
 
   # Private functions
 
-  @spec generate_next_event({String.t(), atom()} | nil) :: {map(), {String.t(), atom()} | nil} | nil
-  defp generate_next_event({execution_id, :started}) do
-    event = %{
-      execution_id: execution_id,
-      timestamp: DateTime.utc_now(),
-      status: :progress,
-      message: "Command execution started",
-      progress: 10
-    }
+  defp get_execution_status(conn, execution_id) do
+    case Connection.request(conn, :get, "/executions/#{execution_id}") do
+      {:ok, %{status: 200, body: body}} ->
+        {:ok, Jason.decode!(body, keys: :atoms)}
 
-    # Simulate delay
-    Process.sleep(500)
+      {:ok, %{status: status, body: body}} ->
+        error = Jason.decode!(body)
+        {:error, {status, error["error"]}}
 
-    {event, {execution_id, :progress_25}}
+      {:error, _reason} = error ->
+        error
+    end
+  end
+end
+
+defmodule ArborCli.GatewayClient.EventStream.WebSocket do
+  @moduledoc false
+  use WebSockex
+
+  def handle_frame({:text, msg}, state) do
+    send(state.parent, {:execution_event, Jason.decode!(msg, keys: :atoms)})
+    {:ok, state}
   end
 
-  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
-  defp generate_next_event({execution_id, :progress_25}) do
-    event = %{
-      execution_id: execution_id,
-      timestamp: DateTime.utc_now(),
-      status: :progress,
-      message: "Processing command...",
-      progress: 25
-    }
-
-    Process.sleep(800)
-    {event, {execution_id, :progress_50}}
-  end
-
-  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
-  defp generate_next_event({execution_id, :progress_50}) do
-    event = %{
-      execution_id: execution_id,
-      timestamp: DateTime.utc_now(),
-      status: :progress,
-      message: "Executing on agents...",
-      progress: 50
-    }
-
-    Process.sleep(1200)
-    {event, {execution_id, :progress_75}}
-  end
-
-  @spec generate_next_event({String.t(), atom()}) :: {map(), {String.t(), atom()}}
-  defp generate_next_event({execution_id, :progress_75}) do
-    event = %{
-      execution_id: execution_id,
-      timestamp: DateTime.utc_now(),
-      status: :progress,
-      message: "Collecting results...",
-      progress: 75
-    }
-
-    Process.sleep(600)
-    {event, {execution_id, :completed}}
-  end
-
-  @spec generate_next_event({String.t(), atom()}) :: {map(), nil}
-  defp generate_next_event({execution_id, :completed}) do
-    event = %{
-      execution_id: execution_id,
-      timestamp: DateTime.utc_now(),
-      status: :completed,
-      message: "Command completed successfully",
-      progress: 100,
-      result: %{
-        agents: [],
-        total: 0,
-        execution_time_ms: 3200
-      }
-    }
-
-    {event, nil}  # End the stream
-  end
-
-  @spec generate_next_event(nil) :: nil
-  defp generate_next_event(nil) do
-    nil  # Stream ended
+  def handle_disconnect(%{reason: reason}, state) do
+    send(state.parent, {:execution_disconnected, reason})
+    {:ok, state}
   end
 end

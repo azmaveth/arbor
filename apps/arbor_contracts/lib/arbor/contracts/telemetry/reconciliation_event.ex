@@ -237,15 +237,123 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
   """
   @impl Event
   @spec validate(t()) :: :ok | {:error, term()}
-  def validate(event) do
-    # A real implementation could have a clause for each event struct with detailed checks.
-    with :ok <- Event.validate(event),
-         true <- is_list(event.event_name) and length(event.event_name) == 3,
-         [:arbor, :reconciliation, _] = event.event_name,
+  def validate(%__MODULE__.Start{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.measurements, :start_time),
+         true <- Map.has_key?(event.metadata, :node),
+         true <- Map.has_key?(event.metadata, :reconciler) do
+      :ok
+    else
+      _ -> {:error, :invalid_start_event}
+    end
+  end
+
+  def validate(%__MODULE__.Complete{} = event) do
+    with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :node) do
       :ok
     else
-      _ -> {:error, :invalid_reconciliation_event}
+      _ -> {:error, :invalid_complete_event}
     end
+  end
+
+  def validate(%__MODULE__.LookupPerformance{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_lookup_performance_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentDiscovery{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_discovery_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentRestartSuccess{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_restart_success_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentRestartFailed{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_restart_failed_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentRestartError{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :error),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_restart_error_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentCleanupSuccess{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :pid),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_cleanup_success_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentCleanupFailed{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :pid),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_cleanup_failed_event}
+    end
+  end
+
+  def validate(%__MODULE__.AgentCleanupError{} = event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :error),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :invalid_agent_cleanup_error_event}
+    end
+  end
+
+  def validate(_other) do
+    {:error, :unknown_reconciliation_event_type}
+  end
+
+  defp validate_base_fields(%{
+         event_name: name,
+         measurements: m,
+         metadata: meta,
+         timestamp: ts
+       })
+       when is_list(name) and is_map(m) and is_map(meta) and is_integer(ts) do
+    :ok
+  end
+
+  defp validate_base_fields(_other) do
+    {:error, :invalid_base_event_structure}
   end
 end

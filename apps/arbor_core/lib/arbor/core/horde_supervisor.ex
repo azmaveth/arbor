@@ -70,6 +70,7 @@ defmodule Arbor.Core.HordeSupervisor do
   # Configuration
   @supervisor_name Arbor.Core.HordeAgentSupervisor
   @registry_name Arbor.Core.HordeAgentRegistry
+  @checkpoint_registry_name Arbor.Core.HordeCheckpointRegistry
 
   # ================================
   # GenServer API
@@ -99,71 +100,18 @@ defmodule Arbor.Core.HordeSupervisor do
   @impl SupervisorContract
   def start_agent(agent_spec) do
     agent_id = agent_spec.id
+    spec_metadata = build_spec_metadata(agent_spec)
 
-    # 1. Store the agent spec persistently FIRST
-    spec_metadata = %{
-      module: agent_spec.module,
-      args: agent_spec.args,
-      restart_strategy: Map.get(agent_spec, :restart_strategy, :temporary),
-      metadata: Map.get(agent_spec, :metadata, %{}),
-      created_at: System.system_time(:millisecond)
-    }
-
-    # Register the spec in a way that persists beyond process death
     case register_agent_spec(agent_id, spec_metadata) do
       :ok ->
-        # Synchronously verify that the spec is readable before starting the agent
-        # to prevent a race condition where the agent starts before its spec is
-        # visible in the CRDT.
-        case verify_spec_registration(agent_id) do
-          :ok ->
-            # 2. Start the actual process via Horde
-            child_spec = %{
-              id: agent_id,
-              start:
-                {agent_spec.module, :start_link,
-                 [enhance_args(agent_spec.args, agent_id, spec_metadata)]},
-              # Respect the agent's restart strategy
-              restart: spec_metadata.restart_strategy,
-              type: :worker
-            }
+        handle_successful_spec_registration(agent_id, agent_spec, spec_metadata)
 
-            case DynamicSupervisor.start_child(@supervisor_name, child_spec) do
-              {:ok, pid} ->
-                Logger.info(
-                  "Started agent #{agent_id} on #{node(pid)} (PID: #{inspect(pid)}), awaiting registration."
-                )
+      {:error, :already_started} ->
+        {:error, :already_started}
 
-                # The agent will now call back to register itself.
-                {:ok, pid}
-
-              {:error, {:already_started, pid}} ->
-                # Agent already started. It should have registered itself or will do so.
-                # The reconciler will handle any inconsistencies.
-                Logger.debug("Agent already running during start_agent call",
-                  agent_id: agent_id,
-                  pid: inspect(pid)
-                )
-
-                {:ok, pid}
-
-              {:error, reason} ->
-                # Let AgentReconciler handle cleanup of failed specs to avoid
-                # conflicts with Horde's transient restart strategy
-                {:error, reason}
-            end
-
-          {:error, :spec_not_visible} ->
-            # If the spec isn't visible, starting the agent will fail.
-            # Clean up the spec we attempted to register to avoid orphans.
-            unregister_agent_spec(agent_id)
-
-            Logger.error(
-              "Aborting agent start for #{agent_id}: spec not visible in registry after registration."
-            )
-
-            {:error, :spec_not_visible}
-        end
+      {:error, :sync_failed} ->
+        Logger.error("Failed to register agent spec due to sync issues", agent_id: agent_id)
+        {:error, :spec_sync_failed}
 
       {:error, reason} ->
         {:error, reason}
@@ -190,7 +138,7 @@ defmodule Arbor.Core.HordeSupervisor do
             ClusterEvents.broadcast(:agent_stopped, %{
               agent_id: agent_id,
               pid: pid,
-              node: node(pid)
+              node: node()
             })
 
             Logger.info("Stopped and cleaned up agent #{agent_id}")
@@ -236,85 +184,13 @@ defmodule Arbor.Core.HordeSupervisor do
   def restore_agent(agent_id) do
     case lookup_agent_spec(agent_id) do
       {:ok, spec_metadata} ->
-        # Attempt to capture state before stopping
-        current_state =
-          case HordeRegistry.lookup_agent_name(agent_id) do
-            {:ok, pid, _metadata} ->
-              # Ask the agent to prepare its state for checkpointing.
-              try do
-                GenServer.call(pid, :prepare_checkpoint, 5000)
-              rescue
-                # Agent may not support this call, which is fine.
-                _ -> nil
-              end
+        current_state = capture_agent_state(agent_id)
 
-            _ ->
-              nil
-          end
-
-        # Perform a "soft stop" if the agent is running (don't delete spec or checkpoint)
-        termination_result =
-          case HordeRegistry.lookup_agent_name(agent_id) do
-            {:ok, pid, _metadata} ->
-              ref = Process.monitor(pid)
-              HordeRegistry.unregister_agent_name(agent_id)
-              Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
-
-              # Reliably wait for the process to terminate to avoid race conditions
-              receive do
-                {:DOWN, ^ref, :process, _pid, _reason} ->
-                  :ok
-
-                  # Process terminated successfully
-              after
-                5000 ->
-                  # The process did not terminate in time, abort restore
-                  Logger.warning(
-                    "Timeout waiting for agent #{agent_id} (PID: #{inspect(pid)}) to terminate during restore. Aborting restore."
-                  )
-
-                  Process.demonitor(ref, [:flush])
-                  {:error, :terminate_timeout}
-              end
-
-            _ ->
-              # Agent not running, proceed with restore
-              :ok
-          end
-
-        case termination_result do
+        case perform_soft_stop(agent_id) do
           :ok ->
-            # Prepare args with recovery data if available and determine recovery status
-            {enhanced_args, recovery_status} =
-              case current_state do
-                nil ->
-                  {spec_metadata.args, :fresh_start}
-
-                state_data ->
-                  {Keyword.put(spec_metadata.args, :recovered_state, state_data), :state_restored}
-              end
-
-            agent_spec = %{
-              id: agent_id,
-              module: spec_metadata.module,
-              args: enhanced_args,
-              restart_strategy: spec_metadata.restart_strategy,
-              metadata: spec_metadata.metadata
-            }
-
-            case start_agent(agent_spec) do
-              {:ok, pid} ->
-                Logger.info("Restored agent #{agent_id} with recovery status: #{recovery_status}")
-
-                {:ok, {pid, recovery_status}}
-
-              error ->
-                error
-            end
+            perform_agent_restart(agent_id, spec_metadata, current_state)
 
           {:error, :terminate_timeout} ->
-            # Propagate the error. The agent is in a zombie state (unregistered but possibly alive).
-            # The reconciler will eventually handle this.
             {:error, :terminate_timeout}
         end
 
@@ -424,34 +300,10 @@ defmodule Arbor.Core.HordeSupervisor do
   def handle_agent_handoff(agent_id, operation, state_data) do
     case operation do
       :handoff ->
-        # Try to extract state from running agent
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, _metadata} ->
-            try do
-              case GenServer.call(pid, :extract_state, 5000) do
-                extracted when is_map(extracted) -> {:ok, extracted}
-                _ -> {:ok, %{}}
-              end
-            catch
-              _, _ -> {:ok, %{}}
-            end
-
-          _ ->
-            {:error, :agent_not_found}
-        end
+        perform_state_handoff(agent_id)
 
       :takeover ->
-        case HordeRegistry.lookup_agent_name(agent_id) do
-          {:ok, pid, _metadata} ->
-            try do
-              GenServer.call(pid, {:restore_state, state_data}, 5000)
-            catch
-              _, _ -> :ok
-            end
-
-          _ ->
-            {:error, :agent_not_found}
-        end
+        perform_state_takeover(agent_id, state_data)
     end
   end
 
@@ -566,9 +418,14 @@ defmodule Arbor.Core.HordeSupervisor do
   def lookup_agent_spec(agent_id) do
     spec_key = {:agent_spec, agent_id}
 
-    case Horde.Registry.lookup(@registry_name, spec_key) do
+    # Use select instead of lookup to avoid process liveness check
+    pattern = {spec_key, :"$1", :"$2"}
+    guard = []
+    body = [:"$2"]
+
+    case Horde.Registry.select(@registry_name, [{pattern, guard, body}]) do
       [] -> {:error, :not_found}
-      [{_owner_pid, spec_metadata}] -> {:ok, spec_metadata}
+      [spec_metadata] -> {:ok, spec_metadata}
     end
   end
 
@@ -644,123 +501,363 @@ defmodule Arbor.Core.HordeSupervisor do
 
   @impl GenServer
   def handle_call({:register_agent, pid, agent_id, agent_specific_metadata}, _from, state) do
+    case validate_process_alive(pid, agent_id) do
+      :ok ->
+        handle_agent_registration(pid, agent_id, agent_specific_metadata, state)
+
+      error_reply ->
+        error_reply
+    end
+  end
+
+  # Helper functions for start_agent complexity reduction
+
+  defp build_spec_metadata(agent_spec) do
+    %{
+      module: agent_spec.module,
+      args: agent_spec.args,
+      restart_strategy: Map.get(agent_spec, :restart_strategy, :temporary),
+      metadata: Map.get(agent_spec, :metadata, %{}),
+      created_at: System.system_time(:millisecond)
+    }
+  end
+
+  defp handle_successful_spec_registration(agent_id, agent_spec, spec_metadata) do
+    case verify_spec_registration(agent_id) do
+      :ok ->
+        start_agent_process(agent_id, agent_spec, spec_metadata)
+
+      {:error, :spec_not_visible} ->
+        unregister_agent_spec(agent_id)
+
+        Logger.error(
+          "Aborting agent start for #{agent_id}: spec not visible in registry after registration."
+        )
+
+        {:error, :spec_not_visible}
+    end
+  end
+
+  defp start_agent_process(agent_id, agent_spec, spec_metadata) do
+    child_spec = %{
+      id: agent_id,
+      start:
+        {agent_spec.module, :start_link, [enhance_args(agent_spec.args, agent_id, spec_metadata)]},
+      restart: spec_metadata.restart_strategy,
+      type: :worker
+    }
+
+    case DynamicSupervisor.start_child(@supervisor_name, child_spec) do
+      {:ok, pid} ->
+        Logger.info(
+          "Started agent #{agent_id} on #{node(pid)} (PID: #{inspect(pid)}), awaiting registration."
+        )
+
+        {:ok, pid}
+
+      {:error, {:already_started, pid}} ->
+        Logger.debug("Agent already running during start_agent call",
+          agent_id: agent_id,
+          pid: inspect(pid)
+        )
+
+        {:ok, pid}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Helper functions for agent registration complexity reduction
+
+  defp validate_process_alive(pid, agent_id) do
     if Process.alive?(pid) do
-      case lookup_agent_spec(agent_id) do
-        {:ok, spec_metadata} ->
-          # Merge all metadata sources
-          runtime_metadata = %{
-            module: spec_metadata.module,
-            restart_strategy: spec_metadata.restart_strategy,
-            started_at: System.system_time(:millisecond)
-          }
-
-          full_metadata =
-            spec_metadata.metadata
-            |> Map.merge(agent_specific_metadata)
-            |> Map.merge(runtime_metadata)
-
-          case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
-            {:ok, ^pid} ->
-              reply_with_registration_success(
-                pid,
-                agent_id,
-                spec_metadata,
-                state,
-                "Agent registered in runtime registry"
-              )
-
-            {:error, :name_taken} ->
-              # Idempotency check: if already registered to the same pid, it's ok.
-              # Also handle stale registrations where the old PID is dead.
-              case HordeRegistry.lookup_agent_name_raw(agent_id) do
-                {:ok, ^pid, _} ->
-                  # Case 1: Already registered to the same PID. This is idempotent.
-                  Logger.debug("Agent already registered with correct PID", agent_id: agent_id)
-                  {:reply, {:ok, pid}, state}
-
-                {:ok, existing_pid, _} ->
-                  # Case 2: Registered to a different PID.
-                  if Process.alive?(existing_pid) do
-                    # The existing PID is alive, so the name is genuinely taken.
-                    Logger.error("Agent name already taken by another process",
-                      agent_id: agent_id,
-                      existing_pid: inspect(existing_pid),
-                      new_pid: inspect(pid)
-                    )
-
-                    {:reply, {:error, :name_taken}, state}
-                  else
-                    # The existing PID is dead. This is a stale registration.
-                    # Unregister the dead one and try registering the new one.
-                    Logger.info(
-                      "Found stale registration for agent #{agent_id} with dead PID #{inspect(existing_pid)}. Cleaning up."
-                    )
-
-                    HordeRegistry.unregister_agent_name(agent_id)
-
-                    # Re-attempt registration. This could still fail due to a race condition.
-                    case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
-                      {:ok, ^pid} ->
-                        reply_with_registration_success(
-                          pid,
-                          agent_id,
-                          spec_metadata,
-                          state,
-                          "Agent registered after cleaning stale entry"
-                        )
-
-                      {:error, :name_taken} ->
-                        Logger.error(
-                          "Failed to register agent #{agent_id} due to race condition after cleaning stale entry."
-                        )
-
-                        {:reply, {:error, :name_taken}, state}
-
-                      error ->
-                        {:reply, error, state}
-                    end
-                  end
-
-                {:error, :not_registered} ->
-                  # Race condition: The name was taken, but now it's free.
-                  # We can safely try to register again.
-                  case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
-                    {:ok, ^pid} ->
-                      reply_with_registration_success(
-                        pid,
-                        agent_id,
-                        spec_metadata,
-                        state,
-                        "Agent registered after race condition resolution"
-                      )
-
-                    {:error, :name_taken} ->
-                      Logger.error(
-                        "Failed to register agent #{agent_id} due to race condition (name taken again)."
-                      )
-
-                      {:reply, {:error, :name_taken}, state}
-
-                    error ->
-                      {:reply, error, state}
-                  end
-              end
-
-            error ->
-              {:reply, error, state}
-          end
-
-        {:error, :not_found} ->
-          Logger.error("Could not find spec for agent #{agent_id} during registration.")
-          {:reply, {:error, :spec_not_found}, state}
-      end
+      :ok
     else
       Logger.warning("Attempted to register a non-alive process",
         agent_id: agent_id,
         pid: inspect(pid)
       )
 
-      {:reply, {:error, :process_not_alive}, state}
+      {:reply, {:error, :process_not_alive}, %{}}
+    end
+  end
+
+  defp handle_agent_registration(pid, agent_id, agent_specific_metadata, state) do
+    case lookup_agent_spec(agent_id) do
+      {:ok, spec_metadata} ->
+        full_metadata = build_full_metadata(spec_metadata, agent_specific_metadata)
+        attempt_agent_registration(pid, agent_id, full_metadata, spec_metadata, state)
+
+      {:error, :not_found} ->
+        Logger.error("Could not find spec for agent #{agent_id} during registration.")
+        {:reply, {:error, :spec_not_found}, state}
+    end
+  end
+
+  defp build_full_metadata(spec_metadata, agent_specific_metadata) do
+    runtime_metadata = %{
+      module: spec_metadata.module,
+      restart_strategy: spec_metadata.restart_strategy,
+      started_at: System.system_time(:millisecond)
+    }
+
+    spec_metadata.metadata
+    |> Map.merge(agent_specific_metadata)
+    |> Map.merge(runtime_metadata)
+  end
+
+  defp attempt_agent_registration(pid, agent_id, full_metadata, spec_metadata, state) do
+    case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+      {:ok, ^pid} ->
+        reply_with_registration_success(
+          pid,
+          agent_id,
+          spec_metadata,
+          state,
+          "Agent registered in runtime registry"
+        )
+
+      {:error, :name_taken} ->
+        handle_name_taken_scenario(pid, agent_id, full_metadata, spec_metadata, state)
+
+      error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp handle_name_taken_scenario(pid, agent_id, full_metadata, spec_metadata, state) do
+    case HordeRegistry.lookup_agent_name_raw(agent_id) do
+      {:ok, ^pid, _} ->
+        # Already registered to the same PID - idempotent
+        Logger.debug("Agent already registered with correct PID", agent_id: agent_id)
+        {:reply, {:ok, pid}, state}
+
+      {:ok, existing_pid, _} ->
+        handle_existing_pid_conflict(
+          pid,
+          agent_id,
+          existing_pid,
+          full_metadata,
+          spec_metadata,
+          state
+        )
+
+      {:error, :not_registered} ->
+        handle_race_condition_retry(pid, agent_id, full_metadata, spec_metadata, state)
+    end
+  end
+
+  defp handle_existing_pid_conflict(
+         pid,
+         agent_id,
+         existing_pid,
+         full_metadata,
+         spec_metadata,
+         state
+       ) do
+    if Process.alive?(existing_pid) do
+      Logger.error("Agent name already taken by another process",
+        agent_id: agent_id,
+        existing_pid: inspect(existing_pid),
+        new_pid: inspect(pid)
+      )
+
+      {:reply, {:error, :name_taken}, state}
+    else
+      handle_stale_registration_cleanup(
+        pid,
+        agent_id,
+        existing_pid,
+        full_metadata,
+        spec_metadata,
+        state
+      )
+    end
+  end
+
+  defp handle_stale_registration_cleanup(
+         pid,
+         agent_id,
+         existing_pid,
+         full_metadata,
+         spec_metadata,
+         state
+       ) do
+    Logger.info(
+      "Found stale registration for agent #{agent_id} with dead PID #{inspect(existing_pid)}. Cleaning up."
+    )
+
+    HordeRegistry.unregister_agent_name(agent_id)
+
+    case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+      {:ok, ^pid} ->
+        reply_with_registration_success(
+          pid,
+          agent_id,
+          spec_metadata,
+          state,
+          "Agent registered after cleaning stale entry"
+        )
+
+      {:error, :name_taken} ->
+        Logger.error(
+          "Failed to register agent #{agent_id} due to race condition after cleaning stale entry."
+        )
+
+        {:reply, {:error, :name_taken}, state}
+
+      error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp handle_race_condition_retry(pid, agent_id, full_metadata, spec_metadata, state) do
+    case HordeRegistry.register_agent_name(agent_id, pid, full_metadata) do
+      {:ok, ^pid} ->
+        reply_with_registration_success(
+          pid,
+          agent_id,
+          spec_metadata,
+          state,
+          "Agent registered after race condition resolution"
+        )
+
+      {:error, :name_taken} ->
+        Logger.error(
+          "Failed to register agent #{agent_id} due to race condition (name taken again)."
+        )
+
+        {:reply, {:error, :name_taken}, state}
+
+      error ->
+        {:reply, error, state}
+    end
+  end
+
+  # Helper functions for restore_agent complexity reduction
+
+  defp capture_agent_state(agent_id) do
+    case HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, pid, _metadata} ->
+        try do
+          GenServer.call(pid, :prepare_checkpoint, 5000)
+        rescue
+          # Agent may not support this call, which is fine.
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp perform_soft_stop(agent_id) do
+    case HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, pid, _metadata} ->
+        wait_for_agent_termination(agent_id, pid)
+
+      _ ->
+        # Agent not running, proceed with restore
+        :ok
+    end
+  end
+
+  defp wait_for_agent_termination(agent_id, pid) do
+    ref = Process.monitor(pid)
+    HordeRegistry.unregister_agent_name(agent_id)
+    Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
+
+    receive do
+      {:DOWN, ^ref, :process, _pid, _reason} ->
+        :ok
+    after
+      5000 ->
+        Logger.warning(
+          "Timeout waiting for agent #{agent_id} (PID: #{inspect(pid)}) to terminate during restore. Aborting restore."
+        )
+
+        Process.demonitor(ref, [:flush])
+        {:error, :terminate_timeout}
+    end
+  end
+
+  defp perform_agent_restart(agent_id, spec_metadata, current_state) do
+    {enhanced_args, recovery_status} = prepare_restart_args(spec_metadata, current_state)
+
+    agent_spec = %{
+      id: agent_id,
+      module: spec_metadata.module,
+      args: enhanced_args,
+      restart_strategy: spec_metadata.restart_strategy,
+      metadata: spec_metadata.metadata
+    }
+
+    case start_agent(agent_spec) do
+      {:ok, pid} ->
+        Logger.info("Restored agent #{agent_id} with recovery status: #{recovery_status}")
+        {:ok, {pid, recovery_status}}
+
+      error ->
+        error
+    end
+  end
+
+  defp prepare_restart_args(spec_metadata, current_state) do
+    case current_state do
+      nil ->
+        {spec_metadata.args, :fresh_start}
+
+      state_data ->
+        {Keyword.put(spec_metadata.args, :recovered_state, state_data), :state_restored}
+    end
+  end
+
+  # Helper functions for handle_agent_handoff complexity reduction
+
+  defp perform_state_handoff(agent_id) do
+    case HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, pid, _metadata} ->
+        extract_agent_state_safely(pid)
+
+      _ ->
+        {:error, :agent_not_found}
+    end
+  end
+
+  defp extract_agent_state_safely(pid) do
+    try do
+      case GenServer.call(pid, :extract_state, 5000) do
+        {:ok, extracted} when is_map(extracted) ->
+          {:ok, extracted}
+
+        extracted when is_map(extracted) ->
+          # fallback for direct map returns
+          {:ok, extracted}
+
+        _ ->
+          {:ok, %{}}
+      end
+    catch
+      _, _ -> {:ok, %{}}
+    end
+  end
+
+  defp perform_state_takeover(agent_id, state_data) do
+    case HordeRegistry.lookup_agent_name(agent_id) do
+      {:ok, pid, _metadata} ->
+        restore_agent_state_safely(pid, state_data)
+
+      _ ->
+        {:error, :agent_not_found}
+    end
+  end
+
+  defp restore_agent_state_safely(pid, state_data) do
+    try do
+      GenServer.call(pid, {:restore_state, state_data}, 5000)
+    catch
+      _, _ -> :ok
     end
   end
 
@@ -787,17 +884,39 @@ defmodule Arbor.Core.HordeSupervisor do
   defp register_agent_spec(agent_id, spec_metadata) do
     spec_key = {:agent_spec, agent_id}
 
+    Logger.debug("Registering agent spec", agent_id: agent_id, spec_key: inspect(spec_key))
+
     case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
       {:ok, _} ->
         :ok
 
       {:error, {:already_registered, _}} ->
-        # Update existing spec
-        Horde.Registry.unregister(@registry_name, spec_key)
+        # Check if the agent is already running before allowing update
+        case HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, _pid, _metadata} ->
+            # Agent is already running, return error
+            Logger.debug("Agent already running, rejecting duplicate start",
+              agent_id: agent_id
+            )
 
-        case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
-          {:ok, _} -> :ok
-          {:error, reason} -> {:error, reason}
+            {:error, :already_started}
+
+          {:error, :not_registered} ->
+            # Agent spec exists but agent not running - allow update for reconciler
+            Horde.Registry.unregister(@registry_name, spec_key)
+
+            case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
+              {:ok, _} ->
+                :ok
+
+              {:error, reason} ->
+                Logger.error("Failed to re-register agent spec during update",
+                  agent_id: agent_id,
+                  reason: reason
+                )
+
+                {:error, reason}
+            end
         end
     end
   end
@@ -856,11 +975,9 @@ defmodule Arbor.Core.HordeSupervisor do
     end
   end
 
-  @doc """
-  Verifies that an agent's spec is visible in the registry after registration.
-  This polls with exponential backoff to account for CRDT sync delays.
-  """
-  defp verify_spec_registration(agent_id, retries \\ 5, backoff \\ 20) do
+  # Verifies that an agent's spec is visible in the registry after registration.
+  # This polls with exponential backoff to account for CRDT sync delays.
+  defp verify_spec_registration(agent_id, retries \\ 10, backoff \\ 50) do
     case lookup_agent_spec(agent_id) do
       {:ok, _spec} ->
         :ok
@@ -880,27 +997,58 @@ defmodule Arbor.Core.HordeSupervisor do
 
   # Supervisor management functions
 
+  # Get appropriate distribution strategy based on environment
+  defp get_distribution_strategy do
+    # Use configuration to determine strategy
+    case Application.get_env(:arbor_core, :horde_distribution_strategy, :uniform_random) do
+      :uniform ->
+        # Use UniformDistribution for testing which works better with single nodes
+        Horde.UniformDistribution
+
+      :uniform_random ->
+        # Use UniformRandomDistribution for production for better load balancing
+        Horde.UniformRandomDistribution
+
+      _ ->
+        # Default to UniformRandomDistribution
+        Horde.UniformRandomDistribution
+    end
+  end
+
   @doc """
   Start the Horde supervisor infrastructure.
   """
   @spec start_supervisor() :: {:ok, pid()} | {:error, term()}
   def start_supervisor do
+    # Get configurable CRDT sync interval with fallback to safe default
+    horde_config = Application.get_env(:arbor_core, :horde_timing, [])
+    sync_interval = Keyword.get(horde_config, :sync_interval, 100)
+
     children = [
       {Horde.Registry,
        [
          name: @registry_name,
          keys: :unique,
          members: :auto,
-         delta_crdt_options: [sync_interval: 100]
+         delta_crdt_options: [sync_interval: sync_interval]
        ]},
+      {Horde.Registry,
+       [
+         name: @checkpoint_registry_name,
+         keys: :unique,
+         members: :auto,
+         delta_crdt_options: [sync_interval: sync_interval]
+       ]},
+      # Anchor process for checkpoint storage
+      Supervisor.child_spec({Arbor.Core.HordeCheckpointRegistry, []}, id: :checkpoint_anchor),
       {Horde.DynamicSupervisor,
        [
          name: @supervisor_name,
          strategy: :one_for_one,
-         distribution_strategy: Horde.UniformRandomDistribution,
+         distribution_strategy: get_distribution_strategy(),
          process_redistribution: :active,
          members: :auto,
-         delta_crdt_options: [sync_interval: 100]
+         delta_crdt_options: [sync_interval: sync_interval]
        ]},
       # Central registration handler
       {Arbor.Core.HordeSupervisor, []}
@@ -921,6 +1069,7 @@ defmodule Arbor.Core.HordeSupervisor do
   def join_supervisor(node) do
     Horde.Cluster.set_members(@supervisor_name, [node() | [node]])
     Horde.Cluster.set_members(@registry_name, [node() | [node]])
+    Horde.Cluster.set_members(@checkpoint_registry_name, [node() | [node]])
     :ok
   end
 
@@ -931,12 +1080,15 @@ defmodule Arbor.Core.HordeSupervisor do
   def leave_supervisor(node) do
     current_supervisor_members = Horde.Cluster.members(@supervisor_name)
     current_registry_members = Horde.Cluster.members(@registry_name)
+    current_checkpoint_registry_members = Horde.Cluster.members(@checkpoint_registry_name)
 
     new_supervisor_members = List.delete(current_supervisor_members, node)
     new_registry_members = List.delete(current_registry_members, node)
+    new_checkpoint_registry_members = List.delete(current_checkpoint_registry_members, node)
 
     Horde.Cluster.set_members(@supervisor_name, new_supervisor_members)
     Horde.Cluster.set_members(@registry_name, new_registry_members)
+    Horde.Cluster.set_members(@checkpoint_registry_name, new_checkpoint_registry_members)
     :ok
   end
 end

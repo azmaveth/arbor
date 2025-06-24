@@ -7,7 +7,6 @@ defmodule Arbor.Core.TelemetryHelper do
   """
 
   alias Arbor.Contracts.Telemetry.AgentEvent
-  alias Arbor.Contracts.Telemetry.Event
   alias Arbor.Contracts.Telemetry.PerformanceEvent
   alias Arbor.Contracts.Telemetry.ReconciliationEvent
 

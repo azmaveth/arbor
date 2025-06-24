@@ -18,7 +18,7 @@ defmodule Arbor.Contracts.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :telemetry],
       mod: {Arbor.Contracts.Application, []}
     ]
   end
@@ -28,7 +28,8 @@ defmodule Arbor.Contracts.MixProject do
     [
       {:typed_struct, "~> 0.3.0"},
       {:jason, "~> 1.4"},
-      {:norm, "~> 0.13"}
+      {:norm, "~> 0.13"},
+      {:telemetry, "~> 1.0"}
     ]
   end
 end

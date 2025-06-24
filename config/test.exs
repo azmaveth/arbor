@@ -59,7 +59,21 @@ config :arbor_core,
   supervisor_impl: :horde,
   coordinator_impl: :horde
 
-# Configure fast agent retries for tests to reduce timing issues
-config :arbor_core, :agent_retry,
-  retries: 1,
-  initial_delay: 10
+# Configure distributed system timing for test environment
+# More retries and longer delays needed for reliable distributed testing
+config :arbor_core,
+  agent_retry: [
+    # More retries needed for CRDT synchronization in tests
+    retries: 5,
+    # Longer initial delay to account for test cluster latency
+    initial_delay: 100
+  ],
+  horde_timing: [
+    # Use recommended 100ms minimum for stable test runs
+    sync_interval: 100
+  ],
+  # Use UniformDistribution for single-node tests
+  horde_distribution_strategy: :uniform
+
+# Disable HTTP API server during tests
+config :arbor_core, :http_api, enabled: false

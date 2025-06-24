@@ -1,5 +1,6 @@
 defmodule ArborCliTest do
   use ExUnit.Case, async: true
+  @moduletag :fast
 
   test "version/0 returns current version" do
     assert ArborCli.version() == "0.1.0"

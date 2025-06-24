@@ -9,26 +9,27 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
   use ExUnit.Case, async: true
 
-  alias Arbor.Core.ClusterRegistry
-  alias Arbor.Test.Mocks.LocalRegistry
+  @moduletag :integration
+
+  alias Arbor.Test.Mocks.LocalClusterRegistry
 
   setup do
     # MOCK: Use local registry for unit testing
     # Replace with Horde for distributed operation
 
     # Stop any existing agent
-    case Process.whereis(LocalRegistry) do
+    case Process.whereis(LocalClusterRegistry) do
       nil -> :ok
       pid -> GenServer.stop(pid)
     end
 
     # Start fresh agent for this test
-    {:ok, _pid} = LocalRegistry.start_link([])
+    {:ok, _pid} = LocalClusterRegistry.start_link([])
 
     # Clear any existing state
-    LocalRegistry.clear()
+    LocalClusterRegistry.clear()
 
-    {:ok, state} = LocalRegistry.init([])
+    {:ok, state} = LocalClusterRegistry.init([])
     %{registry_state: state}
   end
 
@@ -38,9 +39,9 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata = %{type: :llm_agent, capabilities: [:chat, :analysis]}
 
       # MOCK: Use local registry for unit testing
-      assert :ok = LocalRegistry.register_name({:agent, agent_id}, self(), metadata, state)
+      assert :ok = LocalClusterRegistry.register_name({:agent, agent_id}, self(), metadata, state)
 
-      assert {:ok, {pid, ^metadata}} = LocalRegistry.lookup_name({:agent, agent_id}, state)
+      assert {:ok, {pid, ^metadata}} = LocalClusterRegistry.lookup_name({:agent, agent_id}, state)
       assert pid == self()
     end
 
@@ -49,23 +50,26 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata = %{type: :worker_agent}
 
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_name({:agent, agent_id}, self(), metadata, state)
+      :ok = LocalClusterRegistry.register_name({:agent, agent_id}, self(), metadata, state)
 
       # Attempting to register same agent ID should fail
       assert {:error, :name_taken} =
-               LocalRegistry.register_name({:agent, agent_id}, self(), metadata, state)
+               LocalClusterRegistry.register_name({:agent, agent_id}, self(), metadata, state)
     end
 
     test "allows different agents with different IDs", %{registry_state: state} do
       metadata = %{type: :llm_agent}
 
       # MOCK: Use local registry for unit testing
-      assert :ok = LocalRegistry.register_name({:agent, "agent-1"}, self(), metadata, state)
-      assert :ok = LocalRegistry.register_name({:agent, "agent-2"}, self(), metadata, state)
+      assert :ok =
+               LocalClusterRegistry.register_name({:agent, "agent-1"}, self(), metadata, state)
+
+      assert :ok =
+               LocalClusterRegistry.register_name({:agent, "agent-2"}, self(), metadata, state)
 
       # Both should be findable
-      assert {:ok, {pid1, _}} = LocalRegistry.lookup_name({:agent, "agent-1"}, state)
-      assert {:ok, {pid2, _}} = LocalRegistry.lookup_name({:agent, "agent-2"}, state)
+      assert {:ok, {pid1, _}} = LocalClusterRegistry.lookup_name({:agent, "agent-1"}, state)
+      assert {:ok, {pid2, _}} = LocalClusterRegistry.lookup_name({:agent, "agent-2"}, state)
       assert pid1 == self()
       assert pid2 == self()
     end
@@ -75,22 +79,24 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata = %{type: :coordinator_agent}
 
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_name({:agent, agent_id}, self(), metadata, state)
+      :ok = LocalClusterRegistry.register_name({:agent, agent_id}, self(), metadata, state)
 
       # Verify registration exists
-      assert {:ok, {_pid, _metadata}} = LocalRegistry.lookup_name({:agent, agent_id}, state)
+      assert {:ok, {_pid, _metadata}} =
+               LocalClusterRegistry.lookup_name({:agent, agent_id}, state)
 
       # Unregister
-      assert :ok = LocalRegistry.unregister_name({:agent, agent_id}, state)
+      assert :ok = LocalClusterRegistry.unregister_name({:agent, agent_id}, state)
 
       # Should no longer be found
-      assert {:error, :not_registered} = LocalRegistry.lookup_name({:agent, agent_id}, state)
+      assert {:error, :not_registered} =
+               LocalClusterRegistry.lookup_name({:agent, agent_id}, state)
     end
 
     test "handles lookup of non-existent agent", %{registry_state: state} do
       # MOCK: Use local registry for unit testing
       assert {:error, :not_registered} =
-               LocalRegistry.lookup_name({:agent, "non-existent"}, state)
+               LocalClusterRegistry.lookup_name({:agent, "non-existent"}, state)
     end
 
     test "updates agent metadata", %{registry_state: state} do
@@ -99,14 +105,16 @@ defmodule Arbor.Core.ClusterRegistryTest do
       updated_metadata = %{type: :worker_agent, status: :ready}
 
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_name({:agent, agent_id}, self(), initial_metadata, state)
+      :ok =
+        LocalClusterRegistry.register_name({:agent, agent_id}, self(), initial_metadata, state)
 
       # Update metadata
-      assert :ok = LocalRegistry.update_metadata({:agent, agent_id}, updated_metadata, state)
+      assert :ok =
+               LocalClusterRegistry.update_metadata({:agent, agent_id}, updated_metadata, state)
 
       # Verify updated metadata
       assert {:ok, {_pid, ^updated_metadata}} =
-               LocalRegistry.lookup_name({:agent, agent_id}, state)
+               LocalClusterRegistry.lookup_name({:agent, agent_id}, state)
     end
   end
 
@@ -117,11 +125,13 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata2 = %{specialization: :elixir}
 
       # MOCK: Use local registry for unit testing
-      assert :ok = LocalRegistry.register_group(group, self(), metadata1, state)
-      assert :ok = LocalRegistry.register_group(group, spawn(fn -> :ok end), metadata2, state)
+      assert :ok = LocalClusterRegistry.register_group(group, self(), metadata1, state)
+
+      assert :ok =
+               LocalClusterRegistry.register_group(group, spawn(fn -> :ok end), metadata2, state)
 
       # Should find both processes in group
-      assert {:ok, group_members} = LocalRegistry.lookup_group(group, state)
+      assert {:ok, group_members} = LocalClusterRegistry.lookup_group(group, state)
       assert length(group_members) == 2
 
       # Verify metadata is preserved
@@ -132,7 +142,7 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
     test "handles empty group lookup", %{registry_state: state} do
       # MOCK: Use local registry for unit testing
-      assert {:error, :group_not_found} = LocalRegistry.lookup_group(:empty_group, state)
+      assert {:error, :group_not_found} = LocalClusterRegistry.lookup_group(:empty_group, state)
     end
 
     test "unregisters from group", %{registry_state: state} do
@@ -140,17 +150,17 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata = %{task_type: :analysis}
 
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_group(group, self(), metadata, state)
+      :ok = LocalClusterRegistry.register_group(group, self(), metadata, state)
 
       # Verify in group
       self_pid = self()
-      assert {:ok, [{^self_pid, ^metadata}]} = LocalRegistry.lookup_group(group, state)
+      assert {:ok, [{^self_pid, ^metadata}]} = LocalClusterRegistry.lookup_group(group, state)
 
       # Unregister from group
-      assert :ok = LocalRegistry.unregister_group(group, self(), state)
+      assert :ok = LocalClusterRegistry.unregister_group(group, self(), state)
 
       # Group should now be empty/not found
-      assert {:error, :group_not_found} = LocalRegistry.lookup_group(group, state)
+      assert {:error, :group_not_found} = LocalClusterRegistry.lookup_group(group, state)
     end
   end
 
@@ -158,15 +168,27 @@ defmodule Arbor.Core.ClusterRegistryTest do
     test "pattern matching finds agents by type", %{registry_state: state} do
       # Register different types of agents
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_name({:agent, "llm-1"}, self(), %{type: :llm_agent}, state)
+      :ok =
+        LocalClusterRegistry.register_name({:agent, "llm-1"}, self(), %{type: :llm_agent}, state)
 
       :ok =
-        LocalRegistry.register_name({:agent, "worker-1"}, self(), %{type: :worker_agent}, state)
+        LocalClusterRegistry.register_name(
+          {:agent, "worker-1"},
+          self(),
+          %{type: :worker_agent},
+          state
+        )
 
-      :ok = LocalRegistry.register_name({:service, "gateway"}, self(), %{type: :gateway}, state)
+      :ok =
+        LocalClusterRegistry.register_name(
+          {:service, "gateway"},
+          self(),
+          %{type: :gateway},
+          state
+        )
 
       # Pattern match for all agents (not services)
-      assert {:ok, matches} = LocalRegistry.match({:agent, :_}, state)
+      assert {:ok, matches} = LocalClusterRegistry.match({:agent, :_}, state)
 
       # Should find both agents
       assert length(matches) == 2
@@ -178,13 +200,13 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
     test "counts total registrations", %{registry_state: state} do
       # MOCK: Use local registry for unit testing
-      assert {:ok, 0} = LocalRegistry.count(state)
+      assert {:ok, 0} = LocalClusterRegistry.count(state)
 
       # Add some registrations
-      :ok = LocalRegistry.register_name({:agent, "test-1"}, self(), %{}, state)
-      :ok = LocalRegistry.register_name({:agent, "test-2"}, self(), %{}, state)
+      :ok = LocalClusterRegistry.register_name({:agent, "test-1"}, self(), %{}, state)
+      :ok = LocalClusterRegistry.register_name({:agent, "test-2"}, self(), %{}, state)
 
-      assert {:ok, 2} = LocalRegistry.count(state)
+      assert {:ok, 2} = LocalClusterRegistry.count(state)
     end
   end
 
@@ -197,7 +219,7 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
       # MOCK: Use local registry for unit testing
       assert :ok =
-               LocalRegistry.register_with_ttl(
+               LocalClusterRegistry.register_with_ttl(
                  {:agent, agent_id},
                  self(),
                  ttl,
@@ -207,7 +229,9 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
       # Should be immediately findable
       self_pid = self()
-      assert {:ok, {^self_pid, ^metadata}} = LocalRegistry.lookup_name({:agent, agent_id}, state)
+
+      assert {:ok, {^self_pid, ^metadata}} =
+               LocalClusterRegistry.lookup_name({:agent, agent_id}, state)
 
       # After TTL expires, should be gone (this would be implemented in the real registry)
       # For now, just verify the registration was successful
@@ -217,7 +241,7 @@ defmodule Arbor.Core.ClusterRegistryTest do
   describe "health and monitoring" do
     test "reports registry health", %{registry_state: state} do
       # MOCK: Use local registry for unit testing
-      assert {:ok, health} = LocalRegistry.health_check(state)
+      assert {:ok, health} = LocalClusterRegistry.health_check(state)
 
       # Health should contain expected keys
       assert Map.has_key?(health, :node_count)
@@ -231,10 +255,10 @@ defmodule Arbor.Core.ClusterRegistryTest do
       metadata = %{monitored: true}
 
       # MOCK: Use local registry for unit testing
-      :ok = LocalRegistry.register_name({:agent, agent_id}, self(), metadata, state)
+      :ok = LocalClusterRegistry.register_name({:agent, agent_id}, self(), metadata, state)
 
       # Set up monitoring
-      assert {:ok, monitor_ref} = LocalRegistry.monitor({:agent, agent_id}, state)
+      assert {:ok, monitor_ref} = LocalClusterRegistry.monitor({:agent, agent_id}, state)
       assert is_reference(monitor_ref)
     end
   end

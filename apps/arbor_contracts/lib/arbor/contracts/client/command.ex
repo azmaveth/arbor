@@ -110,31 +110,26 @@ defmodule Arbor.Contracts.Client.Command do
     with :ok <- check_required(params, [:type]),
          :ok <- check_type(params, :type, :is_atom),
          :ok <- check_optional_type(params, :id, :is_binary),
-         :ok <- check_optional_type(params, :working_dir, :is_binary),
-         :ok <- check_optional_type(params, :metadata, :is_map) do
-      :ok
+         :ok <- check_optional_type(params, :working_dir, :is_binary) do
+      check_optional_type(params, :metadata, :is_map)
     end
   end
 
   defp validate_query_agents(params) do
-    with :ok <- check_optional_type(params, :filter, :is_binary) do
-      :ok
-    end
+    check_optional_type(params, :filter, :is_binary)
   end
 
   defp validate_get_agent_status(params) do
-    with :ok <- check_required(params, [:agent_id]),
-         :ok <- check_type(params, :agent_id, :is_binary) do
-      :ok
+    with :ok <- check_required(params, [:agent_id]) do
+      check_type(params, :agent_id, :is_binary)
     end
   end
 
   defp validate_execute_agent_command(params) do
     with :ok <- check_required(params, [:agent_id, :command, :args]),
          :ok <- check_type(params, :agent_id, :is_binary),
-         :ok <- check_type(params, :command, :is_binary),
-         :ok <- check_type(params, :args, :is_list) do
-      :ok
+         :ok <- check_type(params, :command, :is_binary) do
+      check_type(params, :args, :is_list)
     end
   end
 

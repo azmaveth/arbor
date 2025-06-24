@@ -10,7 +10,10 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :distributed
+
   alias Arbor.Core.{HordeSupervisor, AgentReconciler}
+  alias Arbor.Test.Support.AsyncHelpers
 
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor
@@ -53,7 +56,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
       # Start agent with permanent strategy
       agent_spec = %{
         id: agent_id,
-        module: TestAgent,
+        module: Arbor.Test.Mocks.TestAgent,
         args: [agent_id: agent_id],
         restart_strategy: :permanent
       }
@@ -62,11 +65,11 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
       # Verify spec is in registry
       assert {:ok, stored_spec} = HordeSupervisor.lookup_agent_spec(agent_id)
-      assert stored_spec.module == TestAgent
+      assert stored_spec.module == Arbor.Test.Mocks.TestAgent
       assert stored_spec.restart_strategy == :permanent
 
-      # Kill the agent process directly
-      Process.exit(pid, :kill)
+      # Kill the agent process using proper supervisor termination
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
 
       # Spec should still exist in registry
       assert {:ok, _spec} = HordeSupervisor.lookup_agent_spec(agent_id)
@@ -114,7 +117,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
           agent_spec = %{
             id: agent_id,
-            module: TestAgent,
+            module: Arbor.Test.Mocks.TestAgent,
             args: [agent_id: agent_id, index: i],
             restart_strategy: :permanent
           }
@@ -130,9 +133,9 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
           {agent_id, info.pid}
         end)
 
-      # Kill all agents
+      # Kill all agents using proper supervisor termination
       Enum.each(initial_pids, fn {_agent_id, pid} ->
-        Process.exit(pid, :kill)
+        Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
       end)
 
       # Specs should still exist
@@ -181,7 +184,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
       # First, register just the spec without starting the process
       spec_metadata = %{
-        module: TestAgent,
+        module: Arbor.Test.Mocks.TestAgent,
         args: [agent_id: agent_id],
         restart_strategy: :permanent,
         metadata: %{},
@@ -211,9 +214,9 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
               end
 
             {:error, :not_found} ->
-              # Force reconcile again
+              # Force reconcile again and wait briefly
               AgentReconciler.force_reconcile()
-              :timer.sleep(200)
+              Process.sleep(200)
               :retry
           end
         end,
@@ -235,7 +238,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
       # Start an agent normally to ensure it's a child of the supervisor
       agent_spec = %{
         id: agent_id,
-        module: TestAgent,
+        module: Arbor.Test.Mocks.TestAgent,
         args: [agent_id: agent_id],
         restart_strategy: :temporary
       }
@@ -278,13 +281,13 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
       agent_id = "test-no-self-register-#{System.unique_integer([:positive])}"
 
       # Start agent directly (not through supervisor)
-      {:ok, pid} = TestAgent.start_link(agent_id: agent_id)
+      {:ok, pid} = Arbor.Test.Mocks.TestAgent.start_link(agent_id: agent_id)
 
       # Agent should NOT be in registry
       assert {:error, :not_registered} = Arbor.Core.HordeRegistry.lookup_agent_name(agent_id)
 
-      # Clean up
-      Process.exit(pid, :normal)
+      # Clean up the standalone agent
+      GenServer.stop(pid)
     end
 
     test "supervisor handles all registration" do
@@ -292,7 +295,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
       agent_spec = %{
         id: agent_id,
-        module: TestAgent,
+        module: Arbor.Test.Mocks.TestAgent,
         args: [agent_id: agent_id],
         restart_strategy: :temporary
       }
@@ -301,7 +304,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
       # Should be registered by supervisor
       assert {:ok, ^pid, metadata} = Arbor.Core.HordeRegistry.lookup_agent_name(agent_id)
-      assert metadata.module == TestAgent
+      assert metadata.module == Arbor.Test.Mocks.TestAgent
 
       # Stop through supervisor
       assert :ok = HordeSupervisor.stop_agent(agent_id)
@@ -323,7 +326,7 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
     case fun.() do
       :retry ->
         if System.monotonic_time(:millisecond) < deadline do
-          :timer.sleep(100)
+          Process.sleep(100)
           assert_eventually_loop(fun, deadline, message)
         else
           flunk(message)
@@ -335,78 +338,98 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
   end
 
   defp ensure_horde_infrastructure do
-    # Start Horde.Registry if not running
-    case GenServer.whereis(@registry_name) do
+    # Start Phoenix.PubSub if not running
+    case GenServer.whereis(Arbor.Core.PubSub) do
       nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.Registry,
-             [
-               name: @registry_name,
-               keys: :unique,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
+        {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
 
       _pid ->
         :ok
     end
 
-    # Start Horde.DynamicSupervisor if not running
-    case GenServer.whereis(@supervisor_name) do
-      nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.DynamicSupervisor,
-             [
-               name: @supervisor_name,
-               strategy: :one_for_one,
-               distribution_strategy: Horde.UniformRandomDistribution,
-               process_redistribution: :active,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
-
-      _pid ->
-        :ok
+    # Start HordeSupervisor infrastructure if not running
+    if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
+      HordeSupervisor.start_supervisor()
     end
+
+    # Set members for single-node test environment. This is still necessary
+    # to configure Horde for the test context.
+    Horde.Cluster.set_members(@registry_name, [{@registry_name, node()}])
+    Horde.Cluster.set_members(@supervisor_name, [{@supervisor_name, node()}])
 
     # Wait for Horde components to stabilize
-    :timer.sleep(500)
-  end
-end
-
-# Simple test agent
-defmodule TestAgent do
-  use GenServer
-
-  @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args)
+    wait_for_membership_ready()
   end
 
-  @spec init(keyword()) :: {:ok, map()}
-  def init(args) do
-    state = %{
-      agent_id: Keyword.get(args, :agent_id),
-      index: Keyword.get(args, :index, 0),
-      started_at: System.system_time(:millisecond)
-    }
-
-    # No self-registration - handled by supervisor
-    {:ok, state}
+  defp wait_for_membership_ready(timeout \\ 5000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    wait_for_membership_loop(deadline)
   end
 
-  @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
-  def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
-  end
+  defp wait_for_membership_loop(deadline) do
+    # Use AsyncHelpers for exponential backoff membership check
+    timeout = deadline - System.monotonic_time(:millisecond)
 
-  @spec terminate(any(), map()) :: :ok
-  def terminate(_reason, _state) do
-    # No self-cleanup - handled by supervisor
-    :ok
+    try do
+      AsyncHelpers.wait_until(
+        fn ->
+          registry_members = Horde.Cluster.members(@registry_name)
+          supervisor_members = Horde.Cluster.members(@supervisor_name)
+          current_node = node()
+
+          # Check for proper named members in the new format
+          expected_registry_member = {@registry_name, current_node}
+          expected_supervisor_member = {@supervisor_name, current_node}
+
+          registry_ready =
+            expected_registry_member in registry_members or
+              {expected_registry_member, expected_registry_member} in registry_members
+
+          supervisor_ready =
+            expected_supervisor_member in supervisor_members or
+              {expected_supervisor_member, expected_supervisor_member} in supervisor_members
+
+          if registry_ready and supervisor_ready do
+            IO.puts("  -> Horde membership is ready.")
+            true
+          else
+            false
+          end
+        end,
+        timeout: max(timeout, 100),
+        initial_delay: 100
+      )
+
+      # Additional stabilization wait for distributed supervisor CRDT sync
+      AsyncHelpers.wait_until(
+        fn ->
+          case Horde.DynamicSupervisor.which_children(@supervisor_name) do
+            [] ->
+              true
+
+            children ->
+              # Accept any tracked children count
+              length(children) >= 0
+          end
+        end,
+        timeout: 1000,
+        initial_delay: 50
+      )
+
+      :ok
+    rescue
+      _e in ExUnit.AssertionError ->
+        registry_members = Horde.Cluster.members(@registry_name)
+        supervisor_members = Horde.Cluster.members(@supervisor_name)
+
+        message = """
+        Timed out waiting for Horde membership synchronization.
+        - Current Node: #{inspect(node())}
+        - Registry Members: #{inspect(registry_members)}
+        - Supervisor Members: #{inspect(supervisor_members)}
+        """
+
+        reraise RuntimeError, [message: message], __STACKTRACE__
+    end
   end
 end

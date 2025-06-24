@@ -725,7 +725,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
         updated_state = %{state | nodes: updated_nodes}
         {:ok, updated_state}
 
-      {:agent_start_request, agent_id, agent_info, _timestamp} ->
+      {:agent_start_request, _agent_id, _agent_info, _timestamp} ->
         # Simulate agent assignment logic
         {:ok, state}
 

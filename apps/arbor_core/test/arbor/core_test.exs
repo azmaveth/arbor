@@ -1,5 +1,6 @@
 defmodule Arbor.CoreTest do
   use ExUnit.Case
+  @moduletag :fast
   doctest Arbor.Core
 
   test "greets the world" do

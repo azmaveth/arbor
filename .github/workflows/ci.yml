@@ -5,6 +5,9 @@ on:
     branches: [ main, master, develop ]
   pull_request:
     branches: [ main, master ]
+  schedule:
+    - cron: '0 2 * * *' # Nightly at 2 AM UTC
+  workflow_dispatch:
 
 env:
   MIX_ENV: test
@@ -101,6 +104,75 @@ jobs:
           cover/
           _build/test/lib/*/ebin/
         retention-days: 7
+
+  distributed-test:
+    name: Distributed Tests
+    runs-on: ubuntu-latest
+    needs: test
+    # Run on pushes to main/master, on schedule, or when manually dispatched. Do not run for PRs.
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+    continue-on-error: true
+
+    env:
+      ARBOR_DISTRIBUTED_TEST: true
+      MULTI_NODE_TESTS: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # Fetch all history for all branches and tags.
+        # This is sometimes required for distributed test setups that use git for node discovery.
+        fetch-depth: 0
+
+    - name: Setup Elixir and OTP
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15.7'
+        otp-version: '26.1'
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: deps-${{ runner.os }}-26.1-1.15.7-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          deps-${{ runner.os }}-26.1-1.15.7-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile dependencies
+      run: mix deps.compile
+
+    - name: Compile project
+      run: mix compile --warnings-as-errors
+
+    - name: Start other nodes for distributed test
+      run: |
+        # Start a second node in the background.
+        # The test suite will run on the default 'node1' and connect to this one.
+        elixir --sname node2@localhost -S mix run --no-halt &
+        # Give the node a moment to start and connect.
+        sleep 10
+
+    - name: Run distributed tests
+      run: mix test.dist
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./cover/distributed.json
+        flags: distributedtests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   security:
     name: Security Analysis

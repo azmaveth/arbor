@@ -9,6 +9,8 @@ defmodule Arbor.Core.ClusterSupervisorTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :integration
+
   alias Arbor.Core.ClusterSupervisor
   alias Arbor.Test.Mocks.LocalSupervisor
 
@@ -18,7 +20,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
     Application.put_env(:arbor_core, :supervisor_impl, :mock)
 
     # Start the mock registry and supervisor (handle already started)
-    case Arbor.Test.Mocks.LocalRegistry.start_link() do
+    case Arbor.Test.Mocks.LocalClusterRegistry.start_link() do
       {:ok, _registry} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
@@ -29,7 +31,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
     end
 
     # Clear any existing state
-    Arbor.Test.Mocks.LocalRegistry.clear()
+    Arbor.Test.Mocks.LocalClusterRegistry.clear()
     Arbor.Test.Mocks.LocalSupervisor.clear()
 
     on_exit(fn ->

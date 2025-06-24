@@ -40,7 +40,10 @@ defmodule Arbor.Core.MixProject do
       {:libcluster, "~> 3.3"},
       {:phoenix_pubsub, "~> 2.1"},
       {:telemetry, "~> 1.0"},
-      {:highlander, "~> 0.2"}
+      {:highlander, "~> 0.2"},
+      {:plug, "~> 1.14"},
+      {:plug_cowboy, "~> 2.6"},
+      {:jason, "~> 1.4"}
     ]
   end
 

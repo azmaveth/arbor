@@ -86,6 +86,14 @@ config :logger, :console,
     :subcommand,
     :command_type,
 
+    # Agent behavior
+    :retries,
+    :initial_delay,
+    :supervisor_impl,
+    :registry_members,
+    :supervisor_members,
+    :current_node,
+
     # Supervisor/Registry
     :supervisor_status,
     :registry_status,
@@ -108,7 +116,11 @@ config :logger, :console,
     :data,
     :options,
     :restart_errors,
-    :cleanup_errors
+    :cleanup_errors,
+
+    # Additional metadata keys used in the codebase
+    :spec_key,
+    :status
   ]
 
 # Configure Arbor Persistence Ecto Repository
@@ -127,6 +139,22 @@ config :arbor_persistence, Arbor.Persistence.Repo,
 
 # Configure Ecto repositories
 config :arbor_persistence, ecto_repos: [Arbor.Persistence.Repo]
+
+# Configure Arbor Core distributed system timing parameters
+# These defaults work well for production but can be overridden per environment
+config :arbor_core,
+  # Agent registration retry configuration
+  agent_retry: [
+    # Number of retry attempts for agent registration
+    retries: 3,
+    # Initial delay in milliseconds, doubles with each retry
+    initial_delay: 250
+  ],
+  # Horde CRDT synchronization configuration
+  horde_timing: [
+    # CRDT sync interval in milliseconds (100ms minimum recommended)
+    sync_interval: 100
+  ]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

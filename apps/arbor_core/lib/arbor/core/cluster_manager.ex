@@ -523,6 +523,7 @@ defmodule Arbor.Core.ClusterManager do
     try do
       case health_fn.() do
         {:ok, _} -> :up
+        result when is_map(result) -> :up
         _ -> :down
       end
     rescue
@@ -555,14 +556,14 @@ defmodule Arbor.Core.ClusterManager do
   defp get_registry_impl() do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.LocalRegistry
+        Arbor.Test.Mocks.LocalClusterRegistry
 
       :horde ->
         HordeRegistry
 
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
-          Arbor.Test.Mocks.LocalRegistry
+          Arbor.Test.Mocks.LocalClusterRegistry
         else
           HordeRegistry
         end
@@ -617,7 +618,7 @@ defmodule Arbor.Core.ClusterManager do
       last_check: state.last_health_check,
       nodes: state.node_health_data,
       cluster_summary: %{
-        total_nodes: length([node() | state.connected_nodes]),
+        total_nodes: 1 + length(state.connected_nodes),
         healthy_nodes: count_healthy_nodes(state.node_health_data),
         topology: state.topology,
         uptime: System.system_time(:second) - state.startup_time
@@ -708,10 +709,16 @@ defmodule Arbor.Core.ClusterManager do
       # Check if :cpu_sup module is available (part of :os_mon application)
       case Application.ensure_all_started(:os_mon) do
         {:ok, _} ->
-          case :cpu_sup.avg1() do
-            # Convert to standard load average format
-            {:ok, load} -> load / 256
-            _ -> :unavailable
+          case Code.ensure_loaded(:cpu_sup) do
+            {:module, :cpu_sup} ->
+              case apply(:cpu_sup, :avg1, []) do
+                # Convert to standard load average format
+                {:ok, load} -> load / 256
+                _ -> :unavailable
+              end
+
+            {:error, _} ->
+              :unavailable
           end
 
         _ ->

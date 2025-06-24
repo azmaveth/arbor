@@ -4,9 +4,196 @@ defmodule Arbor.Test.Support.AsyncHelpers do
 
   This module provides reusable async assertions and utilities for testing
   distributed and concurrent behavior.
+
+  ## Exponential Backoff Helpers
+
+  The `wait_until/*` family of functions provide exponential backoff retry
+  logic to replace fixed delays in tests. This makes tests both faster
+  (completing as soon as conditions are met) and more reliable (handling
+  timing variations better).
+
+  ## Legacy Fixed-Delay Helpers
+
+  The original `assert_eventually/*` functions are maintained for backward
+  compatibility but should be migrated to use `wait_until/*` for better
+  performance and reliability.
   """
 
   import ExUnit.Assertions
+  alias Arbor.Core.HordeSupervisor
+
+  # ================================
+  # Exponential Backoff Helpers
+  # ================================
+
+  @doc """
+  Wait for a condition to be met with exponential backoff.
+
+  Polls the given function repeatedly until it returns a truthy value or
+  the timeout is reached. Uses exponential backoff to balance responsiveness
+  with resource usage.
+
+  ## Options
+
+  - `:timeout` - Maximum time to wait in milliseconds (default: 2000)
+  - `:initial_delay` - Initial delay between polls in milliseconds (default: 10)
+  - `:max_delay` - Maximum delay between polls in milliseconds (default: 160)
+  - `:factor` - Multiplier for exponential backoff (default: 2)
+
+  ## Examples
+
+      # Wait for an agent to be ready
+      wait_until(fn -> 
+        case HordeSupervisor.get_agent_info(agent_id) do
+          {:ok, _info} -> true
+          {:error, :not_found} -> false
+        end
+      end)
+      
+      # Wait with custom timeout
+      wait_until(fn -> some_condition() end, timeout: 5000)
+      
+      # Wait and capture the result
+      info = wait_until(fn -> 
+        case HordeSupervisor.get_agent_info(agent_id) do
+          {:ok, info} -> info
+          {:error, :not_found} -> false
+        end
+      end)
+      
+  ## Returns
+
+  Returns the last truthy value returned by the function, or raises
+  `ExUnit.AssertionError` if the timeout is reached.
+  """
+  @spec wait_until((-> any()), keyword()) :: any()
+  def wait_until(fun, opts \\ []) when is_function(fun, 0) do
+    timeout = Keyword.get(opts, :timeout, 2000)
+    initial_delay = Keyword.get(opts, :initial_delay, 10)
+    max_delay = Keyword.get(opts, :max_delay, 160)
+    factor = Keyword.get(opts, :factor, 2)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    do_wait_until(fun, initial_delay, max_delay, factor, timeout, start_time)
+  end
+
+  @doc """
+  Wait for an agent to be ready after start_agent call.
+
+  This is a convenience function that specifically waits for an agent
+  to complete its asynchronous registration process after start_agent
+  returns successfully.
+
+  ## Examples
+
+      {:ok, pid} = HordeSupervisor.start_agent(agent_spec)
+      info = wait_for_agent_ready(agent_id)
+      assert info.pid == pid
+      
+  ## Returns
+
+  Returns the agent info map from `HordeSupervisor.get_agent_info/1`.
+  """
+  @spec wait_for_agent_ready(String.t(), keyword()) :: map()
+  def wait_for_agent_ready(agent_id, opts \\ []) do
+    wait_until(
+      fn ->
+        case HordeSupervisor.get_agent_info(agent_id) do
+          {:ok, info} -> info
+          {:error, :not_found} -> false
+        end
+      end,
+      opts
+    )
+  end
+
+  @doc """
+  Wait for an agent to be stopped and no longer registered.
+
+  This is useful when testing agent cleanup or stopping behavior.
+
+  ## Examples
+
+      HordeSupervisor.stop_agent(agent_id)
+      wait_for_agent_stopped(agent_id)
+      
+  ## Returns
+
+  Returns `:ok` when the agent is confirmed stopped.
+  """
+  @spec wait_for_agent_stopped(String.t(), keyword()) :: :ok
+  def wait_for_agent_stopped(agent_id, opts \\ []) do
+    wait_until(
+      fn ->
+        case HordeSupervisor.get_agent_info(agent_id) do
+          {:error, :not_found} -> :ok
+          {:ok, _info} -> false
+        end
+      end,
+      opts
+    )
+  end
+
+  @doc """
+  Assert that a condition becomes true within the timeout period.
+
+  This combines `wait_until/2` with ExUnit assertions for more readable tests.
+
+  ## Examples
+
+      assert_eventually_with_backoff(fn -> 
+        {:ok, _info} = HordeSupervisor.get_agent_info(agent_id)
+      end)
+      
+  ## Returns
+
+  Returns the last value returned by the function if successful.
+  Raises `ExUnit.AssertionError` if the timeout is reached.
+  """
+  @spec assert_eventually_with_backoff((-> any()), keyword()) :: any()
+  def assert_eventually_with_backoff(fun, opts \\ []) when is_function(fun, 0) do
+    try do
+      wait_until(fun, opts)
+    rescue
+      ExUnit.AssertionError ->
+        # Try one more time to get a better error message
+        fun.()
+    end
+  end
+
+  # Private implementation for wait_until
+
+  defp do_wait_until(fun, delay, max_delay, factor, timeout, start_time) do
+    case fun.() do
+      false ->
+        check_timeout_and_continue(fun, delay, max_delay, factor, timeout, start_time)
+
+      nil ->
+        check_timeout_and_continue(fun, delay, max_delay, factor, timeout, start_time)
+
+      result ->
+        result
+    end
+  end
+
+  defp check_timeout_and_continue(fun, delay, max_delay, factor, timeout, start_time) do
+    elapsed = System.monotonic_time(:millisecond) - start_time
+
+    if elapsed > timeout do
+      raise ExUnit.AssertionError,
+            "Condition not met within #{timeout}ms timeout. " <>
+              "Last attempt failed after #{elapsed}ms."
+    else
+      Process.sleep(delay)
+      next_delay = min(delay * factor, max_delay)
+      do_wait_until(fun, next_delay, max_delay, factor, timeout, start_time)
+    end
+  end
+
+  # ================================
+  # Legacy Fixed-Delay Helpers
+  # ================================
 
   @doc """
   Asserts that a function eventually returns a truthy value.

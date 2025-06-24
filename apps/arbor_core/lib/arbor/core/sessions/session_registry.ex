@@ -13,8 +13,8 @@ defmodule Arbor.Core.SessionRegistry do
   uses this registry for distributed lookups.
 
       # Look up a session (done by Sessions.Manager)
-      case Horde.Registry.lookup(Arbor.Core.SessionRegistry, session_id) do
-        [{pid, metadata}] -> {:ok, pid, metadata}
+      case Horde.Registry.select(Arbor.Core.SessionRegistry, [{{session_id, :"$1", :"$2"}, [], [{{:"$1", :"$2"}}]}]) do
+        [{{pid, metadata}}] -> {:ok, pid, metadata}
         [] -> {:error, :not_found}
       end
 
@@ -106,8 +106,9 @@ defmodule Arbor.Core.SessionRegistry do
   """
   @spec lookup_session(Types.session_id()) :: {:ok, {pid(), map()}} | {:error, :not_found}
   def lookup_session(session_id) do
-    case Horde.Registry.lookup(__MODULE__, session_id) do
-      [{pid, metadata}] when is_pid(pid) ->
+    # Use select instead of lookup which doesn't exist in Horde v0.9.1
+    case Horde.Registry.select(__MODULE__, [{{session_id, :"$1", :"$2"}, [], [{{:"$1", :"$2"}}]}]) do
+      [{{pid, metadata}}] when is_pid(pid) ->
         if Process.alive?(pid) do
           {:ok, {pid, metadata}}
         else

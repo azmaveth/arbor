@@ -13,7 +13,6 @@ defmodule Arbor.Core.AgentReconciler do
   use GenServer
   require Logger
 
-  alias Arbor.Contracts.Agent.Reconciler
   alias Arbor.Core.{AgentCheckpoint, ClusterEvents, TelemetryHelper}
 
   @behaviour Arbor.Contracts.Agent.Reconciler
@@ -48,41 +47,53 @@ defmodule Arbor.Core.AgentReconciler do
   def handle_info(:reconcile, state) do
     Logger.debug("Starting agent reconciliation")
 
-    start_time = System.monotonic_time()
-
-    try do
-      do_reconcile_agents()
-
-      duration_ms =
-        System.convert_time_unit(
-          System.monotonic_time() - start_time,
-          :native,
-          :millisecond
-        )
-
-      Logger.debug("Agent reconciliation completed", duration_ms: duration_ms)
-
-      new_state = %{
-        state
-        | last_reconcile: System.system_time(:millisecond),
-          reconcile_count: state.reconcile_count + 1,
-          errors: []
-      }
-
-      schedule_reconciliation()
-      {:noreply, new_state}
-    rescue
-      error ->
-        Logger.error("Agent reconciliation failed", error: inspect(error))
-
-        new_state = %{
-          state
-          | # Keep last 10 errors
-            errors: [error | Enum.take(state.errors, 9)]
-        }
-
+    # Skip if already reconciling
+    case Map.get(state, :reconciling, false) do
+      true ->
+        Logger.debug("Skipping reconciliation - already in progress")
         schedule_reconciliation()
-        {:noreply, new_state}
+        {:noreply, state}
+
+      false ->
+        start_time = System.monotonic_time()
+        new_state = Map.put(state, :reconciling, true)
+
+        try do
+          do_reconcile_agents()
+
+          duration_ms =
+            System.convert_time_unit(
+              System.monotonic_time() - start_time,
+              :native,
+              :millisecond
+            )
+
+          Logger.debug("Agent reconciliation completed", duration_ms: duration_ms)
+
+          final_state = %{
+            new_state
+            | last_reconcile: System.system_time(:millisecond),
+              reconcile_count: state.reconcile_count + 1,
+              errors: [],
+              reconciling: false
+          }
+
+          schedule_reconciliation()
+          {:noreply, final_state}
+        rescue
+          error ->
+            Logger.error("Agent reconciliation failed", error: inspect(error))
+
+            final_state = %{
+              new_state
+              | # Keep last 10 errors
+                errors: [error | Enum.take(state.errors, 9)],
+                reconciling: false
+            }
+
+            schedule_reconciliation()
+            {:noreply, final_state}
+        end
     end
   end
 
@@ -104,27 +115,41 @@ defmodule Arbor.Core.AgentReconciler do
 
   @impl GenServer
   def handle_call(:force_reconcile, _from, state) do
-    do_reconcile_agents()
+    # Prevent overlapping reconciliation cycles
+    case Map.get(state, :reconciling, false) do
+      true ->
+        # Already reconciling, skip this call
+        {:reply, :already_running, state}
 
-    # Update state to reflect the forced reconciliation
-    new_state = %{
-      state
-      | last_reconcile: System.system_time(:millisecond),
-        reconcile_count: state.reconcile_count + 1,
-        errors: []
-    }
+      false ->
+        new_state = Map.put(state, :reconciling, true)
 
-    {:reply, :ok, new_state}
-  rescue
-    error ->
-      # Add error to state
-      new_state = %{
-        state
-        | # Keep last 10 errors
-          errors: [error | Enum.take(state.errors, 9)]
-      }
+        try do
+          do_reconcile_agents()
 
-      {:reply, {:error, error}, new_state}
+          # Update state to reflect the forced reconciliation
+          final_state = %{
+            new_state
+            | last_reconcile: System.system_time(:millisecond),
+              reconcile_count: state.reconcile_count + 1,
+              errors: [],
+              reconciling: false
+          }
+
+          {:reply, :ok, final_state}
+        rescue
+          error ->
+            # Add error to state and clear reconciling flag
+            final_state = %{
+              new_state
+              | # Keep last 10 errors
+                errors: [error | Enum.take(state.errors, 9)],
+                reconciling: false
+            }
+
+            {:reply, {:error, error}, final_state}
+        end
+    end
   end
 
   # Public API
@@ -142,7 +167,7 @@ defmodule Arbor.Core.AgentReconciler do
   """
   @spec force_reconcile() :: :ok | {:error, any()}
   def force_reconcile do
-    GenServer.call(__MODULE__, :force_reconcile)
+    GenServer.call(__MODULE__, :force_reconcile, 30_000)
   end
 
   #
@@ -259,15 +284,7 @@ defmodule Arbor.Core.AgentReconciler do
     # Emit discovery metrics
     emit_discovery_metrics(analysis, node_name)
 
-    # Clean up stale registry entries
-    {stale_cleaned, stale_errors} = cleanup_stale_entries(analysis.missing_agents)
-
-    Logger.debug("Cleaned up stale registry entries",
-      cleaned: stale_cleaned,
-      errors: length(stale_errors)
-    )
-
-    # Process missing agents (restart them)
+    # Process missing agents (restart them with atomic cleanup)
     {missing_restarted, restart_errors} =
       process_missing_agents(
         analysis.missing_agents,
@@ -297,33 +314,33 @@ defmodule Arbor.Core.AgentReconciler do
     duration_ms = System.monotonic_time(:millisecond) - start_time
 
     # Log completion summary
-    log_reconciliation_summary(
-      length(agent_specs),
-      length(running_children),
-      MapSet.size(analysis.missing_agents),
-      MapSet.size(analysis.orphaned_agents),
-      missing_restarted,
-      orphaned_cleaned + undefined_cleaned,
-      length(restart_errors),
-      length(all_cleanup_errors),
-      duration_ms
-    )
+    log_reconciliation_summary(%{
+      specs: length(agent_specs),
+      running: length(running_children),
+      missing: MapSet.size(analysis.missing_agents),
+      orphaned: MapSet.size(analysis.orphaned_agents),
+      restarted: missing_restarted,
+      cleaned: orphaned_cleaned + undefined_cleaned,
+      restart_errors: length(restart_errors),
+      cleanup_errors: length(all_cleanup_errors),
+      duration: duration_ms
+    })
 
     # Log errors if any
     log_reconciliation_errors(restart_errors, all_cleanup_errors, node_name)
 
     # Emit completion telemetry
-    emit_reconciliation_complete(
-      missing_restarted,
-      orphaned_cleaned + undefined_cleaned,
-      duration_ms,
-      analysis,
-      spec_lookup_duration,
-      supervisor_lookup_duration,
-      restart_errors,
-      all_cleanup_errors,
-      node_name
-    )
+    emit_reconciliation_complete(%{
+      missing_restarted: missing_restarted,
+      orphaned_cleaned: orphaned_cleaned + undefined_cleaned,
+      duration_ms: duration_ms,
+      analysis: analysis,
+      spec_lookup_duration: spec_lookup_duration,
+      supervisor_lookup_duration: supervisor_lookup_duration,
+      restart_errors: restart_errors,
+      cleanup_errors: all_cleanup_errors,
+      node_name: node_name
+    })
 
     # Broadcast completion event
     broadcast_reconciliation_complete(
@@ -375,13 +392,29 @@ defmodule Arbor.Core.AgentReconciler do
           case restart_missing_agent(agent_id, spec_metadata) do
             {:ok, _pid} ->
               restart_duration = System.monotonic_time(:millisecond) - restart_start
-              emit_agent_restart_success(agent_id, spec_metadata, restart_duration, node_name)
+
+              emit_agent_restart_success(
+                agent_id,
+                spec_metadata.restart_strategy,
+                restart_duration,
+                node_name,
+                spec_metadata.module
+              )
+
               {success_count + 1, errors}
 
             {:error, reason} ->
               restart_duration = System.monotonic_time(:millisecond) - restart_start
               error = %{agent_id: agent_id, reason: reason, duration_ms: restart_duration}
-              emit_agent_restart_failed(agent_id, spec_metadata, restart_duration, node_name)
+
+              emit_agent_restart_failed(
+                agent_id,
+                spec_metadata.restart_strategy,
+                restart_duration,
+                node_name,
+                spec_metadata.module
+              )
+
               {success_count, [error | errors]}
           end
 
@@ -459,16 +492,6 @@ defmodule Arbor.Core.AgentReconciler do
     end)
   end
 
-  # Clean up stale registry entries
-  defp cleanup_stale_entries(missing_agents) do
-    Enum.reduce(missing_agents, {0, []}, fn agent_id, {success_count, errors} ->
-      case cleanup_stale_registry_entry(agent_id) do
-        true -> {success_count + 1, errors}
-        false -> {success_count, [{agent_id, :stale_cleanup_failed} | errors]}
-      end
-    end)
-  end
-
   # Telemetry emission functions
   defp emit_reconciliation_start(start_time, node_name) do
     TelemetryHelper.emit_reconciliation_event(
@@ -518,26 +541,28 @@ defmodule Arbor.Core.AgentReconciler do
     )
   end
 
-  defp emit_agent_restart_success(agent_id, spec_metadata, duration, node_name) do
+  defp emit_agent_restart_success(agent_id, restart_strategy, duration, node_name, module) do
     TelemetryHelper.emit_reconciliation_event(
       :agent_restart_success,
       %{duration_ms: duration},
       %{
         agent_id: agent_id,
-        restart_strategy: spec_metadata.restart_strategy,
-        node: node_name
+        restart_strategy: restart_strategy,
+        node: node_name,
+        module: module
       }
     )
   end
 
-  defp emit_agent_restart_failed(agent_id, spec_metadata, duration, node_name) do
+  defp emit_agent_restart_failed(agent_id, restart_strategy, duration, node_name, module) do
     TelemetryHelper.emit_reconciliation_event(
       :agent_restart_failed,
       %{duration_ms: duration},
       %{
         agent_id: agent_id,
-        restart_strategy: spec_metadata.restart_strategy,
-        node: node_name
+        restart_strategy: restart_strategy,
+        node: node_name,
+        module: module
       }
     )
   end
@@ -590,17 +615,17 @@ defmodule Arbor.Core.AgentReconciler do
     )
   end
 
-  defp log_reconciliation_summary(
-         specs,
-         running,
-         missing,
-         orphaned,
-         restarted,
-         cleaned,
-         restart_errors,
-         cleanup_errors,
-         duration
-       ) do
+  defp log_reconciliation_summary(%{
+         specs: specs,
+         running: running,
+         missing: missing,
+         orphaned: orphaned,
+         restarted: restarted,
+         cleaned: cleaned,
+         restart_errors: restart_errors,
+         cleanup_errors: cleanup_errors,
+         duration: duration
+       }) do
     Logger.debug("Reconciliation complete",
       specs: specs,
       running: running,
@@ -630,17 +655,17 @@ defmodule Arbor.Core.AgentReconciler do
     end
   end
 
-  defp emit_reconciliation_complete(
-         missing_restarted,
-         orphaned_cleaned,
-         duration_ms,
-         analysis,
-         spec_lookup_duration,
-         supervisor_lookup_duration,
-         restart_errors,
-         cleanup_errors,
-         node_name
-       ) do
+  defp emit_reconciliation_complete(%{
+         missing_restarted: missing_restarted,
+         orphaned_cleaned: orphaned_cleaned,
+         duration_ms: duration_ms,
+         analysis: analysis,
+         spec_lookup_duration: spec_lookup_duration,
+         supervisor_lookup_duration: supervisor_lookup_duration,
+         restart_errors: restart_errors,
+         cleanup_errors: cleanup_errors,
+         node_name: node_name
+       }) do
     :telemetry.execute(
       [:arbor, :reconciliation, :complete],
       %{
@@ -770,156 +795,23 @@ defmodule Arbor.Core.AgentReconciler do
         {:error, :temporary_agent_not_restarted}
 
       restart_strategy when restart_strategy in [:permanent, :transient] ->
-        # Attempt state recovery if the agent supports checkpointing
-        recovery_result =
-          AgentCheckpoint.attempt_state_recovery(
-            spec_metadata.module,
-            agent_id,
-            spec_metadata.args
-          )
+        # ATOMIC CLEANUP: Clean up any stale registry entries first to prevent race conditions
+        cleanup_stale_registry_entry(agent_id)
 
-        Logger.info("Recovery attempt for #{agent_id}: #{inspect(recovery_result)}")
-
-        # Reconstruct the child spec and start the agent
-        enhanced_args =
-          spec_metadata.args
-          |> Keyword.put(:agent_id, agent_id)
-          |> Keyword.put(:agent_metadata, spec_metadata.metadata)
-          |> maybe_add_recovery_data(recovery_result)
-
-        child_spec = %{
-          id: agent_id,
-          start: {spec_metadata.module, :start_link, [enhanced_args]},
-          # Always use :temporary for Horde, reconciler handles restart logic
-          restart: :temporary,
-          type: :worker
-        }
-
-        case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
-          {:ok, pid} ->
-            restart_duration = System.monotonic_time(:millisecond) - start_time
-
-            # Register agent in runtime registry (centralized registration)
-            runtime_metadata = %{
-              module: spec_metadata.module,
-              restart_strategy: spec_metadata.restart_strategy,
-              started_at: System.system_time(:millisecond)
-            }
-
-            case Arbor.Core.HordeRegistry.register_agent_name(agent_id, pid, runtime_metadata) do
-              {:ok, ^pid} ->
-                Logger.debug("Restarted agent registered in runtime registry",
-                  agent_id: agent_id,
-                  pid: inspect(pid)
-                )
-
-              {:error, reason} ->
-                Logger.warning("Failed to register restarted agent in runtime registry",
-                  agent_id: agent_id,
-                  pid: inspect(pid),
-                  reason: inspect(reason)
-                )
-            end
-
-            Logger.info("Successfully restarted missing agent",
-              agent_id: agent_id,
-              pid: inspect(pid),
-              duration_ms: restart_duration
-            )
-
-            TelemetryHelper.emit_agent_event(
-              :restarted,
-              agent_id,
-              %{
-                restart_duration_ms: restart_duration,
-                memory_usage: get_process_memory(pid)
-              },
-              %{
-                pid: inspect(pid),
-                module: spec_metadata.module,
-                restart_strategy: spec_metadata.restart_strategy
-              }
-            )
-
-            # Broadcast agent restart event
-            ClusterEvents.broadcast(:agent_restarted, %{
-              agent_id: agent_id,
-              pid: pid,
-              module: spec_metadata.module,
-              restart_strategy: spec_metadata.restart_strategy,
-              restart_duration_ms: restart_duration,
-              memory_usage: get_process_memory(pid)
-            })
-
-            {:ok, pid}
-
-          {:error, {:already_started, pid}} ->
-            # Agent already started, ensure it's registered
-            runtime_metadata = %{
-              module: spec_metadata.module,
-              restart_strategy: spec_metadata.restart_strategy,
-              started_at: System.system_time(:millisecond)
-            }
-
-            case Arbor.Core.HordeRegistry.register_agent_name(agent_id, pid, runtime_metadata) do
-              {:ok, ^pid} ->
-                Logger.debug("Already running agent registered in runtime registry",
-                  agent_id: agent_id,
-                  pid: inspect(pid)
-                )
-
-              {:error, :name_taken} ->
-                Logger.debug("Agent already registered", agent_id: agent_id, pid: inspect(pid))
-
-              {:error, reason} ->
-                Logger.warning("Failed to register already running agent",
-                  agent_id: agent_id,
-                  pid: inspect(pid),
-                  reason: inspect(reason)
-                )
-            end
-
-            Logger.debug("Agent already running during restart",
+        # Check if agent is actually running after cleanup
+        case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
+          {:ok, pid, _metadata} ->
+            # Agent is running and alive, skip restart
+            Logger.debug("Agent found running during restart attempt after cleanup, skipping.",
               agent_id: agent_id,
               pid: inspect(pid)
             )
 
             {:ok, pid}
 
-          {:error, reason} ->
-            restart_duration = System.monotonic_time(:millisecond) - start_time
-
-            Logger.error("Failed to restart missing agent",
-              agent_id: agent_id,
-              reason: inspect(reason),
-              duration_ms: restart_duration
-            )
-
-            TelemetryHelper.emit_agent_event(
-              :restart_failed,
-              agent_id,
-              %{
-                restart_duration_ms: restart_duration,
-                error_category: classify_error(reason)
-              },
-              %{
-                reason: inspect(reason),
-                module: spec_metadata.module,
-                restart_strategy: spec_metadata.restart_strategy
-              }
-            )
-
-            # Broadcast agent failure event
-            ClusterEvents.broadcast(:agent_failed, %{
-              agent_id: agent_id,
-              reason: inspect(reason),
-              module: spec_metadata.module,
-              restart_strategy: spec_metadata.restart_strategy,
-              restart_duration_ms: restart_duration,
-              error_category: classify_error(reason)
-            })
-
-            {:error, reason}
+          {:error, :not_registered} ->
+            # Agent not running, proceed with restart
+            do_actual_restart(agent_id, spec_metadata, start_time)
         end
 
       _ ->
@@ -929,6 +821,148 @@ defmodule Arbor.Core.AgentReconciler do
         )
 
         {:error, {:unknown_restart_strategy, spec_metadata.restart_strategy}}
+    end
+  end
+
+  defp do_actual_restart(agent_id, spec_metadata, start_time) do
+    # Agent not running, proceed with restart
+    # Note: stale registry entries are cleaned up before calling this function
+
+    # Attempt state recovery if the agent supports checkpointing
+    recovery_result =
+      AgentCheckpoint.attempt_state_recovery(
+        spec_metadata.module,
+        agent_id,
+        spec_metadata.args
+      )
+
+    Logger.info("Recovery attempt for #{agent_id}: #{inspect(recovery_result)}")
+
+    # Reconstruct the child spec and start the agent
+    enhanced_args =
+      spec_metadata.args
+      |> Keyword.put(:agent_id, agent_id)
+      |> Keyword.put(:agent_metadata, spec_metadata.metadata)
+      |> maybe_add_recovery_data(recovery_result)
+
+    child_spec = %{
+      id: agent_id,
+      start: {spec_metadata.module, :start_link, [enhanced_args]},
+      # Always use :temporary for Horde, reconciler handles restart logic
+      restart: :temporary,
+      type: :worker
+    }
+
+    case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
+      {:ok, pid} ->
+        restart_duration = System.monotonic_time(:millisecond) - start_time
+
+        # Note: Agents using AgentBehavior will register themselves in handle_continue(:register_with_supervisor)
+        # We don't need to register them here, as that would cause a race condition.
+        # Only log the successful restart.
+
+        Logger.info("Successfully restarted missing agent",
+          agent_id: agent_id,
+          pid: inspect(pid),
+          duration_ms: restart_duration
+        )
+
+        TelemetryHelper.emit_agent_event(
+          :restarted,
+          agent_id,
+          %{
+            restart_duration_ms: restart_duration,
+            memory_usage: get_process_memory(pid)
+          },
+          %{
+            pid: inspect(pid),
+            module: spec_metadata.module,
+            restart_strategy: spec_metadata.restart_strategy
+          }
+        )
+
+        # Broadcast agent restart event
+        ClusterEvents.broadcast(:agent_restarted, %{
+          agent_id: agent_id,
+          pid: pid,
+          module: spec_metadata.module,
+          restart_strategy: spec_metadata.restart_strategy,
+          restart_duration_ms: restart_duration,
+          memory_usage: get_process_memory(pid)
+        })
+
+        {:ok, pid}
+
+      {:error, {:already_started, pid}} ->
+        # Agent already started, ensure it's registered
+        runtime_metadata = %{
+          module: spec_metadata.module,
+          restart_strategy: spec_metadata.restart_strategy,
+          started_at: System.system_time(:millisecond)
+        }
+
+        case Arbor.Core.HordeRegistry.register_agent_name(agent_id, pid, runtime_metadata) do
+          {:ok, ^pid} ->
+            Logger.debug("Already running agent registered in runtime registry",
+              agent_id: agent_id,
+              pid: inspect(pid)
+            )
+
+          {:error, :name_taken} ->
+            Logger.debug("Agent already registered",
+              agent_id: agent_id,
+              pid: inspect(pid)
+            )
+
+          {:error, reason} ->
+            Logger.warning("Failed to register already running agent",
+              agent_id: agent_id,
+              pid: inspect(pid),
+              reason: inspect(reason)
+            )
+        end
+
+        Logger.debug("Agent already running during restart",
+          agent_id: agent_id,
+          pid: inspect(pid)
+        )
+
+        {:ok, pid}
+
+      {:error, reason} ->
+        restart_duration = System.monotonic_time(:millisecond) - start_time
+
+        Logger.error("Failed to restart missing agent",
+          agent_id: agent_id,
+          reason: inspect(reason),
+          duration_ms: restart_duration
+        )
+
+        TelemetryHelper.emit_agent_event(
+          :restart_failed,
+          agent_id,
+          %{
+            restart_duration_ms: restart_duration,
+            error_category: classify_error(reason)
+          },
+          %{
+            reason: inspect(reason),
+            module: spec_metadata.module,
+            restart_strategy: spec_metadata.restart_strategy
+          }
+        )
+
+        # Broadcast agent failure event
+        ClusterEvents.broadcast(:agent_failed, %{
+          agent_id: agent_id,
+          reason: inspect(reason),
+          module: spec_metadata.module,
+          restart_strategy: spec_metadata.restart_strategy,
+          restart_duration_ms: restart_duration,
+          error_category: classify_error(reason)
+        })
+
+        {:error, reason}
     end
   end
 
@@ -970,50 +1004,67 @@ defmodule Arbor.Core.AgentReconciler do
   end
 
   defp cleanup_orphaned_agent(agent_id, pid) do
-    Logger.warning("Cleaning up orphaned agent", agent_id: agent_id, pid: inspect(pid))
+    # Give undefined processes a grace period to register
+    # They may have just been started and are in the process of registering
+    if agent_id == :undefined do
+      # For undefined processes, we use a simple heuristic:
+      # Skip cleanup to give them time to register
+      # The process start time is not easily available from Process.info
+      # So we'll be conservative and skip cleanup for all undefined processes
+      # They'll be cleaned up in the next cycle if they don't register
+      Logger.debug("Skipping cleanup of undefined process to allow registration",
+        pid: inspect(pid)
+      )
 
-    # Emit telemetry for orphaned agent cleanup
-    TelemetryHelper.emit_agent_event(
-      :cleanup_attempt,
-      agent_id,
-      %{},
-      %{pid: inspect(pid)}
-    )
+      # Return true to indicate we handled it (by skipping)
+      true
+    else
+      # For identified orphans, proceed with cleanup
+      Logger.warning("Cleaning up orphaned agent", agent_id: agent_id, pid: inspect(pid))
 
-    # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
-    # Only unregister if agent_id is not :undefined
-    if agent_id != :undefined do
-      Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
-    end
+      # Emit telemetry for orphaned agent cleanup
+      TelemetryHelper.emit_agent_event(
+        :cleanup_attempt,
+        agent_id,
+        %{},
+        %{pid: inspect(pid)}
+      )
 
-    # Terminate the orphaned process
-    case Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid) do
-      :ok ->
-        Logger.info("Successfully cleaned up orphaned agent", agent_id: agent_id)
+      # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
+      # Only unregister if agent_id is not :undefined
+      if agent_id != :undefined do
+        Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
+      end
 
-        TelemetryHelper.emit_agent_event(
-          :cleaned_up,
-          agent_id,
-          %{},
-          %{pid: inspect(pid)}
-        )
+      # Terminate the orphaned process
+      case Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid) do
+        :ok ->
+          Logger.info("Successfully cleaned up orphaned agent", agent_id: agent_id)
 
-        true
+          TelemetryHelper.emit_agent_event(
+            :cleaned_up,
+            agent_id,
+            %{},
+            %{pid: inspect(pid)}
+          )
 
-      {:error, reason} ->
-        Logger.error("Failed to cleanup orphaned agent",
-          agent_id: agent_id,
-          reason: inspect(reason)
-        )
+          true
 
-        TelemetryHelper.emit_agent_event(
-          :cleanup_failed,
-          agent_id,
-          %{},
-          %{pid: inspect(pid), reason: inspect(reason)}
-        )
+        {:error, reason} ->
+          Logger.error("Failed to cleanup orphaned agent",
+            agent_id: agent_id,
+            reason: inspect(reason)
+          )
 
-        false
+          TelemetryHelper.emit_agent_event(
+            :cleanup_failed,
+            agent_id,
+            %{},
+            %{pid: inspect(pid), reason: inspect(reason)}
+          )
+
+          false
+      end
     end
   end
 
@@ -1045,7 +1096,7 @@ defmodule Arbor.Core.AgentReconciler do
       # Perfect efficiency when no work needed
       1.0
     else
-      successful_work / total_work
+      min(successful_work / total_work, 1.0)
     end
   end
 

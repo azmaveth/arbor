@@ -42,7 +42,9 @@ defmodule ArborCli.MixProject do
       {:phoenix_pubsub, "~> 2.1"},
       {:table_rex, "~> 3.1.1"},  # For table formatting
       {:optimus, "~> 0.3.0"},     # For command line argument parsing
-      {:owl, "~> 0.11"}          # For rich terminal UI
+      {:owl, "~> 0.11"},          # For rich terminal UI
+      {:httpoison, "~> 2.0"},     # HTTP client
+      {:websockex, "~> 0.4"}      # WebSocket client
     ]
   end
 end

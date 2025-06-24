@@ -4,6 +4,7 @@ defmodule Arbor.Test.Mocks.TestAgent do
   MOCK: Replace with real agent implementations.
   """
 
+  @compile {:nowarn_unused_function, [handle_restore_result: 2]}
   use Arbor.Core.AgentBehavior
 
   @spec start_link(keyword()) :: GenServer.on_start()

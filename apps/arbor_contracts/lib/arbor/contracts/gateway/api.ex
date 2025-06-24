@@ -353,7 +353,7 @@ defmodule Arbor.Contracts.Gateway.API do
             ) :: {:ok, non_neg_integer()} | {:error, {:rate_limit_exceeded, DateTime.t()}}
 
   @doc """
-  Initialize the gateway.
+  Initialize the gateway implementation.
 
   Sets up gateway infrastructure and configuration.
 
@@ -369,12 +369,12 @@ defmodule Arbor.Contracts.Gateway.API do
   - `{:ok, state}` - Gateway initialized
   - `{:error, reason}` - Initialization failed
   """
-  @callback init(opts :: keyword()) :: {:ok, state()} | {:error, term()}
+  @callback initialize_gateway(opts :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
-  Clean up resources when shutting down.
+  Clean up gateway resources when shutting down.
 
   Should cancel executions and close subscriptions gracefully.
   """
-  @callback terminate(reason :: term(), state()) :: :ok
+  @callback shutdown_gateway(reason :: term(), state()) :: :ok
 end

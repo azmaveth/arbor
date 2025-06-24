@@ -39,14 +39,7 @@ defmodule Arbor.CodeGen.ContractAnalyzer do
           FunctionClauseError -> []
         end
 
-      macrocallbacks =
-        try do
-          module.behaviour_info(:macrocallbacks)
-        rescue
-          FunctionClauseError -> []
-        end
-
-      callbacks ++ macrocallbacks
+      callbacks
     else
       []
     end

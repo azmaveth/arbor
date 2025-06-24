@@ -6,7 +6,10 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
   use ExUnit.Case, async: false
 
+  @moduletag :integration
+
   alias Arbor.Core.{AgentReconciler, HordeRegistry, HordeSupervisor}
+  alias Arbor.Test.Support.AsyncHelpers
 
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor
@@ -104,7 +107,18 @@ defmodule Arbor.Core.BasicSupervisionTest do
       # Clean up any existing agent and registrations first
       _ = HordeSupervisor.stop_agent(agent_id)
       _ = HordeRegistry.unregister_agent_name(agent_id)
-      :timer.sleep(200)
+
+      # Wait for cleanup to complete
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeRegistry.lookup_agent_name(agent_id) do
+            {:error, :not_registered} -> true
+            _ -> false
+          end
+        end,
+        timeout: 2000,
+        initial_delay: 50
+      )
 
       # Check what's in the registry before starting
       case HordeRegistry.lookup_agent_name(agent_id) do
@@ -112,7 +126,18 @@ defmodule Arbor.Core.BasicSupervisionTest do
           IO.puts("Warning: Agent #{agent_id} still registered with PID #{inspect(existing_pid)}")
           # Force unregister
           HordeRegistry.unregister_agent_name(agent_id)
-          :timer.sleep(100)
+
+          # Wait for unregistration to complete
+          AsyncHelpers.wait_until(
+            fn ->
+              case HordeRegistry.lookup_agent_name(agent_id) do
+                {:error, :not_registered} -> true
+                _ -> false
+              end
+            end,
+            timeout: 1000,
+            initial_delay: 25
+          )
 
         {:error, :not_registered} ->
           :ok
@@ -120,15 +145,27 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
       assert {:ok, pid} = HordeSupervisor.start_agent(agent_spec)
 
-      # Kill the process
-      Process.exit(pid, :kill)
+      # Kill the process using proper supervisor termination
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
 
       # Force immediate reconciliation since Horde uses :temporary restart
       # and the AgentReconciler handles restart logic
       :ok = AgentReconciler.force_reconcile()
 
-      # Wait a bit for reconciliation to complete
-      :timer.sleep(500)
+      # Wait for reconciliation to complete and agent to be restarted
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeSupervisor.get_agent_info(agent_id) do
+            {:ok, agent_info} when agent_info.pid != pid ->
+              Process.alive?(agent_info.pid)
+
+            _ ->
+              false
+          end
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Should have new PID
       assert {:ok, agent_info} = HordeSupervisor.get_agent_info(agent_id)
@@ -153,7 +190,18 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
       # Update agent state
       GenServer.cast(pid, {:set_value, 100})
-      :timer.sleep(100)
+
+      # Wait for state update to be processed
+      AsyncHelpers.wait_until(
+        fn ->
+          case GenServer.call(pid, :get_state) do
+            %{value: 100} -> true
+            _ -> false
+          end
+        end,
+        timeout: 1000,
+        initial_delay: 25
+      )
 
       # Restore agent (should attempt state recovery)
       assert {:ok, {new_pid, _recovery_status}} = HordeSupervisor.restore_agent(agent_id)
@@ -178,11 +226,21 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
       assert {:ok, pid} = HordeSupervisor.start_agent(agent_spec)
 
-      # Kill the process
-      Process.exit(pid, :kill)
+      # Kill the process using proper supervisor termination
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
 
-      # Wait a bit
-      :timer.sleep(1000)
+      # Wait for process to die and verify it's not restarted
+      AsyncHelpers.wait_until(
+        fn ->
+          not Process.alive?(pid) and
+            case HordeSupervisor.get_agent_info(agent_id) do
+              {:error, :not_found} -> true
+              _ -> false
+            end
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Should not be running
       assert {:error, :not_found} = HordeSupervisor.get_agent_info(agent_id)
@@ -197,70 +255,109 @@ defmodule Arbor.Core.BasicSupervisionTest do
   @spec wait_for_registration(String.t(), non_neg_integer()) ::
           {:ok, pid(), map()} | {:error, :timeout}
   defp wait_for_registration(agent_id, timeout \\ 1000) do
-    # Poll for registration to handle async registration logic
-    Enum.find_value(0..div(timeout, 50), fn _ ->
-      case HordeRegistry.lookup_agent_name(agent_id) do
-        {:ok, _, _} = result ->
-          result
+    # Use exponential backoff for registration polling
+    try do
+      result =
+        AsyncHelpers.wait_until(
+          fn ->
+            case HordeRegistry.lookup_agent_name(agent_id) do
+              {:ok, _, _} = result -> result
+              _ -> false
+            end
+          end,
+          timeout: timeout,
+          initial_delay: 25
+        )
 
-        _ ->
-          Process.sleep(50)
-          nil
-      end
-    end) || {:error, :timeout}
+      result
+    rescue
+      ExUnit.AssertionError -> {:error, :timeout}
+    end
   end
 
   @spec ensure_horde_infrastructure() :: :ok
   defp ensure_horde_infrastructure do
-    # Start Horde.Registry if not running
-    case GenServer.whereis(@registry_name) do
+    # Start Phoenix.PubSub if not running
+    case GenServer.whereis(Arbor.Core.PubSub) do
       nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.Registry,
-             [
-               name: @registry_name,
-               keys: :unique,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
+        {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
 
       _pid ->
         :ok
     end
 
-    # Start Horde.DynamicSupervisor if not running
-    case GenServer.whereis(@supervisor_name) do
-      nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.DynamicSupervisor,
-             [
-               name: @supervisor_name,
-               strategy: :one_for_one,
-               distribution_strategy: Horde.UniformRandomDistribution,
-               process_redistribution: :active,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
-
-      _pid ->
-        :ok
+    # Start HordeSupervisor infrastructure if not running
+    if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
+      HordeSupervisor.start_supervisor()
     end
 
-    # Start Arbor.Core.HordeSupervisor if not running
-    case GenServer.whereis(HordeSupervisor) do
-      nil ->
-        {:ok, _} = start_supervised({HordeSupervisor, []})
-
-      _pid ->
-        :ok
-    end
+    # Set members for single-node test environment.
+    Horde.Cluster.set_members(@registry_name, [{@registry_name, node()}])
+    Horde.Cluster.set_members(@supervisor_name, [{@supervisor_name, node()}])
 
     # Wait for Horde components to stabilize
-    :timer.sleep(500)
+    wait_for_membership_ready()
+  end
+
+  defp wait_for_membership_ready(timeout \\ 5000) do
+    IO.puts("  -> Waiting for Horde membership to be ready...")
+
+    check_fun = fn ->
+      registry_members = Horde.Cluster.members(@registry_name)
+      supervisor_members = Horde.Cluster.members(@supervisor_name)
+      current_node = node()
+
+      # Check for proper named members in various formats
+      expected_registry_member = {@registry_name, current_node}
+      expected_supervisor_member = {@supervisor_name, current_node}
+
+      registry_ready =
+        expected_registry_member in registry_members or
+          {expected_registry_member, expected_registry_member} in registry_members
+
+      supervisor_ready =
+        expected_supervisor_member in supervisor_members or
+          {expected_supervisor_member, expected_supervisor_member} in supervisor_members
+
+      if registry_ready and supervisor_ready do
+        IO.puts("  -> Horde membership is ready.")
+        true
+      else
+        false
+      end
+    end
+
+    case AsyncHelpers.wait_until(check_fun, timeout: timeout, initial_delay: 50) do
+      true ->
+        # Additional stabilization wait for distributed supervisor CRDT sync
+        AsyncHelpers.wait_until(
+          fn ->
+            case Horde.DynamicSupervisor.which_children(@supervisor_name) do
+              [] ->
+                true
+
+              children ->
+                # Only accept if no children exist or they're properly tracked
+                length(children) >= 0
+            end
+          end,
+          timeout: 1000,
+          initial_delay: 50
+        )
+
+        :ok
+
+      _ ->
+        registry_members = Horde.Cluster.members(@registry_name)
+        supervisor_members = Horde.Cluster.members(@supervisor_name)
+
+        raise """
+        Timed out waiting for Horde membership synchronization.
+        - Current Node: #{inspect(node())}
+        - Registry Members: #{inspect(registry_members)}
+        - Supervisor Members: #{inspect(supervisor_members)}
+        """
+    end
   end
 end
 

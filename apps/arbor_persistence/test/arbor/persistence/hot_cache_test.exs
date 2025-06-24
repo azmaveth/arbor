@@ -5,6 +5,7 @@ defmodule Arbor.Persistence.HotCacheTest do
 
   # Test ETS-based hot storage cache
   @moduletag cache: :ets
+  @moduletag :integration
 
   setup context do
     # Create unique table name for each test to avoid conflicts

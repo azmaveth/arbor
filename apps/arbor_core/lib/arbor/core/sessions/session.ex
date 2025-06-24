@@ -47,6 +47,7 @@ defmodule Arbor.Core.Sessions.Session do
   require Logger
 
   alias Arbor.Contracts.Core.{Capability, Message}
+  alias Arbor.Identifiers
   alias Arbor.Types
 
   @typedoc "Session state"
@@ -573,7 +574,7 @@ defmodule Arbor.Core.Sessions.Session do
 
   defp add_capability_permissions(capability, existing_permissions) do
     # Extract permissions from capability resource URI
-    case Types.parse_resource_uri(capability.resource_uri) do
+    case Identifiers.parse_resource_uri(capability.resource_uri) do
       {:ok, %{type: type, operation: operation, path: path}} ->
         permission = "#{type}:#{operation}:#{path}"
         MapSet.put(existing_permissions, permission)

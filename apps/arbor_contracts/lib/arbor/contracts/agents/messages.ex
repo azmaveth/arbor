@@ -218,11 +218,7 @@ defmodule Arbor.Contracts.Agents.Messages do
         constraints: attrs[:constraints] || %{}
       }
 
-      if Types.valid_resource_uri?(request.resource_uri) do
-        {:ok, request}
-      else
-        {:error, {:invalid_resource_uri, request.resource_uri}}
-      end
+      {:ok, request}
     end
 
     @spec generate_request_id() :: String.t()

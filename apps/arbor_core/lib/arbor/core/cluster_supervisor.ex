@@ -381,23 +381,6 @@ defmodule Arbor.Core.ClusterSupervisor do
     end
   end
 
-  defp get_supervisor_state() do
-    # For mock implementation, create a fresh state
-    # For Horde, this would be the actual supervisor state
-    impl = get_supervisor_impl()
-
-    case impl do
-      Arbor.Test.Mocks.LocalSupervisor ->
-        # Create a mock state for each call (stateless for unit tests)
-        {:ok, state} = impl.start_supervisor([])
-        state
-
-      _ ->
-        # For real implementation, this would reference the GenServer
-        nil
-    end
-  end
-
   defp validate_and_normalize_spec(agent_spec) do
     # Ensure required fields are present
     required_fields = [:id, :module, :args]

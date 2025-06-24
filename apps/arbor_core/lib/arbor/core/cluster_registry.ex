@@ -405,14 +405,14 @@ defmodule Arbor.Core.ClusterRegistry do
     # For production, use Horde registry
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.LocalRegistry
+        Arbor.Test.Mocks.LocalClusterRegistry
 
       :horde ->
         Arbor.Core.HordeRegistry
 
       :auto ->
         if Application.get_env(:arbor_core, :env) == :test do
-          Arbor.Test.Mocks.LocalRegistry
+          Arbor.Test.Mocks.LocalClusterRegistry
         else
           Arbor.Core.HordeRegistry
         end
@@ -425,7 +425,7 @@ defmodule Arbor.Core.ClusterRegistry do
     impl = get_registry_impl()
 
     case impl do
-      Arbor.Test.Mocks.LocalRegistry ->
+      Arbor.Test.Mocks.LocalClusterRegistry ->
         # Create a mock state for each call (stateless for unit tests)
         {:ok, state} = impl.start_registry([])
         state

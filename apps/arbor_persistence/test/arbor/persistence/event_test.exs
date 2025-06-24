@@ -1,5 +1,6 @@
 defmodule Arbor.Persistence.EventTest do
   use ExUnit.Case, async: true
+  @moduletag :fast
 
   alias Arbor.Contracts.Events.Event, as: ContractEvent
   alias Arbor.Persistence.Event

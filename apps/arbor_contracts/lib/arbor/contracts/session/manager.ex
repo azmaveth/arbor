@@ -349,7 +349,7 @@ defmodule Arbor.Contracts.Session.Manager do
   - `{:ok, state}` - Manager initialized
   - `{:error, reason}` - Initialization failed
   """
-  @callback init(opts :: keyword()) :: {:ok, state()} | {:error, term()}
+  @callback initialize_manager(opts :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
   Handle session expiration.
@@ -370,5 +370,5 @@ defmodule Arbor.Contracts.Session.Manager do
   Called when the manager is terminating. Should gracefully shutdown
   all sessions and clean up resources.
   """
-  @callback terminate(reason :: term(), state()) :: :ok
+  @callback shutdown_manager(reason :: term(), state()) :: :ok
 end

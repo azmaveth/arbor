@@ -58,7 +58,14 @@ defmodule Arbor.Core.Sessions.Manager do
   # Contract-compliant API (Adapter Pattern)
 
   @impl Arbor.Contracts.Session.Manager
-  def create_session(session_params, manager_pid) when is_pid(manager_pid) do
+  def create_session(session_params, manager) do
+    manager_pid =
+      case manager do
+        pid when is_pid(pid) -> pid
+        name when is_atom(name) -> Process.whereis(name) || name
+        other -> other
+      end
+
     case GenServer.call(manager_pid, {:create_session, session_params}) do
       {:ok, session_struct} ->
         {:ok, session_struct}
@@ -69,7 +76,14 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   @impl Arbor.Contracts.Session.Manager
-  def get_session(session_id, manager_pid) when is_pid(manager_pid) do
+  def get_session(session_id, manager) do
+    manager_pid =
+      case manager do
+        pid when is_pid(pid) -> pid
+        name when is_atom(name) -> Process.whereis(name) || name
+        other -> other
+      end
+
     case GenServer.call(manager_pid, {:get_session, session_id}) do
       {:ok, session_struct} ->
         {:ok, session_struct}
@@ -80,7 +94,14 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   @impl Arbor.Contracts.Session.Manager
-  def terminate_session(session_id, reason, manager_pid) when is_pid(manager_pid) do
+  def terminate_session(session_id, reason, manager) do
+    manager_pid =
+      case manager do
+        pid when is_pid(pid) -> pid
+        name when is_atom(name) -> Process.whereis(name) || name
+        other -> other
+      end
+
     case GenServer.call(manager_pid, {:terminate_session, session_id, reason}) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
@@ -141,6 +162,18 @@ defmodule Arbor.Core.Sessions.Manager do
     {:ok, 0}
   end
 
+  @impl Arbor.Contracts.Session.Manager
+  def initialize_manager(_opts) do
+    # Session Manager initialization is handled by GenServer.start_link/3
+    {:ok, %{}}
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  def shutdown_manager(_reason, _state) do
+    # Session Manager shutdown is handled by GenServer termination
+    :ok
+  end
+
   # Legacy Client API (for backward compatibility)
 
   @doc """
@@ -153,38 +186,6 @@ defmodule Arbor.Core.Sessions.Manager do
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  @doc """
-  Create a new session.
-
-  ## Parameters
-
-  - `opts` - Session creation options
-
-  ## Options
-
-  - `:metadata` - Arbitrary metadata about the session
-  - `:created_by` - Identifier of the entity creating the session
-  - `:timeout` - Session timeout in milliseconds (default: 1 hour)
-
-  ## Returns
-
-  - `{:ok, session_id, pid}` - Session created successfully
-  - `{:error, reason}` - Session creation failed
-
-  ## Examples
-
-      {:ok, session_id, pid} = Manager.create_session(
-        metadata: %{user_id: "user123", client_type: :cli},
-        created_by: "gateway",
-        timeout: 3_600_000  # 1 hour
-      )
-  """
-  @deprecated "Use create_session/2 instead"
-  @spec create_session(keyword()) :: {:ok, Types.session_id(), pid()} | {:error, term()}
-  def create_session(opts \\ []) do
-    GenServer.call(__MODULE__, {:create_session_legacy, opts})
   end
 
   @doc """
@@ -378,7 +379,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
   # Server implementation
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     Logger.info("Starting Arbor Session Manager", opts: opts)
 
@@ -395,6 +396,7 @@ defmodule Arbor.Core.Sessions.Manager do
        stats: %{
          total_created: 0,
          total_ended: 0,
+         sessions_created: 0,
          start_time: DateTime.utc_now()
        }
      }}
@@ -466,85 +468,6 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   # Legacy GenServer handlers
-  @impl true
-  def handle_call({:create_session_legacy, opts}, _from, state) do
-    session_id = Types.generate_session_id()
-    # 1 hour default
-    timeout = opts[:timeout] || 3_600_000
-
-    # Start session under cluster supervisor for distributed management
-    session_spec = %{
-      id: session_id,
-      module: Session,
-      args: [
-        session_id: session_id,
-        created_by: opts[:created_by],
-        metadata: opts[:metadata] || %{},
-        timeout: timeout
-      ],
-      metadata: %{
-        type: :session,
-        created_by: opts[:created_by],
-        client_metadata: opts[:metadata] || %{}
-      },
-      restart_strategy: :transient
-    }
-
-    case ClusterSupervisor.start_agent(session_spec) do
-      {:ok, pid} ->
-        # Store in ETS for fast lookups
-        session_metadata = %{
-          created_at: DateTime.utc_now(),
-          created_by: opts[:created_by],
-          timeout: timeout,
-          custom: opts[:metadata] || %{}
-        }
-
-        # Monitor for cleanup
-        ref = Process.monitor(pid)
-
-        # Track monitor ref for efficient DOWN handling
-        new_monitor_refs = Map.put(state.monitor_refs, ref, session_id)
-
-        # Update stats
-        new_stats = Map.update!(state.stats, :total_created, &(&1 + 1))
-
-        # Broadcast event
-        Phoenix.PubSub.broadcast(
-          Arbor.Core.PubSub,
-          "sessions",
-          {:session_created, session_id, session_metadata}
-        )
-
-        # Emit telemetry
-        :telemetry.execute(
-          [:arbor, :session, :created],
-          %{count: 1},
-          %{session_id: session_id, created_by: opts[:created_by]}
-        )
-
-        Logger.info("Session created",
-          session_id: session_id,
-          created_by: opts[:created_by],
-          metadata: opts[:metadata]
-        )
-
-        {:reply, {:ok, session_id, pid},
-         %{state | monitor_refs: new_monitor_refs, stats: new_stats}}
-
-      {:error, reason} ->
-        Logger.error("Failed to create session", reason: reason)
-
-        :telemetry.execute(
-          [:arbor, :session, :creation_failed],
-          %{count: 1},
-          %{reason: reason}
-        )
-
-        {:reply, {:error, reason}, state}
-    end
-  end
-
   @impl true
   def handle_call({:end_session, session_id}, _from, state) do
     case get_session(session_id) do
@@ -641,7 +564,7 @@ defmodule Arbor.Core.Sessions.Manager do
   # Private functions
 
   defp create_session_internal(opts, state) do
-    session_id = Types.generate_session_id()
+    session_id = Arbor.Identifiers.generate_session_id()
     timeout = opts[:timeout] || 3_600_000
 
     # Start session under cluster supervisor for distributed management
@@ -656,8 +579,12 @@ defmodule Arbor.Core.Sessions.Manager do
       ]
     }
 
-    case ClusterSupervisor.start_child(session_spec) do
+    case ClusterSupervisor.start_agent(session_spec) do
       {:ok, pid} ->
+        # Monitor the session process to handle termination
+        ref = Process.monitor(pid)
+        new_monitor_refs = Map.put(state.monitor_refs, ref, session_id)
+
         # Update session stats
         new_stats = Map.update!(state.stats, :sessions_created, &(&1 + 1))
 
@@ -670,7 +597,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
         Logger.info("Session created", session_id: session_id, pid: pid)
 
-        {:ok, session_id, pid, %{state | stats: new_stats}}
+        {:ok, session_id, pid, %{state | stats: new_stats, monitor_refs: new_monitor_refs}}
 
       {:error, reason} ->
         Logger.error("Failed to start session", session_id: session_id, reason: reason)
@@ -696,9 +623,9 @@ defmodule Arbor.Core.Sessions.Manager do
 
   defp end_session_internal(session_id, state) do
     case lookup_session_pid(session_id) do
-      {:ok, pid} ->
+      {:ok, _pid} ->
         # Stop the session process
-        case ClusterSupervisor.terminate_child(session_id) do
+        case ClusterSupervisor.stop_agent(session_id) do
           :ok ->
             Logger.info("Session ended", session_id: session_id)
             {:ok, state}
@@ -786,7 +713,7 @@ defmodule Arbor.Core.Sessions.Manager do
         Process.exit(pid, :kill)
       end
 
-      ClusterSupervisor.terminate_child(session_id)
+      ClusterSupervisor.stop_agent(session_id)
     rescue
       # Best effort cleanup
       _ -> :ok

@@ -51,11 +51,15 @@ defmodule Arbor.Core.HordeRegistry do
   def lookup_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
-    case Horde.Registry.lookup(@registry_name, agent_id) do
+    # Use select instead of lookup which doesn't exist in Horde v0.9.1
+    # Pattern ignores the registering PID (second element) and extracts the stored value
+    case Horde.Registry.select(@registry_name, [{{agent_id, :_, :"$1"}, [], [:"$1"]}]) do
       [] ->
         {:error, :not_registered}
 
-      [{_owner_pid, {pid, metadata}}] ->
+      [value] when is_tuple(value) and tuple_size(value) == 2 ->
+        {pid, metadata} = value
+
         if Process.alive?(pid) do
           {:ok, {pid, metadata}}
         else
@@ -377,23 +381,40 @@ defmodule Arbor.Core.HordeRegistry do
 
   @spec list_group_members(String.t()) :: {:ok, [String.t()]} | {:error, atom()}
   def list_group_members(group_name) do
-    case lookup_group(group_name) do
+    case lookup_group_with_agent_ids(group_name) do
       {:ok, members} ->
-        # Extract agent IDs from the members
-        agent_ids =
-          members
-          |> Enum.map(fn {pid, _metadata} ->
-            case find_agent_by_pid(pid) do
-              {:ok, agent_id} -> agent_id
-              _ -> nil
-            end
-          end)
-          |> Enum.reject(&is_nil/1)
-
+        # Extract agent IDs directly from the efficient lookup
+        agent_ids = Enum.map(members, fn {agent_id, _pid, _metadata} -> agent_id end)
         {:ok, agent_ids}
 
       error ->
         error
+    end
+  end
+
+  # Efficient internal function that preserves agent_id from registry keys
+  defp lookup_group_with_agent_ids(group_name) do
+    group_id = extract_group_id(group_name)
+
+    # Scan registry once and preserve agent_id from the key structure
+    all_entries =
+      Horde.Registry.select(@registry_name, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$3"}}]}])
+
+    members =
+      all_entries
+      |> Enum.filter(fn
+        {{:group, ^group_id, _agent_id}, _value} -> true
+        _ -> false
+      end)
+      |> Enum.map(fn {{:group, _group_id, agent_id}, {pid, metadata}} ->
+        # Return {agent_id, pid, metadata} - preserving all needed info
+        {agent_id, pid, metadata}
+      end)
+
+    if members == [] do
+      {:error, :group_not_found}
+    else
+      {:ok, members}
     end
   end
 
@@ -428,12 +449,14 @@ defmodule Arbor.Core.HordeRegistry do
   defp lookup_name_raw(name) do
     agent_id = extract_agent_id(name)
 
-    case Horde.Registry.lookup(@registry_name, agent_id) do
+    # Use select instead of lookup which doesn't exist in Horde v0.9.1
+    # Pattern ignores the registering PID (second element) and extracts the stored value
+    case Horde.Registry.select(@registry_name, [{{agent_id, :_, :"$1"}, [], [:"$1"]}]) do
       [] ->
         {:error, :not_registered}
 
-      [{_owner_pid, {pid, metadata}}] ->
-        {:ok, {pid, metadata}}
+      [value] when is_tuple(value) and tuple_size(value) == 2 ->
+        {:ok, value}
 
       _ ->
         {:error, :not_registered}
@@ -499,4 +522,28 @@ defmodule Arbor.Core.HordeRegistry do
     Horde.Cluster.set_members(@registry_name, new_members)
     :ok
   end
+
+  @doc """
+  List agent registrations matching a pattern.
+  """
+  @spec list_by_pattern(String.t(), any()) :: [{String.t(), pid(), map()}]
+  def list_by_pattern(pattern, _state) do
+    # Convert pattern to regex for flexible matching
+    regex_pattern =
+      ("^" <> String.replace(pattern, "*", ".*") <> "$")
+      |> Regex.compile!()
+
+    @registry_name
+    |> Horde.Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
+    |> Enum.filter(fn
+      {agent_id, pid, _metadata} when is_binary(agent_id) and is_pid(pid) ->
+        Regex.match?(regex_pattern, agent_id)
+
+      _ ->
+        false
+    end)
+    |> Enum.map(fn {agent_id, pid, metadata} -> {agent_id, pid, metadata} end)
+  end
+
+  # Private helper functions
 end

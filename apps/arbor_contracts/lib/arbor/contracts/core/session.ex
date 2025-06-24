@@ -42,6 +42,7 @@ defmodule Arbor.Contracts.Core.Session do
   use TypedStruct
 
   alias Arbor.Contracts.Core.Capability
+  alias Arbor.Identifiers
   alias Arbor.Types
 
   @derive {Jason.Encoder, except: [:capabilities]}
@@ -165,7 +166,7 @@ defmodule Arbor.Contracts.Core.Session do
 
   defp session_defaults(now, timeout) do
     [
-      id: Types.generate_session_id(),
+      id: Identifiers.generate_session_id(),
       status: :initializing,
       context: %{},
       capabilities: [],

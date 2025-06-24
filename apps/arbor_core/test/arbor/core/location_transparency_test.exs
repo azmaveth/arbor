@@ -1,10 +1,21 @@
 defmodule Arbor.Core.LocationTransparencyTest do
   use ExUnit.Case, async: false
 
+  @moduletag :integration
+
   alias Arbor.Core.{Gateway, ClusterRegistry, ClusterSupervisor}
   alias Arbor.Core.Sessions.Manager, as: SessionManager
 
   setup_all do
+    # Ensure Phoenix.PubSub is running
+    case GenServer.whereis(Arbor.Core.PubSub) do
+      nil ->
+        {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
+
+      _pid ->
+        :ok
+    end
+
     # Ensure we're using the distributed implementations (mock for tests)
     Application.put_env(:arbor_core, :registry_impl, :mock)
     Application.put_env(:arbor_core, :supervisor_impl, :mock)
@@ -15,7 +26,7 @@ defmodule Arbor.Core.LocationTransparencyTest do
       pid -> GenServer.stop(pid, :normal, 100)
     end
 
-    case Process.whereis(Arbor.Test.Mocks.LocalRegistry) do
+    case Process.whereis(Arbor.Test.Mocks.LocalClusterRegistry) do
       nil -> :ok
       pid -> GenServer.stop(pid, :normal, 100)
     end
@@ -32,8 +43,45 @@ defmodule Arbor.Core.LocationTransparencyTest do
 
     # Start fresh instances
     {:ok, _registry} = Registry.start_link(keys: :unique, name: Arbor.Core.Registry)
-    {:ok, _mock_registry} = Arbor.Test.Mocks.LocalRegistry.start_link()
+    {:ok, _mock_registry} = Arbor.Test.Mocks.LocalClusterRegistry.start_link()
     {:ok, _mock_supervisor} = Arbor.Test.Mocks.LocalSupervisor.start_link()
+
+    # Ensure Gateway is running
+    case GenServer.whereis(Arbor.Core.Gateway) do
+      nil ->
+        {:ok, _gateway} = start_supervised(Arbor.Core.Gateway)
+
+      _pid ->
+        :ok
+    end
+
+    # Ensure TaskSupervisor is running for async execution
+    case Process.whereis(Arbor.TaskSupervisor) do
+      nil ->
+        {:ok, _} = start_supervised({Task.Supervisor, name: Arbor.TaskSupervisor})
+
+      _pid ->
+        :ok
+    end
+
+    # Ensure SessionRegistry is running
+    case Process.whereis(Arbor.Core.Sessions.SessionRegistry) do
+      nil ->
+        {:ok, _} =
+          start_supervised({Registry, keys: :unique, name: Arbor.Core.Sessions.SessionRegistry})
+
+      _pid ->
+        :ok
+    end
+
+    # Ensure Sessions.Manager is running
+    case GenServer.whereis(Arbor.Core.Sessions.Manager) do
+      nil ->
+        {:ok, _} = start_supervised(Arbor.Core.Sessions.Manager)
+
+      _pid ->
+        :ok
+    end
 
     on_exit(fn ->
       # Reset configuration first
@@ -46,8 +94,8 @@ defmodule Arbor.Core.LocationTransparencyTest do
 
   setup do
     # Clean state before each test
-    if Process.whereis(Arbor.Test.Mocks.LocalRegistry) do
-      Arbor.Test.Mocks.LocalRegistry.clear()
+    if Process.whereis(Arbor.Test.Mocks.LocalClusterRegistry) do
+      Arbor.Test.Mocks.LocalClusterRegistry.clear()
     end
 
     if Process.whereis(Arbor.Test.Mocks.LocalSupervisor) do
@@ -77,7 +125,8 @@ defmodule Arbor.Core.LocationTransparencyTest do
       assert metadata.type == :tool_executor
 
       # Gateway should be able to query agents
-      {:ok, session_id} = Gateway.create_session(metadata: %{client_type: :test})
+      {:ok, session_info} = Gateway.create_session(metadata: %{client_type: :test})
+      session_id = session_info.session_id
 
       # Subscribe to execution events to get the result
       Gateway.subscribe_session(session_id)
@@ -85,7 +134,7 @@ defmodule Arbor.Core.LocationTransparencyTest do
       # This should use the distributed registry
       {:async, execution_id} =
         Gateway.execute(session_id, "query_agents", %{
-          filter: %{type: :tool_executor}
+          filter: "type:tool_executor"
         })
 
       # Wait for the execution result
@@ -112,8 +161,14 @@ defmodule Arbor.Core.LocationTransparencyTest do
 
     test "sessions can manage distributed agents" do
       # Create a session
-      {:ok, session_id, _session_pid} =
-        SessionManager.create_session(metadata: %{client_type: :test})
+      session_params = %{
+        user_id: "test_user",
+        purpose: "Location transparency test",
+        context: %{client_type: :test}
+      }
+
+      {:ok, session_struct} = SessionManager.create_session(session_params, SessionManager)
+      session_id = session_struct.id
 
       # Get the session process
       {:ok, session_pid, _metadata} = SessionManager.get_session(session_id)

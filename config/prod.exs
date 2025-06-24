@@ -92,9 +92,17 @@ end
 config :arbor_core,
   registry_impl: :horde,
   supervisor_impl: :horde,
-  coordinator_impl: :horde
+  coordinator_impl: :horde,
 
-# Configure robust agent retries for production
-config :arbor_core, :agent_retry,
-  retries: 3,
-  initial_delay: 250
+  # Distributed system timing configuration for production
+  # Tuned for stable, reliable operation over networks with variable latency
+  agent_retry: [
+    # More retries for network resilience in production
+    retries: 5,
+    # Longer initial delay for network stability
+    initial_delay: 500
+  ],
+  horde_timing: [
+    # Conservative sync interval for production stability
+    sync_interval: 200
+  ]

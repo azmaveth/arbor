@@ -1,4 +1,6 @@
 defmodule Arbor.Core.ClusterCoordinatorTest do
+  alias Arbor.Test.Support.AsyncHelpers
+
   @moduledoc """
   Unit tests for cluster coordination logic using local mocks.
 
@@ -15,6 +17,8 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
 
   use ExUnit.Case, async: true
 
+  @moduletag :fast
+
   alias Arbor.Core.ClusterCoordinator
   alias Arbor.Test.Mocks.LocalCoordinator
 
@@ -23,20 +27,31 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
     # Replace with Horde-based coordination for distributed operation
 
     # Stop any existing coordinator
-    case Process.whereis(LocalCoordinator) do
-      nil ->
-        :ok
+    existing_pid =
+      case Process.whereis(LocalCoordinator) do
+        nil ->
+          nil
 
-      pid ->
-        try do
-          GenServer.stop(pid)
-        catch
-          :exit, _ -> :ok
-        end
+        pid ->
+          try do
+            GenServer.stop(pid)
+            pid
+          catch
+            :exit, _ -> nil
+          end
+      end
+
+    # Give a moment for cleanup if we had a process to stop
+    if existing_pid do
+      AsyncHelpers.wait_until(
+        fn ->
+          # Verify process is stopped
+          not Process.alive?(existing_pid)
+        end,
+        timeout: 100,
+        initial_delay: 10
+      )
     end
-
-    # Give a moment for cleanup
-    :timer.sleep(10)
 
     # Start fresh coordinator for this test
     {:ok, _pid} = LocalCoordinator.start_link([])

@@ -123,11 +123,13 @@ defmodule Arbor.Contracts.Validation do
       validation_enabled: is_enabled?()
     )
 
-    # Emit telemetry event for monitoring
-    :telemetry.execute(
-      [:arbor, :contracts, :validation, :failed],
-      %{count: 1},
-      %{reason: reason, schema: inspect(schema, limit: 50)}
-    )
+    # Emit telemetry event for monitoring (only if telemetry is available)
+    if Code.ensure_loaded?(:telemetry) do
+      :telemetry.execute(
+        [:arbor, :contracts, :validation, :failed],
+        %{count: 1},
+        %{reason: reason, schema: inspect(schema, limit: 50)}
+      )
+    end
   end
 end

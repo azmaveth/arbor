@@ -7,6 +7,7 @@ defmodule Arbor.Persistence.StoreTest do
 
   # Use in-memory mock for unit testing
   @moduletag persistence: :mock
+  @moduletag :fast
 
   setup do
     # MOCK: Use in-memory implementation for unit tests

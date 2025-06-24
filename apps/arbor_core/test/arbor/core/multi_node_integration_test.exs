@@ -16,11 +16,11 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-  @moduletag :multi_node
+  @moduletag :distributed
   @moduletag timeout: 60_000
 
-  alias Arbor.Core.{HordeSupervisor, AgentReconciler, MultiNodeTestHelper}
+  alias Arbor.Core.{HordeSupervisor, MultiNodeTestHelper}
+  alias Arbor.Test.Support.AsyncHelpers
 
   setup_all do
     # Only run if multi-node testing is explicitly enabled
@@ -43,8 +43,23 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
     # Verify cluster health
     :ok = MultiNodeTestHelper.verify_cluster_health(nodes)
 
-    # Wait for Horde components to synchronize
-    :timer.sleep(2000)
+    # Wait for Horde components to synchronize across cluster
+    AsyncHelpers.wait_until(
+      fn ->
+        # Verify all nodes have Horde components running and synchronized
+        Enum.all?(nodes, fn node ->
+          registry_running =
+            :rpc.call(node, Process, :whereis, [Arbor.Core.HordeAgentRegistry]) != :undefined
+
+          supervisor_running =
+            :rpc.call(node, Process, :whereis, [Arbor.Core.HordeAgentSupervisor]) != :undefined
+
+          registry_running and supervisor_running
+        end)
+      end,
+      timeout: 5000,
+      initial_delay: 200
+    )
 
     on_exit(fn ->
       MultiNodeTestHelper.stop_cluster(nodes)
@@ -54,6 +69,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
   end
 
   describe "agent specification persistence" do
+    @tag :distributed
     test "agent specs persist and reconcile across node failures", %{nodes: [node1, node2, node3]} do
       agent_id = "test-multi-node-persistence-#{System.unique_integer([:positive])}"
 
@@ -101,6 +117,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
       HordeSupervisor.stop_agent(agent_id)
     end
 
+    @tag :distributed
     test "multiple agents redistribute after node failure", %{nodes: [node1, node2, node3]} do
       # Start multiple agents across the cluster
       agent_count = 6
@@ -129,7 +146,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
       initial_distribution = Enum.group_by(agent_ids, &MultiNodeTestHelper.get_agent_node/1)
 
       # Find a node that has agents and kill it
-      {killed_node, agents_on_killed_node} =
+      {killed_node, _agents_on_killed_node} =
         Enum.find(initial_distribution, fn {_node, agents} -> length(agents) > 0 end)
 
       MultiNodeTestHelper.kill_node(killed_node)
@@ -160,6 +177,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
   end
 
   describe "network partition resilience" do
+    @tag :distributed
     test "cluster handles network partitions gracefully", %{nodes: [node1, node2, node3]} do
       agent_id = "test-partition-resilience-#{System.unique_integer([:positive])}"
 
@@ -176,8 +194,21 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
       # Create a partition by isolating node1
       MultiNodeTestHelper.partition_node(node1)
 
-      # Wait for partition to take effect
-      :timer.sleep(3000)
+      # Wait for partition to take effect - verify node is isolated
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check that node1 is disconnected from other nodes
+          connected_to_node1 = :rpc.call(node1, Node, :list, [])
+
+          case connected_to_node1 do
+            # Node is unreachable
+            {:badrpc, _} -> true
+            connected_nodes -> not Enum.any?([node2, node3], &(&1 in connected_nodes))
+          end
+        end,
+        timeout: 5000,
+        initial_delay: 200
+      )
 
       # Agent should still be accessible from the majority partition (node2, node3)
       # Note: This test assumes agent is not on the partitioned node
@@ -186,8 +217,25 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
       # Heal the partition
       MultiNodeTestHelper.heal_partition(node1)
 
-      # Wait for cluster to reconverge
-      :timer.sleep(3000)
+      # Wait for cluster to reconverge - verify all nodes can see each other
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check that all nodes are reconnected
+          Enum.all?([node1, node2, node3], fn node ->
+            case :rpc.call(node, Node, :list, []) do
+              {:badrpc, _} ->
+                false
+
+              connected_nodes ->
+                # Each node should see the other two nodes
+                other_nodes = [node1, node2, node3] -- [node]
+                Enum.all?(other_nodes, &(&1 in connected_nodes))
+            end
+          end)
+        end,
+        timeout: 8000,
+        initial_delay: 300
+      )
 
       # Verify cluster health after partition healing
       :ok = MultiNodeTestHelper.verify_cluster_health([node1, node2, node3])
@@ -202,6 +250,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
   end
 
   describe "reconciler behavior under stress" do
+    @tag :distributed
     test "reconciler handles rapid node failures", %{nodes: [node1, node2, node3]} do
       # This test validates that the reconciler can handle
       # multiple rapid failures without getting overwhelmed
@@ -231,7 +280,17 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
 
       # Kill two nodes in rapid succession
       MultiNodeTestHelper.kill_node(node1)
-      :timer.sleep(1000)
+
+      # Wait briefly for first node death to propagate
+      AsyncHelpers.wait_until(
+        fn ->
+          node1 not in Node.list() and
+            :rpc.call(node1, :erlang, :node, []) == {:badrpc, :nodedown}
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
+
       MultiNodeTestHelper.kill_node(node2)
 
       # All agents should eventually be running on node3

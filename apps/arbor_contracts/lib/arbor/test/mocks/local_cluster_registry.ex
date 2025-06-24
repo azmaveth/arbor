@@ -1,4 +1,4 @@
-defmodule Arbor.Test.Mocks.LocalRegistry do
+defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   @moduledoc """
   TEST MOCK - DO NOT USE IN PRODUCTION
 
@@ -17,16 +17,16 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
 
       defmodule MyTest do
         use ExUnit.Case
-        alias Arbor.Test.Mocks.LocalRegistry
+        alias Arbor.Test.Mocks.LocalClusterRegistry
 
         setup do
-          {:ok, registry} = LocalRegistry.init(name: :test_registry)
+          {:ok, registry} = LocalClusterRegistry.init(name: :test_registry)
           {:ok, registry: registry}
         end
 
         test "register and lookup process", %{registry: registry} do
-          :ok = LocalRegistry.register_name(:my_process, self(), %{}, registry)
-          {:ok, {pid, meta}} = LocalRegistry.lookup_name(:my_process, registry)
+          :ok = LocalClusterRegistry.register_name(:my_process, self(), %{}, registry)
+          {:ok, {pid, meta}} = LocalClusterRegistry.lookup_name(:my_process, registry)
           assert pid == self()
         end
       end
@@ -36,10 +36,10 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
   The mock can simulate network partitions and node failures:
 
       # Simulate node going down
-      LocalRegistry.simulate_node_down(:node1@host, registry)
+      LocalClusterRegistry.simulate_node_down(:node1@host, registry)
 
       # Simulate network partition
-      LocalRegistry.simulate_partition([:node1@host], [:node2@host], registry)
+      LocalClusterRegistry.simulate_partition([:node1@host], [:node2@host], registry)
 
   @warning This is a TEST MOCK - not distributed!
   """
@@ -391,6 +391,92 @@ defmodule Arbor.Test.Mocks.LocalRegistry do
           fn {_, pid, meta, _} -> {pid, meta} end
         )
     }
+  end
+
+  # Missing methods required by ClusterRegistry and ClusterManager
+
+  @doc "Register agent in group (3-arity version)"
+  @spec register_group(atom(), pid(), map()) :: :ok | {:error, term()}
+  def register_group(group_name, agent_id, state) do
+    # Use the existing 4-arity version with default state
+    register_group(group_name, agent_id, %{}, state)
+  end
+
+  @doc "List all members of a group"
+  @spec list_group_members(atom()) :: {:ok, [term()]} | {:error, term()}
+  def list_group_members(group_name) do
+    # Get state from the running process or use default
+    {:ok, state} = start_registry([])
+
+    case lookup_group(group_name, state) do
+      {:ok, members} ->
+        agent_ids =
+          Enum.map(members, fn {_pid, metadata} ->
+            Map.get(metadata, :agent_id, :unknown)
+          end)
+
+        {:ok, agent_ids}
+
+      {:error, :group_not_found} ->
+        {:ok, []}
+    end
+  end
+
+  @doc "List agents matching a pattern"
+  @spec list_by_pattern(String.t(), state()) :: {:ok, [{term(), pid(), map()}]}
+  def list_by_pattern(pattern, state) do
+    # Convert string pattern to Elixir pattern matching
+    # For simplicity, treat "*" as wildcard for now
+    all_names = :ets.tab2list(state.names_table)
+
+    filtered =
+      case pattern do
+        "*" <> _rest ->
+          # Wildcard pattern - return all agents
+          all_names
+          |> Enum.filter(fn {name, _pid, _meta, _ref} ->
+            case name do
+              {:agent, _id} -> true
+              _ -> false
+            end
+          end)
+          |> Enum.map(fn {{:agent, id}, pid, meta, _ref} -> {id, pid, meta} end)
+
+        exact_pattern ->
+          # Exact match
+          case :ets.lookup(state.names_table, {:agent, exact_pattern}) do
+            [{_, pid, meta, _ref}] -> [{exact_pattern, pid, meta}]
+            [] -> []
+          end
+      end
+
+    {:ok, filtered}
+  end
+
+  @doc "Get registry status for cluster manager"
+  @spec get_registry_status() :: {:ok, map()}
+  def get_registry_status() do
+    {:ok,
+     %{
+       status: :healthy,
+       members: [node()],
+       count: 0,
+       sync_status: :synchronized
+     }}
+  end
+
+  @doc "Join registry cluster (mock - no-op for single node)"
+  @spec join_registry(node()) :: :ok | {:error, term()}
+  def join_registry(_node) do
+    # Mock implementation - always succeeds
+    :ok
+  end
+
+  @doc "Leave registry cluster (mock - no-op for single node)"
+  @spec leave_registry(node()) :: :ok | {:error, term()}
+  def leave_registry(_node) do
+    # Mock implementation - always succeeds
+    :ok
   end
 
   # Private functions

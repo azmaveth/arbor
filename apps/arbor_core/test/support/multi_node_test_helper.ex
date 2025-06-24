@@ -8,6 +8,8 @@ defmodule Arbor.Core.MultiNodeTestHelper do
 
   require Logger
 
+  alias Arbor.Test.Support.AsyncHelpers
+
   @type node_config :: %{
           name: atom(),
           apps: [atom()],
@@ -39,8 +41,24 @@ defmodule Arbor.Core.MultiNodeTestHelper do
     # Start each node in the cluster
     nodes = Enum.map(node_configs, &start_node/1)
 
-    # Wait for nodes to connect
-    :timer.sleep(1000)
+    # Wait for nodes to connect to each other
+    AsyncHelpers.wait_until(
+      fn ->
+        # Check if all nodes can see each other
+        Enum.all?(nodes, fn node ->
+          case :rpc.call(node, Node, :list, []) do
+            {:badrpc, _} ->
+              false
+
+            connected_nodes when is_list(connected_nodes) ->
+              expected_peers = nodes -- [node]
+              Enum.all?(expected_peers, &(&1 in connected_nodes))
+          end
+        end)
+      end,
+      timeout: 5000,
+      initial_delay: 200
+    )
 
     # Verify all nodes can see each other
     Enum.each(nodes, fn node ->
@@ -79,7 +97,16 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   def kill_node(node) do
     Logger.info("Killing node #{node}")
     :rpc.call(node, :erlang, :halt, [])
-    :timer.sleep(500)
+
+    # Wait for node to actually die
+    AsyncHelpers.wait_until(
+      fn ->
+        node not in Node.list() and :rpc.call(node, :erlang, :node, []) == {:badrpc, :nodedown}
+      end,
+      timeout: 3000,
+      initial_delay: 100
+    )
+
     :ok
   end
 
@@ -97,7 +124,19 @@ defmodule Arbor.Core.MultiNodeTestHelper do
       :rpc.call(other_node, Node, :disconnect, [node])
     end)
 
-    :timer.sleep(100)
+    # Wait for partition to take effect
+    AsyncHelpers.wait_until(
+      fn ->
+        # Verify node is disconnected from others
+        case :rpc.call(node, Node, :list, []) do
+          {:badrpc, _} -> true
+          connected_nodes -> not Enum.any?(other_nodes, &(&1 in connected_nodes))
+        end
+      end,
+      timeout: 2000,
+      initial_delay: 50
+    )
+
     :ok
   end
 
@@ -114,7 +153,18 @@ defmodule Arbor.Core.MultiNodeTestHelper do
       :rpc.call(node, Node, :connect, [other_node])
     end)
 
-    :timer.sleep(1000)
+    # Wait for partition to heal - verify node can see others again
+    AsyncHelpers.wait_until(
+      fn ->
+        case :rpc.call(node, Node, :list, []) do
+          {:badrpc, _} -> false
+          connected_nodes -> Enum.all?(other_nodes, &(&1 in connected_nodes))
+        end
+      end,
+      timeout: 5000,
+      initial_delay: 200
+    )
+
     :ok
   end
 
@@ -214,7 +264,7 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   end
 
   defp start_node_process(node_name, host) do
-    # Try modern :peer first (OTP 25+)
+    # Use modern :peer (OTP 25+)
     case Code.ensure_loaded(:peer) do
       {:module, :peer} ->
         # :peer.start returns {:ok, pid, node} in OTP 25+
@@ -224,8 +274,7 @@ defmodule Arbor.Core.MultiNodeTestHelper do
         end
 
       {:error, :nofile} ->
-        # Fallback to :slave for older OTP versions
-        :slave.start(String.to_charlist(host), String.to_atom(node_name))
+        {:error, :peer_not_available}
     end
   end
 
@@ -237,11 +286,21 @@ defmodule Arbor.Core.MultiNodeTestHelper do
         # :peer.stop requires the peer connection, not just the node
         # For now, we'll use a simple approach
         :rpc.call(node, :init, :stop, [])
-        :timer.sleep(500)
+
+        # Wait for node to stop
+        AsyncHelpers.wait_until(
+          fn ->
+            node not in Node.list() and
+              :rpc.call(node, :erlang, :node, []) == {:badrpc, :nodedown}
+          end,
+          timeout: 3000,
+          initial_delay: 100
+        )
+
         :ok
 
       {:error, :nofile} ->
-        :slave.stop(node)
+        {:error, :peer_not_available}
     end
   end
 
@@ -275,22 +334,25 @@ defmodule Arbor.Core.MultiNodeTestHelper do
     end
   end
 
-  defp wait_for_agent_distribution_loop(nodes, agent_ids, deadline) do
-    if System.monotonic_time(:millisecond) > deadline do
-      raise "Timeout waiting for agent distribution"
-    end
+  defp wait_for_agent_distribution_loop(_nodes, agent_ids, deadline) do
+    timeout = deadline - System.monotonic_time(:millisecond)
 
-    # Check if all agents are running somewhere in the cluster
-    all_distributed =
-      Enum.all?(agent_ids, fn agent_id ->
-        get_agent_node(agent_id) != nil
-      end)
+    # Use AsyncHelpers for exponential backoff
+    try do
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check if all agents are running somewhere in the cluster
+          Enum.all?(agent_ids, fn agent_id ->
+            get_agent_node(agent_id) != nil
+          end)
+        end,
+        timeout: max(timeout, 100),
+        initial_delay: 100
+      )
 
-    if all_distributed do
       :ok
-    else
-      :timer.sleep(200)
-      wait_for_agent_distribution_loop(nodes, agent_ids, deadline)
+    rescue
+      e in ExUnit.AssertionError -> reraise e, __STACKTRACE__
     end
   end
 end

@@ -9,5 +9,5 @@
     "_build/",
     "deps/"
   ],
-  "minimum_coverage": 25
+  "minimum_coverage": 80
 }

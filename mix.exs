@@ -5,6 +5,7 @@ defmodule Arbor.MixProject do
     [
       name: "Arbor",
       apps_path: "apps",
+      apps: [:arbor_contracts, :arbor_security, :arbor_persistence, :arbor_core, :arbor_cli],
       version: "0.1.0",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -13,13 +14,38 @@ defmodule Arbor.MixProject do
       test_coverage: [tool: ExCoveralls],
       docs: docs(),
       preferred_cli_env: [
+        # Coverage tools
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.post": :test,
         "coveralls.html": :test,
         "coveralls.json": :test,
+
+        # Test execution tiers
+        "test.fast": :test,
+        "test.contract": :test,
+        "test.integration": :test,
+        "test.distributed": :test,
+        "test.chaos": :test,
+
+        # Combined test suites
+        "test.unit": :test,
+        "test.ci": :test,
         "test.all": :test,
-        "test.ci": :test
+
+        # Development and coverage
+        "test.watch": :test,
+        "test.cover": :test,
+        "test.coverage.full": :test,
+
+        # CI/CD
+        "test.ci.fast": :test,
+        "test.ci.full": :test,
+        "test.dist": :test,
+
+        # Future implementations
+        "test.perf": :test,
+        "test.security": :test
       ]
     ]
   end
@@ -50,9 +76,51 @@ defmodule Arbor.MixProject do
   # Mix aliases for common tasks
   defp aliases do
     [
+      # Project setup
       setup: ["deps.get", "deps.compile", "compile"],
-      "test.all": ["test --cover", "credo --strict", "dialyzer"],
-      "test.ci": ["test --cover --export-coverage default", "credo --strict"],
+
+      # Test execution tiers (by speed and scope)
+      # <2 min - unit tests with mocks
+      "test.fast": ["test --only fast"],
+      # ~3 min - interface boundary tests
+      "test.contract": ["test --only contract"],
+      # ~8 min - single-node e2e tests
+      "test.integration": ["test --only integration"],
+      # ~15 min - multi-node cluster tests
+      "test.distributed": ["test --only distributed"],
+      # ~30 min - fault injection tests
+      "test.chaos": ["test --only chaos"],
+
+      # Combined test suites
+      # fast + contract
+      "test.unit": ["test --exclude integration,distributed,chaos"],
+      # everything except expensive tests
+      "test.ci": ["test --exclude distributed,chaos"],
+      # everything (use with caution)
+      "test.all": ["test"],
+
+      # Development workflow
+      # watch mode for development
+      "test.watch": ["test --only fast --listen-on-stdin"],
+
+      # Quality and coverage
+      # coverage without slow tests
+      "test.cover": ["test --cover --exclude distributed,chaos"],
+      # full coverage including slow tests
+      "test.coverage.full": ["test --cover"],
+
+      # CI/CD specific
+      "test.ci.fast": ["test --exclude integration,distributed,chaos", "credo --strict"],
+      "test.ci.full": ["test --cover --export-coverage default", "credo --strict", "dialyzer"],
+
+      # Distributed testing (requires special setup)
+      "test.dist": ["test --cover --export-coverage distributed --only distributed"],
+
+      # Performance and security (placeholders for future implementation)
+      "test.perf": ["run -e \"IO.puts('Performance tests not implemented yet')\""],
+      "test.security": ["run -e \"IO.puts('Security tests not implemented yet')\""],
+
+      # Code quality
       docs: ["docs"],
       quality: ["format", "credo --strict", "dialyzer"]
     ]

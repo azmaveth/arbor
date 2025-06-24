@@ -18,12 +18,10 @@ defmodule Arbor.Core.HordeCoordinator do
   use GenServer
   require Logger
 
-  alias Arbor.Core.{HordeRegistry, HordeSupervisor, ClusterHealth}
+  alias Arbor.Core.ClusterHealth
 
   # Coordination state stored in CRDT
   @coordination_registry Arbor.Core.HordeCoordinationRegistry
-  @coordination_topic "arbor:coordination"
-  @pubsub_name Arbor.Core.PubSub
 
   defstruct [
     :node_id,

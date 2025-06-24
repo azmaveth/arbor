@@ -475,3 +475,9 @@ Current schemas in `Arbor.Contracts.Gateway.ValidationSchemas`:
 
 - Before writing or editing code, use zen to analyze it, get consensus on it, and plan it.
 - Follow contract-first architecture - create the contract before the implementation.
+
+## Tool Usage Guidelines
+
+- **When to Use Aider**: 
+  - When writing code that is expected to be longer than the prompt it will take to write it. 
+  - If the prompt sent to aider will be longer than the code changes themselves, make the changes directly.

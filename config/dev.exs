@@ -58,3 +58,17 @@ if System.get_env("RELEASE_MODE") do
     inet_dist_listen_min: 9100,
     inet_dist_listen_max: 9200
 end
+
+# Configure Arbor Core timing parameters for development
+# Uncomment and adjust these values if you need different timing behavior:
+#
+# config :arbor_core,
+#   # Agent registration retry configuration
+#   agent_retry: [
+#     retries: 3,          # Default: 3 - Increase for unreliable networks
+#     initial_delay: 250   # Default: 250ms - Decrease for faster local development
+#   ],
+#   # Horde CRDT synchronization configuration  
+#   horde_timing: [
+#     sync_interval: 100   # Default: 100ms - Minimum recommended, increase for slower networks
+#   ]

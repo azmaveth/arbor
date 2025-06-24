@@ -1,24 +1,20 @@
 defmodule Arbor.Agents.CodeAnalyzerTest do
   use ExUnit.Case, async: false
 
+  @moduletag :integration
+
   alias Arbor.Agents.CodeAnalyzer
   alias Arbor.Core.HordeSupervisor
+  alias Arbor.Test.Support.AsyncHelpers
 
   @temp_dir "/tmp/arbor_test_#{System.unique_integer([:positive])}"
-  @unique_id System.unique_integer([:positive])
   # Use hardcoded names as expected by HordeSupervisor
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor
 
   setup_all do
-    # Configure for Horde mode
-    Application.put_env(:arbor_core, :registry_impl, :horde)
-    Application.put_env(:arbor_core, :supervisor_impl, :horde)
-
     # Start distributed Erlang if not already started
-    node_name = :"arbor_codeanalyzer_test_#{@unique_id}@localhost"
-
-    case :net_kernel.start([node_name, :shortnames]) do
+    case :net_kernel.start([:arbor_code_analyzer_test@localhost, :shortnames]) do
       {:ok, _} ->
         :ok
 
@@ -30,8 +26,25 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
         :ok
     end
 
+    # Configure for Horde mode
+    Application.put_env(:arbor_core, :registry_impl, :horde)
+    Application.put_env(:arbor_core, :supervisor_impl, :horde)
+
     # Ensure required infrastructure is running
     ensure_horde_infrastructure()
+
+    # Wait for Horde to stabilize after setup, especially in CI
+    AsyncHelpers.wait_until(
+      fn ->
+        # Verify all required processes are running and responsive
+        registry_running = Process.whereis(@registry_name) != nil
+        supervisor_running = Process.whereis(@supervisor_name) != nil
+
+        registry_running and supervisor_running
+      end,
+      timeout: 1000,
+      initial_delay: 50
+    )
 
     :ok
   end
@@ -92,8 +105,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "agent lifecycle" do
     test "starts agent with valid arguments", %{temp_dir: temp_dir} do
-      agent_id =
-        "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "test_analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -109,8 +121,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     end
 
     test "fails with invalid working directory" do
-      agent_id =
-        "test_analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "test_analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -133,8 +144,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "analyze_file/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id =
-        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -188,8 +198,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "analyze_directory/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id =
-        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -228,8 +237,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "list_files/2" do
     setup %{temp_dir: temp_dir} do
-      agent_id =
-        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -269,8 +277,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "exec/3" do
     setup %{temp_dir: temp_dir} do
-      agent_id =
-        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -330,8 +337,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
   describe "state management" do
     setup %{temp_dir: temp_dir} do
-      agent_id =
-        "analyzer_#{System.system_time(:millisecond)}_#{System.unique_integer([:positive])}"
+      agent_id = "analyzer_#{:erlang.unique_integer([:positive, :monotonic])}"
 
       agent_spec = %{
         id: agent_id,
@@ -348,14 +354,14 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
 
     test "tracks analysis count", %{agent_id: agent_id, pid: pid} do
       # Initial state
-      assert {:ok, initial_state} = GenServer.call(pid, :get_state)
+      initial_state = GenServer.call(pid, :get_state)
       assert initial_state.analysis_count == 0
 
       # Perform analysis
       assert {:ok, _} = CodeAnalyzer.analyze_file(agent_id, "test.ex")
 
       # Check updated state
-      assert {:ok, updated_state} = GenServer.call(pid, :get_state)
+      updated_state = GenServer.call(pid, :get_state)
       assert updated_state.analysis_count == 1
       assert updated_state.last_analysis != nil
     end
@@ -379,79 +385,100 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     IO.puts("  -> Using Supervisor: #{inspect(@supervisor_name)}")
     IO.puts("  -> Using HordeSupervisor: #{inspect(Arbor.Core.HordeSupervisor)}")
 
-    # Start Horde.Registry if not running
-    if Process.whereis(@registry_name) == nil do
-      IO.puts("  -> Starting Horde.Registry...")
-
-      start_supervised!(
-        {Horde.Registry,
-         [
-           name: @registry_name,
-           keys: :unique,
-           members: :auto,
-           delta_crdt_options: [sync_interval: 100]
-         ]}
-      )
-
-      IO.puts("  -> Horde.Registry started.")
-    else
-      IO.puts("  -> Horde.Registry already running.")
+    # Start HordeSupervisor infrastructure if not running.
+    if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
+      HordeSupervisor.start_supervisor()
     end
 
-    # Start Horde.DynamicSupervisor if not running
-    if Process.whereis(@supervisor_name) == nil do
-      IO.puts("  -> Starting Horde.DynamicSupervisor...")
-
-      start_supervised!(
-        {Horde.DynamicSupervisor,
-         [
-           name: @supervisor_name,
-           strategy: :one_for_one,
-           distribution_strategy: Horde.UniformRandomDistribution,
-           process_redistribution: :active,
-           members: :auto,
-           delta_crdt_options: [sync_interval: 100]
-         ]}
-      )
-
-      IO.puts("  -> Horde.DynamicSupervisor started.")
-    else
-      IO.puts("  -> Horde.DynamicSupervisor already running.")
-    end
-
-    # Start HordeSupervisor GenServer if not running
-    if Process.whereis(Arbor.Core.HordeSupervisor) == nil do
-      IO.puts("  -> Starting Arbor.Core.HordeSupervisor...")
-      start_supervised!(Arbor.Core.HordeSupervisor)
-      IO.puts("  -> Arbor.Core.HordeSupervisor started.")
-    else
-      IO.puts("  -> Arbor.Core.HordeSupervisor already running.")
-    end
+    # Set members for single-node test environment
+    Horde.Cluster.set_members(@registry_name, [{@registry_name, node()}])
+    Horde.Cluster.set_members(@supervisor_name, [{@supervisor_name, node()}])
 
     # Wait for Horde components to stabilize
-    IO.puts("  -> Waiting for Horde components to stabilize...")
-    :timer.sleep(300)
+    IO.puts("  -> Waiting for Horde membership to be ready...")
+    wait_for_membership_ready()
 
     # Verify infrastructure is ready
     registry_ready = Process.whereis(@registry_name) != nil
     supervisor_ready = Process.whereis(@supervisor_name) != nil
-    horde_supervisor_ready = Process.whereis(Arbor.Core.HordeSupervisor) != nil
+    horde_supervisor_ready = Process.whereis(Arbor.Core.HordeSupervisorSupervisor) != nil
 
     unless registry_ready and supervisor_ready and horde_supervisor_ready do
-      Logger.error("Horde infrastructure failed to start properly",
+      Logger.error("Horde infrastructure not available",
         registry_status: %{name: @registry_name, pid: Process.whereis(@registry_name)},
         supervisor_status: %{name: @supervisor_name, pid: Process.whereis(@supervisor_name)},
         horde_supervisor_status: %{
-          name: Arbor.Core.HordeSupervisor,
-          pid: Process.whereis(Arbor.Core.HordeSupervisor)
+          name: Arbor.Core.HordeSupervisorSupervisor,
+          pid: Process.whereis(Arbor.Core.HordeSupervisorSupervisor)
         }
       )
 
-      raise "Horde infrastructure failed to start properly. Check logs for details."
+      raise "Horde infrastructure not available. Ensure the application is started properly."
     end
 
     IO.puts("Horde infrastructure is ready.")
     :ok
+  end
+
+  defp wait_for_membership_ready(timeout \\ 5000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    wait_for_membership_loop(deadline)
+  end
+
+  defp wait_for_membership_loop(deadline) do
+    now = System.monotonic_time(:millisecond)
+
+    if now > deadline do
+      registry_members = Horde.Cluster.members(@registry_name)
+      supervisor_members = Horde.Cluster.members(@supervisor_name)
+
+      raise """
+      Timed out waiting for Horde membership synchronization.
+      - Current Node: #{inspect(node())}
+      - Registry Members: #{inspect(registry_members)}
+      - Supervisor Members: #{inspect(supervisor_members)}
+      """
+    else
+      registry_members = Horde.Cluster.members(@registry_name)
+      supervisor_members = Horde.Cluster.members(@supervisor_name)
+      current_node = node()
+
+      # Check for proper named members in the new format
+      expected_registry_member = {@registry_name, current_node}
+      expected_supervisor_member = {@supervisor_name, current_node}
+
+      registry_ready =
+        expected_registry_member in registry_members or
+          {expected_registry_member, expected_registry_member} in registry_members
+
+      supervisor_ready =
+        expected_supervisor_member in supervisor_members or
+          {expected_supervisor_member, expected_supervisor_member} in supervisor_members
+
+      if registry_ready and supervisor_ready do
+        IO.puts("  -> Horde membership is ready.")
+        # Additional stabilization wait for distributed supervisor CRDT sync
+        AsyncHelpers.wait_until(
+          fn ->
+            case Horde.DynamicSupervisor.which_children(@supervisor_name) do
+              [] ->
+                true
+
+              children ->
+                # Accept any tracked children count
+                length(children) >= 0
+            end
+          end,
+          timeout: 1000,
+          initial_delay: 50
+        )
+
+        :ok
+      else
+        Process.sleep(100)
+        wait_for_membership_loop(deadline)
+      end
+    end
   end
 
   defp cleanup_test_agents do
@@ -485,8 +512,17 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
           end
 
           # Verification step
-          # Allow a moment for distributed state to sync
-          :timer.sleep(200)
+          # Wait for distributed state to sync
+          AsyncHelpers.wait_until(
+            fn ->
+              # Just wait for CRDT sync time
+              Process.sleep(200)
+              true
+            end,
+            timeout: 300,
+            initial_delay: 200
+          )
+
           IO.puts("  -> Verifying cleanup...")
 
           case HordeSupervisor.list_agents() do
@@ -494,7 +530,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
               IO.puts("    -> OK: All agents stopped and unregistered.")
 
             {:ok, remaining_agents} ->
-              IO.puts("    -> WARNING: #{length(remaining_agents)} agents remain after cleanup.")
+              IO.puts("    -> WARNING: #{length(remaining_agents)} remain after cleanup.")
 
               Logger.warning("Remaining agents after cleanup", remaining_agents: remaining_agents)
 

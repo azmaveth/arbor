@@ -11,11 +11,11 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-  @moduletag :cluster
+  @moduletag :distributed
   @moduletag timeout: 30_000
 
   alias Arbor.Core.{ClusterRegistry, ClusterSupervisor, ClusterCoordinator}
+  alias Arbor.Test.Support.AsyncHelpers
 
   # Helper to wrap start functions, treating :already_started as :ok
   defp start_or_ok({:ok, _pid}), do: {:ok, :started}
@@ -29,8 +29,17 @@ defmodule Arbor.Core.ClusterIntegrationTest do
     with {:ok, _} <- start_or_ok(start_horde_registry()),
          {:ok, _} <- start_or_ok(Arbor.Core.HordeSupervisor.start_supervisor()),
          {:ok, _} <- start_or_ok(Arbor.Core.HordeCoordinator.start_coordination()) do
-      # Give time for components to sync
-      :timer.sleep(500)
+      # Wait for components to sync
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check if all components are running and responsive
+          Process.whereis(Arbor.Core.HordeAgentRegistry) != nil and
+            Process.whereis(Arbor.Core.HordeAgentSupervisor) != nil
+        end,
+        timeout: 2000,
+        initial_delay: 50
+      )
+
       :ok
     else
       error -> error
@@ -123,12 +132,23 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
   setup do
     # Ensure cluster is in clean state before each test
-    :timer.sleep(100)
+    AsyncHelpers.wait_until(
+      fn ->
+        # Check that cluster components are responsive
+        case Process.whereis(Arbor.Core.HordeAgentRegistry) do
+          nil -> false
+          _pid -> true
+        end
+      end,
+      timeout: 1000,
+      initial_delay: 25
+    )
+
     :ok
   end
 
   describe "multi-node agent communication" do
-    @tag :slow
+    @tag :distributed
     test "agents communicate across cluster nodes" do
       # This test will initially fail - requires real clustering
 
@@ -157,8 +177,17 @@ defmodule Arbor.Core.ClusterIntegrationTest do
           %{session_id: "test-session-001"}
         )
 
-      # Wait a bit for registration to propagate
-      :timer.sleep(100)
+      # Wait for agent registration to propagate
+      AsyncHelpers.wait_until(
+        fn ->
+          case ClusterRegistry.lookup_agent(coordinator_id) do
+            {:ok, _pid, _metadata} -> true
+            _ -> false
+          end
+        end,
+        timeout: 2000,
+        initial_delay: 50
+      )
 
       # Verify agents are registered cluster-wide
       assert {:ok, coordinator_pid, _coordinator_metadata} =
@@ -204,7 +233,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       assert_receive {:task_completed, ^worker_id, ^task_id, ^result}, 5000
     end
 
-    @tag :slow
+    @tag :distributed
     test "handles agent discovery across cluster" do
       # Start multiple agents of different types
       agents = [
@@ -228,8 +257,20 @@ defmodule Arbor.Core.ClusterIntegrationTest do
           agent_id
         end
 
-      # Wait for cluster synchronization
-      :timer.sleep(500)
+      # Wait for all agents to be registered cluster-wide
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check that all started agents are discoverable
+          Enum.all?(started_agents, fn agent_id ->
+            case ClusterRegistry.lookup_agent(agent_id) do
+              {:ok, _pid, _metadata} -> true
+              _ -> false
+            end
+          end)
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Verify all agents are discoverable cluster-wide
       for agent_id <- started_agents do
@@ -257,7 +298,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
   end
 
   describe "node failure and recovery" do
-    @tag :slow
+    @tag :distributed
     test "handles node failure with agent migration" do
       # This test simulates node failure scenarios
       # Initially will fail until Horde migration is implemented
@@ -274,8 +315,17 @@ defmodule Arbor.Core.ClusterIntegrationTest do
           metadata: %{critical: true}
         })
 
-      # Wait for registration to complete
-      :timer.sleep(100)
+      # Wait for agent registration to complete
+      AsyncHelpers.wait_until(
+        fn ->
+          case ClusterSupervisor.get_agent_info(agent_id) do
+            {:ok, _info} -> true
+            _ -> false
+          end
+        end,
+        timeout: 2000,
+        initial_delay: 50
+      )
 
       # Get initial agent info
       {:ok, original_info} = ClusterSupervisor.get_agent_info(agent_id)
@@ -329,7 +379,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       end
     end
 
-    @tag :slow
+    @tag :distributed
     test "maintains cluster consistency during network partitions" do
       # Test split-brain handling and conflict resolution
       # Will initially fail until coordinator clustering is implemented
@@ -352,8 +402,19 @@ defmodule Arbor.Core.ClusterIntegrationTest do
           })
       end
 
-      # Wait for cluster synchronization
-      :timer.sleep(500)
+      # Wait for all agents to be registered in cluster
+      AsyncHelpers.wait_until(
+        fn ->
+          Enum.all?(initial_agents, fn agent_id ->
+            case ClusterRegistry.lookup_agent(agent_id) do
+              {:ok, _pid, _metadata} -> true
+              _ -> false
+            end
+          end)
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Get initial cluster health
       {:ok, initial_health} = ClusterCoordinator.get_cluster_health()
@@ -387,7 +448,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
   end
 
   describe "cluster performance and scaling" do
-    @tag :slow
+    @tag :distributed
     test "distributes load across cluster nodes" do
       # Test agent distribution and load balancing
       # Will initially fail until Horde load balancing is implemented
@@ -409,8 +470,20 @@ defmodule Arbor.Core.ClusterIntegrationTest do
           agent_id
         end
 
-      # Wait for distribution
-      :timer.sleep(1000)
+      # Wait for agent distribution to complete
+      AsyncHelpers.wait_until(
+        fn ->
+          # Check that all agents are discoverable
+          Enum.all?(agent_ids, fn agent_id ->
+            case ClusterRegistry.lookup_agent(agent_id) do
+              {:ok, _pid, _metadata} -> true
+              _ -> false
+            end
+          end)
+        end,
+        timeout: 3000,
+        initial_delay: 200
+      )
 
       # Analyze distribution across nodes
       {:ok, cluster_info} = ClusterCoordinator.get_cluster_info()
@@ -447,7 +520,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       end
     end
 
-    @tag :slow
+    @tag :distributed
     test "handles rapid agent creation and destruction" do
       # Stress test cluster coordination under rapid changes
 
@@ -476,8 +549,24 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       # Allow some failures under stress
       assert length(successful_agents) >= 15
 
-      # Verify agents are registered
-      :timer.sleep(500)
+      # Wait for agent registration to propagate
+      AsyncHelpers.wait_until(
+        fn ->
+          # Count how many agents are actually registered
+          registered_count =
+            Enum.count(successful_agents, fn agent_id ->
+              case ClusterRegistry.lookup_agent(agent_id) do
+                {:ok, _pid, _metadata} -> true
+                _ -> false
+              end
+            end)
+
+          # We expect at least 80% to be registered by now
+          registered_count >= length(successful_agents) * 0.8
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       registered_count =
         Enum.count(successful_agents, fn agent_id ->
@@ -501,8 +590,24 @@ defmodule Arbor.Core.ClusterIntegrationTest do
       # Wait for destruction
       Task.await_many(destruction_tasks, 10_000)
 
-      # Verify cleanup
-      :timer.sleep(500)
+      # Wait for agent cleanup to complete
+      AsyncHelpers.wait_until(
+        fn ->
+          # Count how many agents are still registered (should be few)
+          remaining_count =
+            Enum.count(successful_agents, fn agent_id ->
+              case ClusterRegistry.lookup_agent(agent_id) do
+                {:ok, _pid, _metadata} -> true
+                _ -> false
+              end
+            end)
+
+          # Most should be cleaned up by now
+          remaining_count <= length(successful_agents) * 0.2
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       remaining_count =
         Enum.count(successful_agents, fn agent_id ->
@@ -518,7 +623,7 @@ defmodule Arbor.Core.ClusterIntegrationTest do
   end
 
   describe "cluster health monitoring" do
-    @tag :slow
+    @tag :distributed
     test "monitors cluster health metrics" do
       # Test health monitoring across cluster
 

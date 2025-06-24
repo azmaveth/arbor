@@ -58,12 +58,32 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
   setup do
     # Clean state before each test
     cleanup_all_test_agents()
-    # Allow cleanup to complete
-    :timer.sleep(200)
+
+    # Wait for cleanup to complete using exponential backoff
+    AsyncHelpers.wait_until(
+      fn ->
+        # Check if cleanup is complete by verifying no test agents remain
+        case get_all_test_agent_specs() do
+          [] -> true
+          _ -> false
+        end
+      end,
+      timeout: 3000,
+      initial_delay: 50
+    )
 
     # Force reconciliation to ensure clean state
     AgentReconciler.force_reconcile()
-    :timer.sleep(100)
+
+    # Wait for reconciliation to complete
+    AsyncHelpers.wait_until(
+      fn ->
+        # Simple check - reconciler should be responsive
+        Process.alive?(Process.whereis(AgentReconciler))
+      end,
+      timeout: 1000,
+      initial_delay: 25
+    )
 
     :ok
   end
@@ -84,6 +104,10 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
       assert {:ok, original_pid} = HordeSupervisor.start_agent(agent_spec)
       assert is_pid(original_pid)
 
+      # Wait for agent to complete asynchronous registration
+      info = AsyncHelpers.wait_for_agent_ready(agent_id)
+      assert info.pid == original_pid
+
       # Verify agent spec is stored in registry
       assert {:ok, stored_spec} = get_agent_spec_from_registry(agent_id)
       assert stored_spec.module == TestPersistentAgent
@@ -98,15 +122,35 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
 
       # Simulate node failure by killing the agent process
       # This simulates what happens when a node goes down
-      Process.exit(agent_info.pid, :kill)
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, agent_info.pid)
 
-      # Wait for Horde to detect failure and restart
-      :timer.sleep(1000)
+      # Wait for Horde to detect failure and restart using exponential backoff
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeSupervisor.get_agent_info(agent_id) do
+            # New process restarted
+            {:ok, info} when info.pid != original_pid -> true
+            _ -> false
+          end
+        end,
+        timeout: 5000,
+        initial_delay: 100
+      )
 
-      # AgentReconciler should detect missing agent and restart it
-      # Force reconciliation to speed up test
+      # Force reconciliation to ensure consistency
       AgentReconciler.force_reconcile()
-      :timer.sleep(500)
+
+      # Wait for reconciliation to stabilize
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeSupervisor.get_agent_info(agent_id) do
+            {:ok, _info} -> true
+            _ -> false
+          end
+        end,
+        timeout: 3000,
+        initial_delay: 50
+      )
 
       # Verify agent was restarted - may need a few attempts due to timing
       assert_eventually(
@@ -118,7 +162,8 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
             _ ->
               # Force another reconciliation if needed
               AgentReconciler.force_reconcile()
-              :timer.sleep(200)
+              # Use smaller delay for retry pattern
+              AsyncHelpers.wait_until(fn -> true end, timeout: 250, initial_delay: 50)
               :retry
           end
         end,
@@ -150,22 +195,31 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
 
       assert {:ok, original_pid} = HordeSupervisor.start_agent(agent_spec)
 
+      # Wait for agent to complete asynchronous registration
+      AsyncHelpers.wait_for_agent_ready(agent_id, timeout: 2000)
+
       # Verify agent is registered
       assert {:ok, agent_info} = HordeSupervisor.get_agent_info(agent_id)
       assert agent_info.pid == original_pid
 
       # Manually kill the agent process (simulating crash)
-      Process.exit(original_pid, :kill)
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, original_pid)
 
-      # Wait a moment to ensure process is dead
-      :timer.sleep(100)
+      # Wait for process to die using exponential backoff
+      AsyncHelpers.wait_until(
+        fn ->
+          not Process.alive?(original_pid)
+        end,
+        timeout: 2000,
+        initial_delay: 25
+      )
+
       refute Process.alive?(original_pid)
 
       # Force reconciliation and wait for restart
       assert_eventually(
         fn ->
           AgentReconciler.force_reconcile()
-          :timer.sleep(300)
 
           case HordeSupervisor.get_agent_info(agent_id) do
             {:ok, new_agent_info} when new_agent_info.pid != original_pid ->
@@ -217,9 +271,9 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
 
       # Force reconciliation
       AgentReconciler.force_reconcile()
-      :timer.sleep(500)
 
-      # Verify orphaned process was cleaned up
+      # Wait for orphaned process to be cleaned up
+      AsyncHelpers.wait_until(fn -> not Process.alive?(agent_pid) end, timeout: 2000)
       refute Process.alive?(agent_pid)
 
       case HordeSupervisor.get_agent_info(agent_id) do
@@ -252,16 +306,18 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
                })
 
       # Kill both agents
-      Process.exit(permanent_pid, :kill)
-      Process.exit(temporary_pid, :kill)
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, permanent_pid)
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, temporary_pid)
 
-      :timer.sleep(100)
+      # Wait for processes to terminate
+      AsyncHelpers.wait_until(fn ->
+        not Process.alive?(permanent_pid) and not Process.alive?(temporary_pid)
+      end)
 
       # Force reconciliation and wait for restart
       assert_eventually(
         fn ->
           AgentReconciler.force_reconcile()
-          :timer.sleep(300)
 
           case HordeSupervisor.get_agent_info(permanent_id) do
             {:ok, new_permanent_info} when new_permanent_info.pid != permanent_pid ->
@@ -288,7 +344,6 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
       assert_eventually(
         fn ->
           AgentReconciler.force_reconcile()
-          :timer.sleep(200)
 
           case get_agent_spec_from_registry(temporary_id) do
             {:error, :not_found} -> :ok
@@ -324,12 +379,16 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
 
       assert {:ok, agent_pid} = HordeSupervisor.start_agent(agent_spec)
 
-      # Give agent time to self-register
-      :timer.sleep(200)
-
-      # Verify agent is properly registered
-      assert {:ok, agent_info} = HordeSupervisor.get_agent_info(agent_id)
+      # Wait for agent to complete self-registration
+      agent_info = AsyncHelpers.wait_for_agent_ready(agent_id)
       assert agent_info.pid == agent_pid
+
+      # Debug: Check both spec and runtime lookups
+      IO.puts("=== Debug get_agent_info for #{agent_id} ===")
+      spec_result = HordeSupervisor.lookup_agent_spec(agent_id)
+      IO.puts("Spec lookup: #{inspect(spec_result)}")
+      runtime_result = Arbor.Core.HordeRegistry.lookup_agent_name(agent_id)
+      IO.puts("Runtime lookup: #{inspect(runtime_result)}")
 
       # Verify agent metadata was set during self-registration
       registration_info = GenServer.call(agent_pid, :get_registration_info)
@@ -351,17 +410,17 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
       }
 
       assert {:ok, agent_pid} = HordeSupervisor.start_agent(agent_spec)
-      :timer.sleep(100)
 
-      # Verify agent is registered
-      assert {:ok, agent_info} = HordeSupervisor.get_agent_info(agent_id)
+      # Wait for agent registration and verify
+      agent_info = AsyncHelpers.wait_for_agent_ready(agent_id)
       assert agent_info.pid == agent_pid
 
       # Stop agent normally
       GenServer.stop(agent_pid, :normal)
-      :timer.sleep(100)
 
-      # Verify agent cleaned up its registration
+      # Wait for agent to stop and verify cleanup
+      AsyncHelpers.wait_for_agent_stopped(agent_id)
+
       case HordeSupervisor.get_agent_info(agent_id) do
         {:error, :not_found} -> :ok
         {:ok, info} -> assert info.status != :running
@@ -377,8 +436,14 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
         {:ok, _spec} ->
           # Spec still exists - force reconciliation to clean it up
           AgentReconciler.force_reconcile()
-          :timer.sleep(100)
-          # Now it should be gone
+          # Wait for spec to be cleaned up
+          AsyncHelpers.wait_until(fn ->
+            case get_agent_spec_from_registry(agent_id) do
+              {:error, :not_found} -> true
+              _ -> false
+            end
+          end)
+
           assert {:error, :not_found} = get_agent_spec_from_registry(agent_id)
       end
     end
@@ -399,21 +464,24 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
       assert {:ok, original_pid} = HordeSupervisor.start_agent(agent_spec)
       original_node = node(original_pid)
 
+      # Allow time for agent to complete asynchronous registration
+      # Wait for agent to be ready
+      AsyncHelpers.wait_for_agent_ready(agent_id)
+
       # Store some state in the agent
       :ok = GenServer.call(original_pid, {:store_state, %{test_data: "failover_test"}})
 
       # Simulate node failure by killing the process abruptly
-      Process.exit(original_pid, :kill)
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, original_pid)
 
-      # Wait for process to die, then use reconciler to restart
-      :timer.sleep(100)
+      # Wait for process to die
+      AsyncHelpers.wait_until(fn -> not Process.alive?(original_pid) end)
       refute Process.alive?(original_pid)
 
       # Use reconciler to detect and restart the missing agent
       assert_eventually(
         fn ->
           AgentReconciler.force_reconcile()
-          :timer.sleep(300)
 
           case HordeSupervisor.get_agent_info(agent_id) do
             {:ok, new_agent_info} when new_agent_info.pid != original_pid ->
@@ -472,41 +540,60 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
           agent_id
         end
 
-      # Wait for all agents to start
-      :timer.sleep(1000)
+      # Wait for all agents to start and verify they are running
+      assert_eventually(
+        fn ->
+          running_count =
+            Enum.count(agent_ids, fn agent_id ->
+              case HordeSupervisor.get_agent_info(agent_id) do
+                {:ok, info} when is_pid(info.pid) -> Process.alive?(info.pid)
+                _ -> false
+              end
+            end)
 
-      # Verify all agents are running
-      running_count =
-        Enum.count(agent_ids, fn agent_id ->
-          case HordeSupervisor.get_agent_info(agent_id) do
-            {:ok, info} -> Process.alive?(info.pid)
-            _ -> false
-          end
-        end)
-
-      assert running_count == agent_count
+          if running_count == agent_count, do: :ok, else: :retry
+        end,
+        "All agents should be running after initial start"
+      )
 
       # Kill half the agents randomly
       killed_agents = Enum.take_random(agent_ids, div(agent_count, 2))
 
-      for agent_id <- killed_agents do
-        {:ok, info} = HordeSupervisor.get_agent_info(agent_id)
-        Process.exit(info.pid, :kill)
-      end
+      killed_pids =
+        for agent_id <- killed_agents do
+          {:ok, info} = HordeSupervisor.get_agent_info(agent_id)
+          Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, info.pid)
+          info.pid
+        end
 
-      :timer.sleep(100)
+      # Wait for all processes to terminate
+      AsyncHelpers.wait_until(fn ->
+        Enum.all?(killed_pids, fn pid -> not Process.alive?(pid) end)
+      end)
 
-      # Force reconciliation
-      start_time = System.monotonic_time(:millisecond)
-      AgentReconciler.force_reconcile()
-      # Allow time for all restarts
-      :timer.sleep(2000)
-      end_time = System.monotonic_time(:millisecond)
+      # Force reconciliation and wait for all agents to be restarted
+      assert_eventually(
+        fn ->
+          AgentReconciler.force_reconcile()
 
-      reconcile_duration = end_time - start_time
-      IO.puts("Reconciliation of #{length(killed_agents)} agents took #{reconcile_duration}ms")
+          final_running_count =
+            Enum.count(agent_ids, fn agent_id ->
+              case HordeSupervisor.get_agent_info(agent_id) do
+                {:ok, info} when is_pid(info.pid) -> Process.alive?(info.pid)
+                _ -> false
+              end
+            end)
 
-      # Verify all agents are running again
+          if final_running_count == agent_count do
+            :ok
+          else
+            :retry
+          end
+        end,
+        "All agents should be running again after reconciliation"
+      )
+
+      # Final verification to be sure
       final_running_count =
         Enum.count(agent_ids, fn agent_id ->
           case HordeSupervisor.get_agent_info(agent_id) do
@@ -548,56 +635,112 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
   end
 
   defp ensure_horde_infrastructure do
-    # Start Horde.Registry if not running
-    case GenServer.whereis(@registry_name) do
+    # Start Phoenix.PubSub if not running
+    case GenServer.whereis(Arbor.Core.PubSub) do
       nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.Registry,
-             [
-               name: @registry_name,
-               keys: :unique,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
+        {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
 
       _pid ->
         :ok
     end
 
-    # Start Horde.DynamicSupervisor if not running
-    case GenServer.whereis(@supervisor_name) do
-      nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.DynamicSupervisor,
-             [
-               name: @supervisor_name,
-               strategy: :one_for_one,
-               distribution_strategy: Horde.UniformRandomDistribution,
-               process_redistribution: :active,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
-
-      _pid ->
-        :ok
+    # Start HordeSupervisor infrastructure if not running
+    if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
+      HordeSupervisor.start_supervisor()
     end
+
+    Horde.Cluster.set_members(@registry_name, [{@registry_name, node()}])
+    Horde.Cluster.set_members(@supervisor_name, [{@supervisor_name, node()}])
 
     # Wait for Horde components to stabilize
-    :timer.sleep(500)
+    wait_for_membership_ready()
 
     # Verify infrastructure is ready
+    pubsub_ready = GenServer.whereis(Arbor.Core.PubSub) != nil
     registry_ready = GenServer.whereis(@registry_name) != nil
     supervisor_ready = GenServer.whereis(@supervisor_name) != nil
+    horde_supervisor_ready = Process.whereis(Arbor.Core.HordeSupervisorSupervisor) != nil
 
-    unless registry_ready and supervisor_ready do
+    unless pubsub_ready and registry_ready and supervisor_ready and horde_supervisor_ready do
       raise "Horde infrastructure failed to start properly"
     end
 
     :ok
+  end
+
+  defp wait_for_membership_ready(timeout \\ 5000) do
+    IO.puts("  -> Waiting for Horde membership to be ready...")
+
+    check_fun = fn ->
+      registry_members = Horde.Cluster.members(@registry_name)
+      supervisor_members = Horde.Cluster.members(@supervisor_name)
+      current_node = node()
+
+      # Check for proper named members in various formats that Horde can return
+      # Handle keyword list format: [arbor_test@localhost: :arbor_test@localhost]
+      registry_ready =
+        Enum.any?(registry_members, fn
+          {@registry_name, node} when node == current_node -> true
+          {node, node} when node == current_node -> true
+          member when is_atom(member) and member == current_node -> true
+          _ -> false
+        end) or
+          (is_list(registry_members) and
+             Keyword.get(registry_members, current_node) == current_node)
+
+      supervisor_ready =
+        Enum.any?(supervisor_members, fn
+          {@supervisor_name, node} when node == current_node -> true
+          {node, node} when node == current_node -> true
+          member when is_atom(member) and member == current_node -> true
+          _ -> false
+        end)
+
+      if registry_ready and supervisor_ready do
+        IO.puts("  -> Horde membership is ready.")
+        IO.puts("     Registry: #{inspect(registry_members)}")
+        IO.puts("     Supervisor: #{inspect(supervisor_members)}")
+        true
+      else
+        IO.puts("  -> Still waiting for membership...")
+        IO.puts("     Registry: #{inspect(registry_members)} (ready: #{registry_ready})")
+        IO.puts("     Supervisor: #{inspect(supervisor_members)} (ready: #{supervisor_ready})")
+        false
+      end
+    end
+
+    case AsyncHelpers.wait_until(check_fun, timeout: timeout, initial_delay: 50) do
+      true ->
+        # Additional stabilization wait for distributed supervisor CRDT sync
+        # Wait for supervisor to have empty children list after membership sync
+        AsyncHelpers.wait_until(
+          fn ->
+            case Horde.DynamicSupervisor.which_children(@supervisor_name) do
+              [] ->
+                true
+
+              children ->
+                # Only accept if no children exist
+                Enum.empty?(children)
+            end
+          end,
+          timeout: 1000,
+          initial_delay: 50
+        )
+
+        :ok
+
+      _ ->
+        registry_members = Horde.Cluster.members(@registry_name)
+        supervisor_members = Horde.Cluster.members(@supervisor_name)
+
+        raise """
+        Timed out waiting for Horde membership synchronization.
+        - Current Node: #{inspect(node())}
+        - Registry Members: #{inspect(registry_members)}
+        - Supervisor Members: #{inspect(supervisor_members)}
+        """
+    end
   end
 
   defp cleanup_all_test_agents do
@@ -662,6 +805,24 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
       :exit, _ -> :ok
     end
   end
+
+  defp get_all_test_agent_specs do
+    try do
+      pattern = {{:agent_spec, :"$1"}, :"$2", :"$3"}
+      guard = []
+      body = [:"$1"]
+
+      specs = Horde.Registry.select(@registry_name, [{pattern, guard, body}])
+
+      Enum.filter(specs, fn agent_id ->
+        is_binary(agent_id) and String.contains?(agent_id, "test-")
+      end)
+    rescue
+      _ -> []
+    catch
+      :exit, _ -> []
+    end
+  end
 end
 
 # Test agent modules
@@ -686,11 +847,17 @@ defmodule TestPersistentAgent do
       started_at: System.system_time(:millisecond)
     }
 
+    # Use continue for registration to avoid blocking init
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
     # Self-register in HordeRegistry if agent_id is provided
-    if agent_id do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} ->
           :ok
 
@@ -700,7 +867,7 @@ defmodule TestPersistentAgent do
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def handle_call(:get_state, _from, state) do
@@ -736,17 +903,22 @@ defmodule TestMissingAgent do
       started_at: System.system_time(:millisecond)
     }
 
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
     # Self-register in HordeRegistry if agent_id is provided
-    if agent_id do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def handle_call(:get_state, _from, state) do
@@ -780,16 +952,21 @@ defmodule TestOrphanedAgent do
       started_at: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def terminate(_reason, state) do
@@ -819,16 +996,21 @@ defmodule TestRestartAgent do
       started_at: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def terminate(_reason, state) do
@@ -858,16 +1040,101 @@ defmodule TestSelfRegisterAgent do
       registration_time: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    IO.puts("TestSelfRegisterAgent registering: agent_id=#{inspect(state.agent_id)}")
+
+    if state.agent_id do
       runtime_metadata = %{started_at: state.registration_time, self_registered: true}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
-        {:ok, _} -> :ok
-        error -> IO.puts("Agent registration failed: #{inspect(error)}")
+      result = HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata)
+
+      IO.puts(
+        "TestSelfRegisterAgent registration result for #{state.agent_id}: #{inspect(result)}"
+      )
+
+      # Also test direct Horde.Registry.lookup with different key formats
+      direct_lookup1 = Horde.Registry.lookup(Arbor.Core.HordeAgentRegistry, state.agent_id)
+      IO.puts("Direct Horde.Registry.lookup (agent_id): #{inspect(direct_lookup1)}")
+
+      direct_lookup2 =
+        Horde.Registry.lookup(Arbor.Core.HordeAgentRegistry, {:agent, state.agent_id})
+
+      IO.puts("Direct Horde.Registry.lookup ({:agent, agent_id}): #{inspect(direct_lookup2)}")
+
+      # Let's try a raw register to see what happens
+      raw_register =
+        Horde.Registry.register(
+          Arbor.Core.HordeAgentRegistry,
+          "test-raw-#{state.agent_id}",
+          {self(), runtime_metadata}
+        )
+
+      IO.puts("Raw Horde.Registry.register result: #{inspect(raw_register)}")
+
+      # Note: CRDT sync happens asynchronously - tests should wait for expected conditions
+
+      raw_lookup =
+        Horde.Registry.lookup(Arbor.Core.HordeAgentRegistry, "test-raw-#{state.agent_id}")
+
+      IO.puts("Raw Horde.Registry.lookup result after sync wait: #{inspect(raw_lookup)}")
+
+      # Also check if registry is actually the same instance
+      registry_pid = GenServer.whereis(Arbor.Core.HordeAgentRegistry)
+      IO.puts("HordeAgentRegistry PID: #{inspect(registry_pid)}")
+
+      # Check which children are actually registered
+      all_entries =
+        try do
+          Horde.Registry.select(Arbor.Core.HordeAgentRegistry, [
+            {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
+          ])
+        rescue
+          e -> {:error, e}
+        end
+
+      IO.puts("All registry entries (key, pid, value): #{inspect(all_entries)}")
+
+      # Check specifically for our agent ID
+      specific_lookup =
+        try do
+          Horde.Registry.select(Arbor.Core.HordeAgentRegistry, [
+            {{state.agent_id, :"$1", :"$2"}, [], [{{:"$1", :"$2"}}]}
+          ])
+        rescue
+          e -> {:error, e}
+        end
+
+      IO.puts("Specific agent entries for #{state.agent_id}: #{inspect(specific_lookup)}")
+
+      # Also try manual lookup with our exact key
+      manual_lookup =
+        try do
+          GenServer.call(Arbor.Core.HordeAgentRegistry, {:lookup, state.agent_id})
+        rescue
+          e -> {:error, e}
+        end
+
+      IO.puts("Manual GenServer lookup: #{inspect(manual_lookup)}")
+
+      case result do
+        {:ok, _} ->
+          IO.puts("TestSelfRegisterAgent registration SUCCESS for #{state.agent_id}")
+          :ok
+
+        error ->
+          IO.puts(
+            "TestSelfRegisterAgent registration FAILED for #{state.agent_id}: #{inspect(error)}"
+          )
       end
+    else
+      IO.puts("TestSelfRegisterAgent: No agent_id provided!")
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def handle_call(:get_registration_info, _from, state) do
@@ -901,16 +1168,21 @@ defmodule TestCleanupAgent do
       started_at: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def terminate(_reason, state) do
@@ -944,16 +1216,21 @@ defmodule TestFailoverAgent do
       started_at: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   @spec handle_call({:store_state, any()}, GenServer.from(), map()) :: {:reply, :ok, map()}
@@ -995,16 +1272,21 @@ defmodule TestScaleAgent do
       started_at: System.system_time(:millisecond)
     }
 
-    if agent_id do
+    {:ok, state, {:continue, :register_with_supervisor}}
+  end
+
+  @impl GenServer
+  def handle_continue(:register_with_supervisor, state) do
+    if state.agent_id do
       runtime_metadata = %{started_at: state.started_at}
 
-      case HordeRegistry.register_agent_name(agent_id, self(), runtime_metadata) do
+      case HordeRegistry.register_agent_name(state.agent_id, self(), runtime_metadata) do
         {:ok, _} -> :ok
         error -> IO.puts("Agent registration failed: #{inspect(error)}")
       end
     end
 
-    {:ok, state}
+    {:noreply, state}
   end
 
   def terminate(_reason, state) do

@@ -54,8 +54,6 @@ defmodule Arbor.Core.AgentBehavior do
 
   @behaviour Arbor.Contracts.Agent.Behavior
 
-  alias Arbor.Contracts.Agent.Behavior, as: AgentBehaviorContract
-
   @doc """
   Callback for extracting agent state for migration.
 
@@ -133,6 +131,7 @@ defmodule Arbor.Core.AgentBehavior do
     quote do
       use GenServer
       @behaviour Arbor.Core.AgentBehavior
+      @compile {:nowarn_unused_function, [handle_restore_result: 2]}
 
       require Logger
       alias Arbor.Core.HordeSupervisor
@@ -153,27 +152,45 @@ defmodule Arbor.Core.AgentBehavior do
 
       # GenServer callbacks for state management
 
+      @impl GenServer
       def handle_call(:extract_state, _from, state) do
         result = extract_state(state)
         {:reply, result, state}
       end
 
+      @impl GenServer
       def handle_call({:restore_state, restored_state}, _from, state) do
         # The current `state` is passed as the `agent_spec`.
-        case restore_state(state, restored_state) do
-          {:ok, new_state} ->
-            {:reply, :ok, new_state}
+        # Note: Default implementation always returns {:ok, term()}, but custom
+        # implementations may return {:error, reason}, so we handle both cases.
+        result = restore_state(state, restored_state)
 
-          {:error, reason} ->
-            Logger.error("Failed to restore agent state.", reason: reason)
-            {:reply, {:error, reason}, state}
-        end
+        # Use dynamic pattern matching to avoid unreachable clause warnings
+        handle_restore_result(result, state)
       end
 
+      # Helper function to handle restore_state results dynamically
+      @compile {:nowarn_unused_function, [handle_restore_result: 2]}
+      defp handle_restore_result({:ok, new_state}, _state) do
+        {:reply, :ok, new_state}
+      end
+
+      defp handle_restore_result({:error, reason}, state) do
+        Logger.error("Failed to restore agent state.", reason: reason)
+        {:reply, {:error, reason}, state}
+      end
+
+      defp handle_restore_result(other, state) do
+        Logger.error("Invalid restore_state return value.", return: other)
+        {:reply, {:error, :invalid_return}, state}
+      end
+
+      @impl GenServer
       def handle_call(:get_agent_metadata, _from, state) do
         {:reply, get_agent_metadata(state), state}
       end
 
+      @impl GenServer
       def handle_call(:get_state, _from, state) do
         {:reply, state, state}
       end
@@ -182,14 +199,21 @@ defmodule Arbor.Core.AgentBehavior do
       @impl GenServer
       def handle_continue(:register_with_supervisor, state) do
         supervisor_impl = Application.get_env(:arbor_core, :supervisor_impl, :auto)
+        Logger.debug("AgentBehavior: handle_continue called", supervisor_impl: supervisor_impl)
 
         if supervisor_impl == :mock do
+          Logger.debug("AgentBehavior: Skipping registration due to mock supervisor")
           {:noreply, state}
         else
           # Start non-blocking registration process
           retry_config = Application.get_env(:arbor_core, :agent_retry, [])
           retries = Keyword.get(retry_config, :retries, 3)
           initial_delay = Keyword.get(retry_config, :initial_delay, 250)
+
+          Logger.debug("AgentBehavior: Starting registration process",
+            retries: retries,
+            initial_delay: initial_delay
+          )
 
           # Send message to self to start the first attempt immediately.
           Process.send(self(), {:attempt_registration, retries, initial_delay}, [])
@@ -202,13 +226,23 @@ defmodule Arbor.Core.AgentBehavior do
         agent_id = Map.fetch!(state, :agent_id)
         metadata = get_agent_metadata(state)
 
+        Logger.debug("AgentBehavior: Attempting registration",
+          agent_id: agent_id,
+          retries_left: retries_left
+        )
+
         case HordeSupervisor.register_agent(self(), agent_id, metadata) do
           {:ok, pid} ->
+            Logger.debug("AgentBehavior: Agent successfully registered with supervisor")
             Logger.debug("Agent successfully registered with supervisor", agent_id: agent_id)
             new_state = handle_registration_result(state, {:ok, pid})
             {:noreply, new_state}
 
           {:error, reason} ->
+            Logger.debug("AgentBehavior: Registration failed",
+              reason: reason
+            )
+
             if retries_left > 0 do
               Logger.warning("Failed to register with supervisor, retrying...",
                 agent_id: agent_id,

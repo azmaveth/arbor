@@ -46,7 +46,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   # Client API
 
   @spec start_link(keyword()) :: Agent.on_start()
-  def start_link(opts \\ []) do
+  def start_link(_opts \\ []) do
     Agent.start_link(
       fn ->
         %__MODULE__{
@@ -511,5 +511,38 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
         _ -> :ok
       end
     end
+  end
+
+  # Additional functions for ClusterManager compatibility
+
+  @doc """
+  Get supervisor status for monitoring.
+  Mock implementation for testing.
+  """
+  @spec get_supervisor_status() :: map()
+  def get_supervisor_status() do
+    %{
+      status: :healthy,
+      members: [node()],
+      agent_count: 0
+    }
+  end
+
+  @doc """
+  Join supervisor cluster.
+  Mock implementation - no-op for single node.
+  """
+  @spec join_supervisor(node()) :: :ok
+  def join_supervisor(_node) do
+    :ok
+  end
+
+  @doc """
+  Leave supervisor cluster.
+  Mock implementation - no-op for single node.
+  """
+  @spec leave_supervisor(node()) :: :ok
+  def leave_supervisor(_node) do
+    :ok
   end
 end

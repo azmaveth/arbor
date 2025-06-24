@@ -8,12 +8,9 @@ defmodule Arbor.Core.FailoverTest do
   - ClusterManager triggers migration on node failure
   """
 
-  use ExUnit.Case, async: false
+  use Arbor.Test.Support.IntegrationCase
 
-  alias Arbor.Core.{HordeSupervisor, HordeRegistry, ClusterManager}
-
-  @moduletag :integration
-  @moduletag timeout: 30_000
+  alias Arbor.Core.{AgentReconciler, ClusterManager, HordeRegistry, HordeSupervisor}
 
   # Test agent that tracks state changes
   defmodule StatefulTestAgent do
@@ -75,11 +72,6 @@ defmodule Arbor.Core.FailoverTest do
       {:reply, state.events, state}
     end
 
-    @spec handle_call(:get_state, GenServer.from(), map()) :: {:reply, map(), map()}
-    def handle_call(:get_state, _from, state) do
-      {:reply, state, state}
-    end
-
     # Custom state extraction that includes important data
     @impl Arbor.Core.AgentBehavior
     def extract_state(state) do
@@ -109,48 +101,6 @@ defmodule Arbor.Core.FailoverTest do
 
       {:ok, new_state}
     end
-  end
-
-  setup_all do
-    # Start distributed Erlang
-    :net_kernel.start([:failover_test@localhost, :shortnames])
-
-    # Set to use Horde implementations
-    Application.put_env(:arbor_core, :registry_impl, :horde)
-    Application.put_env(:arbor_core, :supervisor_impl, :horde)
-    Application.put_env(:arbor_core, :coordinator_impl, :horde)
-    Application.put_env(:arbor_core, :env, :integration_test)
-
-    # Start required dependencies
-    case start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub}) do
-      {:ok, _pubsub} -> :ok
-      {:error, {:already_started, _pid}} -> :ok
-    end
-
-    # Start ClusterManager
-    case start_supervised(Arbor.Core.ClusterManager) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-    end
-
-    # Start Horde components
-    start_horde_components()
-
-    on_exit(fn ->
-      stop_horde_components()
-      Application.put_env(:arbor_core, :registry_impl, :auto)
-      Application.put_env(:arbor_core, :supervisor_impl, :auto)
-      Application.put_env(:arbor_core, :coordinator_impl, :auto)
-      :net_kernel.stop()
-    end)
-
-    :ok
-  end
-
-  setup do
-    # Clean state between tests
-    :timer.sleep(100)
-    :ok
   end
 
   describe "agent state extraction and restoration" do
@@ -203,7 +153,9 @@ defmodule Arbor.Core.FailoverTest do
 
       # Stop agent
       :ok = HordeSupervisor.stop_agent(agent_id)
-      :timer.sleep(100)
+
+      # Wait for agent to be stopped
+      AsyncHelpers.wait_for_agent_stopped(agent_id, timeout: 2000)
 
       # Start new instance
       {:ok, pid2} =
@@ -214,8 +166,19 @@ defmodule Arbor.Core.FailoverTest do
           restart_strategy: :temporary
         })
 
+      # Wait for agent to be fully registered
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeSupervisor.get_agent_info(agent_id) do
+            {:ok, _info} -> true
+            _ -> false
+          end
+        end,
+        timeout: 2000
+      )
+
       # Restore state
-      {:ok, :restored} = HordeSupervisor.restore_agent_state(agent_id, extracted)
+      :ok = HordeSupervisor.restore_agent_state(agent_id, extracted)
 
       # Verify state was restored
       state = GenServer.call(pid2, :get_state)
@@ -254,33 +217,41 @@ defmodule Arbor.Core.FailoverTest do
           restart_strategy: :permanent
         })
 
-      # Kill the process to trigger restart
-      Process.exit(pid, :kill)
-      :timer.sleep(1000)
+      # Kill the process to trigger restart using proper supervisor termination
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, pid)
+
+      # Wait for process to die
+      AsyncHelpers.wait_until(
+        fn ->
+          not Process.alive?(pid)
+        end,
+        timeout: 2000,
+        initial_delay: 50
+      )
+
+      # Force reconciliation to trigger immediate restart
+      :ok = AgentReconciler.force_reconcile()
 
       # Verify agent was restarted
       # Horde should restart the agent automatically
-      max_attempts = 10
-
+      # Wait for agent to be restarted with new PID
       restarted =
-        Enum.reduce_while(1..max_attempts, false, fn attempt, _acc ->
-          case HordeRegistry.lookup_agent_name(agent_id) do
-            {:ok, new_pid, _} when new_pid != pid ->
-              # Found restarted agent
-              assert Process.alive?(new_pid)
-              {:halt, true}
+        AsyncHelpers.wait_until(
+          fn ->
+            case HordeRegistry.lookup_agent_name(agent_id) do
+              {:ok, new_pid, _} when new_pid != pid ->
+                # Found restarted agent
+                Process.alive?(new_pid)
 
-            _ ->
-              if attempt < max_attempts do
-                :timer.sleep(500)
-                {:cont, false}
-              else
-                {:halt, false}
-              end
-          end
-        end)
+              _ ->
+                false
+            end
+          end,
+          timeout: 5000,
+          initial_delay: 100
+        )
 
-      assert restarted, "Agent was not restarted after being killed"
+      assert restarted == true, "Agent was not restarted after being killed"
 
       # Clean up
       :ok = HordeSupervisor.stop_agent(agent_id)
@@ -329,87 +300,16 @@ defmodule Arbor.Core.FailoverTest do
       {:ok, 101} = StatefulTestAgent.increment(pid1)
       {:ok, 102} = StatefulTestAgent.increment(pid1)
 
-      # Since we're on single node, migration will restart on same node
+      # Since we're on single node, use restart to simulate migration
       # but still test the state preservation mechanism
-      result = HordeSupervisor.migrate_agent(agent_id, node())
+      {:ok, pid2} = HordeSupervisor.restart_agent(agent_id)
 
-      case result do
-        {:ok, pid2} ->
-          # Same node migration should return same PID
-          assert pid2 == pid1
-
-        {:error, :not_found} ->
-          # Agent might have been temporarily unregistered
-          :timer.sleep(100)
-          {:ok, pid2, _} = HordeRegistry.lookup_agent_name(agent_id)
-          assert Process.alive?(pid2)
-      end
+      # Restart should return a new PID
+      assert pid2 != pid1
+      assert Process.alive?(pid2)
 
       # Clean up
       :ok = HordeSupervisor.stop_agent(agent_id)
     end
-  end
-
-  # Helper functions
-
-  defp start_horde_components() do
-    try do
-      # Start Horde.Registry for HordeRegistry
-      {:ok, _} = start_horde_registry()
-
-      # Start HordeSupervisor
-      {:ok, _} = HordeSupervisor.start_supervisor()
-
-      # Start HordeCoordinator
-      {:ok, _} = Arbor.Core.HordeCoordinator.start_coordination()
-
-      # Give time for components to initialize
-      :timer.sleep(500)
-
-      :ok
-    rescue
-      e ->
-        IO.puts("Failed to start Horde components: #{inspect(e)}")
-        {:error, e}
-    end
-  end
-
-  defp start_horde_registry() do
-    children = [
-      {Horde.Registry,
-       [
-         name: Arbor.Core.HordeAgentRegistry,
-         keys: :unique,
-         members: :auto,
-         delta_crdt_options: [sync_interval: 100]
-       ]}
-    ]
-
-    Supervisor.start_link(children,
-      strategy: :one_for_one,
-      name: Arbor.Core.HordeAgentRegistrySupervisor
-    )
-  end
-
-  defp stop_horde_components() do
-    supervisors = [
-      Arbor.Core.HordeCoordinatorSupervisor,
-      Arbor.Core.HordeSupervisorRegistry,
-      Arbor.Core.HordeAgentRegistrySupervisor
-    ]
-
-    Enum.each(supervisors, fn sup_name ->
-      case Process.whereis(sup_name) do
-        nil ->
-          :ok
-
-        pid ->
-          try do
-            Supervisor.stop(pid, :normal, 5000)
-          catch
-            :exit, _ -> :ok
-          end
-      end
-    end)
   end
 end

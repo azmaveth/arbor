@@ -6,54 +6,9 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
   for observability and monitoring.
   """
 
-  use ExUnit.Case, async: false
-
-  @moduletag :integration
-  @moduletag timeout: 30_000
+  use Arbor.Test.Support.IntegrationCase
 
   alias Arbor.Core.{HordeSupervisor, AgentReconciler}
-
-  # Test configuration
-  @registry_name Arbor.Core.HordeAgentRegistry
-  @supervisor_name Arbor.Core.HordeAgentSupervisor
-
-  setup_all do
-    # Start distributed Erlang if not already started
-    case :net_kernel.start([:arbor_reconciler_telemetry_test@localhost, :shortnames]) do
-      {:ok, _} ->
-        :ok
-
-      {:error, {:already_started, _}} ->
-        :ok
-
-      {:error, reason} ->
-        IO.puts("Warning: Could not start distributed Erlang: #{inspect(reason)}")
-        :ok
-    end
-
-    # Ensure required infrastructure is running
-    ensure_horde_infrastructure()
-
-    # Start AgentReconciler if not running
-    case GenServer.whereis(AgentReconciler) do
-      nil -> start_supervised!(AgentReconciler)
-      _pid -> :ok
-    end
-
-    on_exit(fn ->
-      cleanup_all_test_agents()
-    end)
-
-    :ok
-  end
-
-  setup do
-    # Clean state before each test
-    cleanup_all_test_agents()
-    :timer.sleep(200)
-
-    :ok
-  end
 
   describe "reconciliation telemetry" do
     test "emits comprehensive telemetry events during reconciliation" do
@@ -91,16 +46,36 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
       }
 
       assert {:ok, agent_pid} = HordeSupervisor.start_agent(agent_spec)
-      :timer.sleep(100)
 
-      # Kill the agent to create a missing agent scenario
-      Process.exit(agent_pid, :kill)
-      :timer.sleep(100)
+      # Wait for agent to be registered and ready
+      AsyncHelpers.wait_for_agent_ready(agent_id, timeout: 2000)
+
+      # Kill the agent to create a missing agent scenario using proper supervisor termination
+      Horde.DynamicSupervisor.terminate_child(Arbor.Core.HordeAgentSupervisor, agent_pid)
+
+      # Wait for process to actually die
+      AsyncHelpers.wait_until(
+        fn ->
+          not Process.alive?(agent_pid)
+        end,
+        timeout: 2000,
+        initial_delay: 25
+      )
 
       # Force reconciliation to trigger telemetry
       AgentReconciler.force_reconcile()
-      # Allow reconciliation to complete
-      :timer.sleep(500)
+
+      # Wait for reconciliation to complete and agent to be restarted
+      AsyncHelpers.wait_until(
+        fn ->
+          case HordeSupervisor.get_agent_info(agent_id) do
+            {:ok, agent_info} -> Process.alive?(agent_info.pid)
+            _ -> false
+          end
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Verify telemetry events were emitted
       assert_received {:telemetry, [:arbor, :reconciliation, :start], start_measurements,
@@ -164,43 +139,48 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
     end
 
     test "emits error telemetry for failed operations" do
-      # This test would require creating scenarios that cause failures
-      # For now, we'll just verify the error classification function works
-
       test_pid = self()
       handler_id = :error_telemetry_test
 
       :telemetry.attach(
         handler_id,
-        [:arbor, :reconciliation, :agent_restart_error],
+        [:arbor, :reconciliation, :agent_restart_failed],
         fn event, measurements, metadata, _config ->
           send(test_pid, {:telemetry, event, measurements, metadata})
         end,
         nil
       )
 
-      # Create an agent spec that will cause issues (invalid module)
+      # Create an agent spec that will cause issues (module fails to init)
       agent_id = "error-test-agent-#{System.unique_integer([:positive])}"
-
-      # Register a spec with a non-existent module to trigger an error
       spec_key = {:agent_spec, agent_id}
 
       bad_spec = %{
-        module: NonExistentModule,
+        module: FailingTestAgent,
         args: [],
         restart_strategy: :permanent,
         metadata: %{},
         created_at: System.system_time(:millisecond)
       }
 
-      {:ok, _} = Horde.Registry.register(@registry_name, spec_key, bad_spec)
+      # Manually register the spec, as HordeSupervisor would reject it
+      Horde.Registry.register(@registry_name, spec_key, bad_spec)
 
       # Force reconciliation which should try to restart the agent and fail
       AgentReconciler.force_reconcile()
-      :timer.sleep(500)
 
-      # We should receive error telemetry (spec not found error when module doesn't exist)
-      # Note: The actual error behavior depends on how Horde handles invalid modules
+      # Wait for reconciliation to process the spec
+      # We can't check for the telemetry message here because receive consumes it
+      # Instead, just wait a bit for reconciliation to complete
+      Process.sleep(500)
+
+      # We should receive error telemetry for the failed restart
+      assert_received {:telemetry, [:arbor, :reconciliation, :agent_restart_failed],
+                       _measurements, metadata}
+
+      assert metadata.agent_id == agent_id
+      assert metadata.restart_strategy == :permanent
+      assert metadata.module == FailingTestAgent
 
       # Cleanup
       :telemetry.detach(handler_id)
@@ -228,8 +208,19 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
           agent_id
         end
 
-      # Allow agents to stabilize
-      :timer.sleep(200)
+      # Wait for all agents to be registered and stable
+      AsyncHelpers.wait_until(
+        fn ->
+          Enum.all?(agent_ids, fn agent_id ->
+            case HordeSupervisor.get_agent_info(agent_id) do
+              {:ok, agent_info} -> Process.alive?(agent_info.pid)
+              _ -> false
+            end
+          end)
+        end,
+        timeout: 3000,
+        initial_delay: 100
+      )
 
       # Capture performance telemetry
       test_pid = self()
@@ -246,7 +237,11 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
 
       # Force reconciliation
       AgentReconciler.force_reconcile()
-      :timer.sleep(300)
+
+      # Wait for reconciliation to complete
+      # We can't check for the telemetry message here because receive consumes it
+      # Instead, just wait a bit for reconciliation to complete
+      Process.sleep(300)
 
       # Verify performance metrics
       assert_received {:telemetry, [:arbor, :reconciliation, :lookup_performance], measurements,
@@ -269,96 +264,6 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
       for agent_id <- agent_ids do
         HordeSupervisor.stop_agent(agent_id)
       end
-    end
-  end
-
-  # Helper functions (similar to other test files)
-
-  defp ensure_horde_infrastructure do
-    # Start Horde.Registry if not running
-    case GenServer.whereis(@registry_name) do
-      nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.Registry,
-             [
-               name: @registry_name,
-               keys: :unique,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
-
-      _pid ->
-        :ok
-    end
-
-    # Start Horde.DynamicSupervisor if not running
-    case GenServer.whereis(@supervisor_name) do
-      nil ->
-        {:ok, _} =
-          start_supervised(
-            {Horde.DynamicSupervisor,
-             [
-               name: @supervisor_name,
-               strategy: :one_for_one,
-               distribution_strategy: Horde.UniformRandomDistribution,
-               process_redistribution: :active,
-               members: :auto,
-               delta_crdt_options: [sync_interval: 100]
-             ]}
-          )
-
-      _pid ->
-        :ok
-    end
-
-    # Wait for Horde components to stabilize
-    :timer.sleep(500)
-
-    :ok
-  end
-
-  defp cleanup_all_test_agents do
-    # Get all running children and stop test agents
-    try do
-      children = Horde.DynamicSupervisor.which_children(@supervisor_name)
-
-      for {agent_id, _pid, _type, _modules} <- children do
-        if is_binary(agent_id) and
-             (String.contains?(agent_id, "telemetry-test") or
-                String.contains?(agent_id, "error-test") or
-                String.contains?(agent_id, "perf-test")) do
-          HordeSupervisor.stop_agent(agent_id)
-        end
-      end
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
-    end
-
-    # Clean up any remaining specs
-    try do
-      pattern = {{:agent_spec, :"$1"}, :"$2", :"$3"}
-      guard = []
-      body = [:"$1"]
-
-      specs = Horde.Registry.select(@registry_name, [{pattern, guard, body}])
-
-      for agent_id <- specs do
-        if is_binary(agent_id) and
-             (String.contains?(agent_id, "telemetry-test") or
-                String.contains?(agent_id, "error-test") or
-                String.contains?(agent_id, "perf-test")) do
-          spec_key = {:agent_spec, agent_id}
-          Horde.Registry.unregister(@registry_name, spec_key)
-        end
-      end
-    rescue
-      _ -> :ok
-    catch
-      :exit, _ -> :ok
     end
   end
 end
@@ -407,5 +312,17 @@ defmodule TelemetryTestAgent do
     end
 
     :ok
+  end
+end
+
+defmodule FailingTestAgent do
+  use GenServer
+
+  def start_link(_args) do
+    GenServer.start_link(__MODULE__, :ok)
+  end
+
+  def init(:ok) do
+    {:stop, :init_failed}
   end
 end

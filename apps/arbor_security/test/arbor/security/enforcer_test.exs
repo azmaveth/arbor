@@ -2,11 +2,11 @@ defmodule Arbor.Security.EnforcerTest do
   use ExUnit.Case, async: true
 
   alias Arbor.Contracts.Core.Capability
-  alias Arbor.Contracts.Security.AuditEvent
   alias Arbor.Security.MockEnforcer, as: Enforcer
 
   # Use in-memory mock for unit testing
   @moduletag security: :mock
+  @moduletag :fast
 
   setup do
     {:ok, state} = Enforcer.init([])
@@ -69,9 +69,9 @@ defmodule Arbor.Security.EnforcerTest do
     end
 
     test "denies access for revoked capability", %{enforcer_state: state} do
-      capability = create_revoked_capability("agent-123", "arbor://fs/read/data")
+      capability = create_revoked_capability("agent_123", "arbor://fs/read/data")
 
-      context = %{agent_id: "agent-123"}
+      context = %{agent_id: "agent_123"}
 
       assert {:error, {:authorization_denied, :capability_revoked}} =
                Enforcer.authorize(capability, "arbor://fs/read/data", :read, context, state)

@@ -4,6 +4,7 @@ defmodule Arbor.Security.PolicyEngineTest do
   """
 
   use ExUnit.Case, async: false
+  @moduletag :integration
 
   alias Arbor.Security.{Policies.RateLimiter, PolicyEngine}
 

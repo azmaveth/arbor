@@ -38,7 +38,7 @@ defmodule Arbor.Contracts.Telemetry.PerformanceEvent do
   @impl Event
   @spec validate(t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.Metric{} = event) do
-    with :ok <- Event.validate(event),
+    with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.measurements, :value),
          true <- is_number(event.measurements.value),
          true <- Map.has_key?(event.metadata, :node) do
@@ -50,5 +50,19 @@ defmodule Arbor.Contracts.Telemetry.PerformanceEvent do
 
   def validate(_other) do
     {:error, :unknown_performance_event_type}
+  end
+
+  defp validate_base_fields(%{
+         event_name: name,
+         measurements: m,
+         metadata: meta,
+         timestamp: ts
+       })
+       when is_list(name) and is_map(m) and is_map(meta) and is_integer(ts) do
+    :ok
+  end
+
+  defp validate_base_fields(_other) do
+    {:error, :invalid_base_event_structure}
   end
 end
