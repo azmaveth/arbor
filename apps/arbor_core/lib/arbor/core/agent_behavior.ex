@@ -181,7 +181,7 @@ defmodule Arbor.Core.AgentBehavior do
       end
 
       defp handle_restore_result(other, state) do
-        Logger.error("Invalid restore_state return value.", return: other)
+        Logger.error("Invalid restore_state return value: #{inspect(other)}")
         {:reply, {:error, :invalid_return}, state}
       end
 

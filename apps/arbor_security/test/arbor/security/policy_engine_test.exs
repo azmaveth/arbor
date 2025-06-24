@@ -4,9 +4,10 @@ defmodule Arbor.Security.PolicyEngineTest do
   """
 
   use ExUnit.Case, async: false
-  @moduletag :integration
 
   alias Arbor.Security.{Policies.RateLimiter, PolicyEngine}
+
+  @moduletag :integration
 
   setup do
     # Start rate limiter if not already running

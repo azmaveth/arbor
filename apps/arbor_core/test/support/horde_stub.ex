@@ -163,7 +163,7 @@ defmodule Arbor.Core.Test.HordeStub do
   defp start_spec(child_spec) do
     case child_spec do
       {m, a} -> apply(m, :start_link, a)
-      m when is_atom(m) -> apply(m, :start_link, [])
+      m when is_atom(m) -> m.start_link()
       %{start: {m, f, a}} -> apply(m, f, a)
     end
   end

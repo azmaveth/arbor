@@ -11,12 +11,12 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
 
   use ExUnit.Case, async: false
 
+  alias Arbor.Core.{HordeSupervisor, AgentReconciler}
+  alias Arbor.Test.Support.AsyncHelpers
+
   @moduletag :integration
   @moduletag :cluster
   @moduletag timeout: 60_000
-
-  alias Arbor.Core.{HordeSupervisor, AgentReconciler}
-  alias Arbor.Test.Support.AsyncHelpers
 
   # Test configuration
   @registry_name Arbor.Core.HordeAgentRegistry

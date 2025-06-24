@@ -10,9 +10,9 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
 
   @behaviour Arbor.Contracts.Cluster.Supervisor
 
-  use Agent
-
   alias Arbor.Core.ClusterRegistry
+
+  use Agent
 
   defstruct [
     :agents,

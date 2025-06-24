@@ -1,11 +1,11 @@
 defmodule Arbor.Persistence.IntegrationTest do
   use ExUnit.Case
 
-  @moduletag :integration
-
   alias Arbor.Contracts.Events.Event, as: ContractEvent
   alias Arbor.Contracts.Persistence.Snapshot
   alias Arbor.Persistence.{Repo, Store}
+
+  @moduletag :integration
 
   setup_all do
     # Start the Repo for integration tests

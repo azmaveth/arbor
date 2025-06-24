@@ -17,9 +17,9 @@ defmodule Arbor.Core.HordeRegistry do
   - Group entries: {{:group, group_name, agent_id}, true}
   """
 
-  require Logger
-
   alias Arbor.Contracts.Cluster.Registry, as: RegistryContract
+
+  require Logger
 
   @behaviour RegistryContract
 

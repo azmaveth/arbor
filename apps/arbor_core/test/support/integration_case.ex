@@ -214,7 +214,7 @@ defmodule Arbor.Test.Support.IntegrationCase do
       children = Horde.DynamicSupervisor.which_children(supervisor_name)
 
       for {agent_id, _pid, _type, _modules} <- children do
-        if is_binary(agent_id) and is_test_agent_id?(agent_id) do
+        if is_binary(agent_id) and test_agent_id?(agent_id) do
           Arbor.Core.HordeSupervisor.stop_agent(agent_id)
         end
       end
@@ -233,7 +233,7 @@ defmodule Arbor.Test.Support.IntegrationCase do
       specs = Horde.Registry.select(registry_name, [{pattern, guard, body}])
 
       for agent_id <- specs do
-        if is_binary(agent_id) and is_test_agent_id?(agent_id) do
+        if is_binary(agent_id) and test_agent_id?(agent_id) do
           spec_key = {:agent_spec, agent_id}
           Horde.Registry.unregister(registry_name, spec_key)
 
@@ -286,7 +286,7 @@ defmodule Arbor.Test.Support.IntegrationCase do
   end
 
   # Private helper to identify test agent IDs
-  defp is_test_agent_id?(agent_id) when is_binary(agent_id) do
+  defp test_agent_id?(agent_id) when is_binary(agent_id) do
     test_patterns = [
       "test-",
       "telemetry-test",
@@ -306,5 +306,5 @@ defmodule Arbor.Test.Support.IntegrationCase do
     end)
   end
 
-  defp is_test_agent_id?(_), do: false
+  defp test_agent_id?(_), do: false
 end

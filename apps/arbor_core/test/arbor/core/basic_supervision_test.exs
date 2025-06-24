@@ -6,10 +6,10 @@ defmodule Arbor.Core.BasicSupervisionTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-
   alias Arbor.Core.{AgentReconciler, HordeRegistry, HordeSupervisor}
   alias Arbor.Test.Support.AsyncHelpers
+
+  @moduletag :integration
 
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor

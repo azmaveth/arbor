@@ -11,11 +11,11 @@ defmodule Arbor.Core.ClusterIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :distributed
-  @moduletag timeout: 30_000
-
   alias Arbor.Core.{ClusterRegistry, ClusterSupervisor, ClusterCoordinator}
   alias Arbor.Test.Support.AsyncHelpers
+
+  @moduletag :distributed
+  @moduletag timeout: 30_000
 
   # Helper to wrap start functions, treating :already_started as :ok
   defp start_or_ok({:ok, _pid}), do: {:ok, :started}
