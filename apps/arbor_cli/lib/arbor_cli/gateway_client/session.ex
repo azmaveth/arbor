@@ -6,9 +6,9 @@ defmodule ArborCli.GatewayClient.Session do
   with the Arbor Gateway API.
   """
 
-  require Logger
-
   alias ArborCli.GatewayClient.Connection
+
+  require Logger
 
   @doc """
   Create a new session with the Gateway.

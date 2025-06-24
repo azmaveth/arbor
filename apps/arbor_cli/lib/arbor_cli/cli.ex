@@ -181,39 +181,47 @@ defmodule ArborCli.CLI do
 
   @spec render_enhanced_error(any()) :: :ok
   defp render_enhanced_error(reason) do
+    error_message = format_error_message(reason)
+    ArborCli.RendererEnhanced.show_error(error_message)
+
+    # Show additional info for invalid args
     case reason do
-      {:session_creation_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Failed to create session: #{format_error(details)}")
-
-      {:command_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Command failed: #{format_error(details)}")
-
-      {:spawn_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Agent spawn failed: #{format_error(details)}")
-
-      {:list_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Agent list failed: #{format_error(details)}")
-
-      {:status_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Agent status failed: #{format_error(details)}")
-
-      {:exec_failed, details} ->
-        ArborCli.RendererEnhanced.show_error("Agent command execution failed: #{format_error(details)}")
-
-      {:invalid_args, message, args} ->
-        ArborCli.RendererEnhanced.show_error("Invalid arguments: #{message}")
+      {:invalid_args, _message, args} ->
         ArborCli.RendererEnhanced.show_info("Provided: #{inspect(args)}")
-
-      {:unknown_subcommand, subcommand} ->
-        ArborCli.RendererEnhanced.show_error("Unknown subcommand: #{subcommand}")
-
-      {:unknown_command, command} ->
-        ArborCli.RendererEnhanced.show_error("Unknown command: #{command}")
-
-      other ->
-        ArborCli.RendererEnhanced.show_error("Error: #{format_error(other)}")
+      _ ->
+        :ok
     end
   end
+
+  @spec format_error_message(any()) :: String.t()
+  defp format_error_message({type, details}) when is_atom(type) do
+    error_prefix = get_error_prefix(type)
+    if error_prefix do
+      "#{error_prefix}: #{format_error(details)}"
+    else
+      format_specific_error({type, details})
+    end
+  end
+
+  defp format_error_message(other) do
+    "Error: #{format_error(other)}"
+  end
+
+  defp get_error_prefix(type) do
+    %{
+      session_creation_failed: "Failed to create session",
+      command_failed: "Command failed",
+      spawn_failed: "Agent spawn failed",
+      list_failed: "Agent list failed",
+      status_failed: "Agent status failed",
+      exec_failed: "Agent command execution failed"
+    }[type]
+  end
+
+  defp format_specific_error({:invalid_args, message, _args}), do: "Invalid arguments: #{message}"
+  defp format_specific_error({:unknown_subcommand, subcommand}), do: "Unknown subcommand: #{subcommand}"
+  defp format_specific_error({:unknown_command, command}), do: "Unknown command: #{command}"
+  defp format_specific_error(other), do: "Error: #{format_error(other)}"
 
   @spec extract_agents_from_result(map()) :: [map()]
   defp extract_agents_from_result(result) do

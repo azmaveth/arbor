@@ -13,7 +13,7 @@ defmodule ArborCli.Commands.Agent do
 
   alias Arbor.Contracts.Client.Command
   alias ArborCli.GatewayClient
-  
+
   require Logger
 
   @doc """

@@ -33,37 +33,37 @@ defmodule ArborCli.Renderer do
   """
   @spec render_error(any()) :: :ok
   def render_error(error) do
+    {primary_message, additional_info} = format_error_details(error)
+    IO.puts(:stderr, "❌ #{primary_message}")
+    
+    if additional_info do
+      IO.puts(:stderr, "   #{additional_info}")
+    end
+  end
+
+  @spec format_error_details(any()) :: {String.t(), String.t() | nil}
+  defp format_error_details(error) do
     case error do
-      {:session_creation_failed, reason} ->
-        IO.puts(:stderr, "❌ Failed to create session: #{format_error(reason)}")
-
-      {:command_failed, reason} ->
-        IO.puts(:stderr, "❌ Command failed: #{format_error(reason)}")
-
-      {:spawn_failed, reason} ->
-        IO.puts(:stderr, "❌ Agent spawn failed: #{format_error(reason)}")
-
-      {:list_failed, reason} ->
-        IO.puts(:stderr, "❌ Agent list failed: #{format_error(reason)}")
-
-      {:status_failed, reason} ->
-        IO.puts(:stderr, "❌ Agent status failed: #{format_error(reason)}")
-
-      {:exec_failed, reason} ->
-        IO.puts(:stderr, "❌ Agent command execution failed: #{format_error(reason)}")
-
-      {:invalid_args, message, args} ->
-        IO.puts(:stderr, "❌ Invalid arguments: #{message}")
-        IO.puts(:stderr, "   Provided: #{inspect(args)}")
-
-      {:unknown_subcommand, subcommand} ->
-        IO.puts(:stderr, "❌ Unknown subcommand: #{subcommand}")
-
-      {:unknown_command, command} ->
-        IO.puts(:stderr, "❌ Unknown command: #{command}")
-
-      other ->
-        IO.puts(:stderr, "❌ Error: #{format_error(other)}")
+      {:session_creation_failed, reason} -> 
+        {"Failed to create session: #{format_error(reason)}", nil}
+      {:command_failed, reason} -> 
+        {"Command failed: #{format_error(reason)}", nil}
+      {:spawn_failed, reason} -> 
+        {"Agent spawn failed: #{format_error(reason)}", nil}
+      {:list_failed, reason} -> 
+        {"Agent list failed: #{format_error(reason)}", nil}
+      {:status_failed, reason} -> 
+        {"Agent status failed: #{format_error(reason)}", nil}
+      {:exec_failed, reason} -> 
+        {"Agent command execution failed: #{format_error(reason)}", nil}
+      {:invalid_args, message, args} -> 
+        {"Invalid arguments: #{message}", "Provided: #{inspect(args)}"}
+      {:unknown_subcommand, subcommand} -> 
+        {"Unknown subcommand: #{subcommand}", nil}
+      {:unknown_command, command} -> 
+        {"Unknown command: #{command}", nil}
+      other -> 
+        {"Error: #{format_error(other)}", nil}
     end
   end
 

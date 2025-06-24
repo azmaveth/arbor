@@ -638,63 +638,79 @@ defmodule Arbor.Core.ClusterManager do
 
     # If it's the current node, collect detailed health
     if node_name == node() do
-      # Get appropriate implementations
-      registry_impl = get_registry_impl()
-      supervisor_impl = get_supervisor_impl()
-
-      detailed_health = %{
-        components: %{
-          registry:
-            check_component_health(fn ->
-              if registry_impl == HordeRegistry and
-                   function_exported?(registry_impl, :get_registry_status, 0) do
-                registry_impl.get_registry_status()
-              else
-                # Mock registry doesn't have get_registry_status
-                {:ok, %{status: :healthy, members: [node()], count: 0}}
-              end
-            end),
-          supervisor:
-            check_component_health(fn ->
-              if supervisor_impl == HordeSupervisor and
-                   function_exported?(supervisor_impl, :get_supervisor_status, 0) do
-                supervisor_impl.get_supervisor_status()
-              else
-                # Mock supervisor doesn't have get_supervisor_status
-                {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
-              end
-            end),
-          coordinator:
-            check_component_health(fn ->
-              # Check if we're in test mode
-              if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
-                # Return mock health status
-                {:ok, %{status: :healthy, active_coordinators: 0}}
-              else
-                ClusterCoordinator.perform_health_check()
-              end
-            end)
-        },
-        resources: %{
-          memory: :erlang.memory(),
-          process_count: :erlang.system_info(:process_count),
-          port_count: :erlang.system_info(:port_count),
-          load_average: get_load_average(),
-          atom_count: :erlang.system_info(:atom_count)
-        }
-      }
-
-      Map.merge(base_health, detailed_health)
+      Map.merge(base_health, collect_detailed_health())
     else
-      # For remote nodes, try to ping and get basic status
-      ping_result =
-        case Node.ping(node_name) do
-          :pong -> :reachable
-          :pang -> :unreachable
-        end
-
-      Map.put(base_health, :ping_status, ping_result)
+      # For remote nodes, try RPC
+      collect_remote_node_health(node_name, base_health)
     end
+  end
+
+  defp collect_detailed_health do
+    # Get appropriate implementations
+    registry_impl = get_registry_impl()
+    supervisor_impl = get_supervisor_impl()
+
+    %{
+      components: %{
+        registry: collect_registry_health(registry_impl),
+        supervisor: collect_supervisor_health(supervisor_impl),
+        coordinator: collect_coordinator_health()
+      },
+      resources: %{
+        memory: :erlang.memory(),
+        process_count: :erlang.system_info(:process_count),
+        port_count: :erlang.system_info(:port_count),
+        load_average: get_load_average(),
+        atom_count: :erlang.system_info(:atom_count)
+      }
+    }
+  end
+
+  defp collect_remote_node_health(node_name, base_health) do
+    # For remote nodes, try to ping and get basic status
+    ping_result =
+      case Node.ping(node_name) do
+        :pong -> :reachable
+        :pang -> :unreachable
+      end
+
+    Map.put(base_health, :ping_status, ping_result)
+  end
+
+  defp collect_registry_health(registry_impl) do
+    check_component_health(fn ->
+      if registry_impl == HordeRegistry and
+           function_exported?(registry_impl, :get_registry_status, 0) do
+        registry_impl.get_registry_status()
+      else
+        # Mock registry doesn't have get_registry_status
+        {:ok, %{status: :healthy, members: [node()], count: 0}}
+      end
+    end)
+  end
+
+  defp collect_supervisor_health(supervisor_impl) do
+    check_component_health(fn ->
+      if supervisor_impl == HordeSupervisor and
+           function_exported?(supervisor_impl, :get_supervisor_status, 0) do
+        supervisor_impl.get_supervisor_status()
+      else
+        # Mock supervisor doesn't have get_supervisor_status
+        {:ok, %{status: :healthy, members: [node()], active_agents: 0}}
+      end
+    end)
+  end
+
+  defp collect_coordinator_health do
+    check_component_health(fn ->
+      # Check if we're in test mode
+      if Application.get_env(:arbor_core, :registry_impl, :auto) == :mock do
+        # Return mock health status
+        {:ok, %{status: :healthy, active_coordinators: 0}}
+      else
+        ClusterCoordinator.perform_health_check()
+      end
+    end)
   end
 
   defp count_healthy_nodes(health_data) do

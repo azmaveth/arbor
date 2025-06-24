@@ -6,9 +6,9 @@ defmodule ArborCli.GatewayClient.EventStream do
   from the Gateway, allowing CLI commands to show real-time progress.
   """
 
-  require Logger
-
   alias ArborCli.GatewayClient.Connection
+
+  require Logger
 
   @doc """
   Create an event stream for an execution.
@@ -46,9 +46,7 @@ defmodule ArborCli.GatewayClient.EventStream do
   """
   @spec subscribe(pid(), String.t()) :: {:ok, pid()} | {:error, any()}
   def subscribe(_conn, execution_id) do
-    ws_url =
-      Application.get_env(:arbor_cli, :gateway_endpoint)
-      |> String.replace("http", "ws")
+    ws_url = String.replace(Application.get_env(:arbor_cli, :gateway_endpoint), "http", "ws")
 
     WebSockex.start_link(
       "#{ws_url}/executions/#{execution_id}/events",
@@ -78,11 +76,13 @@ defmodule ArborCli.GatewayClient.EventStream.WebSocket do
   @moduledoc false
   use WebSockex
 
+  @spec handle_frame({:text, String.t()}, map()) :: {:ok, map()}
   def handle_frame({:text, msg}, state) do
     send(state.parent, {:execution_event, Jason.decode!(msg, keys: :atoms)})
     {:ok, state}
   end
 
+  @spec handle_disconnect(map(), map()) :: {:ok, map()}
   def handle_disconnect(%{reason: reason}, state) do
     send(state.parent, {:execution_disconnected, reason})
     {:ok, state}

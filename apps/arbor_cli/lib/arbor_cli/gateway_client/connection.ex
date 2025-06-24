@@ -47,14 +47,14 @@ defmodule ArborCli.GatewayClient.Connection do
 
     url = endpoint() <> path
     headers = [{"content-type", "application/json"} | headers]
-    
+
     case HTTPoison.request(method, url, body || "", headers) do
       {:ok, %{status_code: status, body: resp_body}} ->
         {:ok, %{
           status: status,
           body: resp_body
         }}
-        
+
       {:error, %HTTPoison.Error{reason: reason}} ->
         {:error, %{
           status: 500,

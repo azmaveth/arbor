@@ -417,38 +417,45 @@ defmodule Arbor.Agents.CodeAnalyzer do
   defp execute_command(command, args, state) do
     # Validate command against allow-list
     case command do
-      "analyze" ->
-        case args do
-          [path] ->
-            if File.dir?(Path.join(state.working_dir, path)) do
-              perform_directory_analysis(Path.join(state.working_dir, path))
-            else
-              perform_file_analysis(Path.join(state.working_dir, path))
-            end
+      "analyze" -> execute_analyze_command(args, state)
+      "list" -> execute_list_command(args, state)
+      "status" -> execute_status_command(state)
+      _ -> {:error, :command_not_allowed}
+    end
+  end
 
-          _ ->
-            {:error, :invalid_args_for_analyze}
+  defp execute_analyze_command(args, state) do
+    case args do
+      [path] ->
+        full_path = Path.join(state.working_dir, path)
+
+        if File.dir?(full_path) do
+          perform_directory_analysis(full_path)
+        else
+          perform_file_analysis(full_path)
         end
-
-      "list" ->
-        case args do
-          [] -> list_directory_files(state.working_dir)
-          [path] -> list_directory_files(Path.join(state.working_dir, path))
-          _ -> {:error, :invalid_args_for_list}
-        end
-
-      "status" ->
-        {:ok,
-         %{
-           agent_id: state.agent_id,
-           analysis_count: state.analysis_count,
-           last_analysis: state.last_analysis,
-           working_dir: state.working_dir
-         }}
 
       _ ->
-        {:error, :command_not_allowed}
+        {:error, :invalid_args_for_analyze}
     end
+  end
+
+  defp execute_list_command(args, state) do
+    case args do
+      [] -> list_directory_files(state.working_dir)
+      [path] -> list_directory_files(Path.join(state.working_dir, path))
+      _ -> {:error, :invalid_args_for_list}
+    end
+  end
+
+  defp execute_status_command(state) do
+    {:ok,
+     %{
+       agent_id: state.agent_id,
+       analysis_count: state.analysis_count,
+       last_analysis: state.last_analysis,
+       working_dir: state.working_dir
+     }}
   end
 
   defp check_file_size(size) when size > @max_file_size do
@@ -457,23 +464,25 @@ defmodule Arbor.Agents.CodeAnalyzer do
 
   defp check_file_size(_size), do: :ok
 
+  @language_map %{
+    ".ex" => "elixir",
+    ".exs" => "elixir",
+    ".py" => "python",
+    ".js" => "javascript",
+    ".ts" => "typescript",
+    ".rb" => "ruby",
+    ".go" => "go",
+    ".rs" => "rust",
+    ".java" => "java",
+    ".c" => "c",
+    ".cpp" => "cpp",
+    ".h" => "c_header",
+    ".hpp" => "cpp_header"
+  }
+
   defp detect_language(file_path) do
-    case Path.extname(file_path) do
-      ".ex" -> "elixir"
-      ".exs" -> "elixir"
-      ".py" -> "python"
-      ".js" -> "javascript"
-      ".ts" -> "typescript"
-      ".rb" -> "ruby"
-      ".go" -> "go"
-      ".rs" -> "rust"
-      ".java" -> "java"
-      ".c" -> "c"
-      ".cpp" -> "cpp"
-      ".h" -> "c_header"
-      ".hpp" -> "cpp_header"
-      _ -> "unknown"
-    end
+    ext = Path.extname(file_path)
+    Map.get(@language_map, ext, "unknown")
   end
 
   defp has_supported_extension?(file_path) do

@@ -26,9 +26,10 @@ defmodule ArborCli.GatewayClient do
   """
 
   use GenServer
-  require Logger
 
   alias ArborCli.GatewayClient.{Connection, EventStream, Session}
+
+  require Logger
 
   @typedoc "Client configuration"
   @type config :: %{
