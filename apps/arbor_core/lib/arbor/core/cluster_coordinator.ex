@@ -560,6 +560,10 @@ defmodule Arbor.Core.ClusterCoordinator do
       :horde ->
         Arbor.Core.HordeCoordinator
 
+      module when is_atom(module) ->
+        # Direct module injection for Mox testing
+        module
+
       :auto ->
         if Application.get_env(:arbor_core, :env) == :test do
           Arbor.Test.Mocks.LocalCoordinator

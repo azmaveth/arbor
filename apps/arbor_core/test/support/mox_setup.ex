@@ -34,6 +34,14 @@ defmodule Arbor.Test.Support.MoxSetup do
   defmock(Arbor.Core.MockCoordinator, for: Arbor.Contracts.Cluster.Coordinator)
   defmock(Arbor.Core.MockSessionManager, for: Arbor.Contracts.Session.Manager)
 
+  # Gateway-specific supervisor mock (replaces LocalSupervisor)
+  defmock(Arbor.Test.Mocks.SupervisorMock, for: Arbor.Contracts.Cluster.Supervisor)
+
+  # Mock for LocalCoordinator functions (replaces LocalCoordinator)
+  defmock(Arbor.Test.Mocks.LocalCoordinatorMock,
+    for: Arbor.Test.Support.LocalCoordinatorBehaviour
+  )
+
   @doc """
   Sets up Mox for the current test process.
 
@@ -42,6 +50,16 @@ defmodule Arbor.Test.Support.MoxSetup do
   def setup_mox(_context) do
     # Set global mode to false to ensure test isolation
     Mox.set_mox_private()
+    :ok
+  end
+
+  @doc """
+  Sets up all mocks for the current test process.
+
+  This is a convenience function that configures all commonly used mocks.
+  """
+  def setup_all_mocks do
+    setup_mox(%{})
     :ok
   end
 
@@ -153,5 +171,95 @@ defmodule Arbor.Test.Support.MoxSetup do
   def expect_session_get(session_id, return_value) do
     Arbor.Core.MockSessionManager
     |> expect(:get_session, fn ^session_id, _state -> return_value end)
+  end
+
+  # Coordinator mock helpers
+
+  @doc """
+  Sets up expectation for coordinator handle_node_join.
+  """
+  def expect_coordinator_handle_node_join(node_info, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:handle_node_join, fn ^node_info, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator handle_node_leave.
+  """
+  def expect_coordinator_handle_node_leave(node, reason, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:handle_node_leave, fn ^node, ^reason, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator handle_node_failure.
+  """
+  def expect_coordinator_handle_node_failure(node, reason, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:handle_node_failure, fn ^node, ^reason, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator get_cluster_info.
+  """
+  def expect_coordinator_get_cluster_info(return_value) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:get_cluster_info, fn _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator register_agent_on_node.
+  """
+  def expect_coordinator_register_agent(agent_info, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:register_agent_on_node, fn ^agent_info, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator calculate_distribution.
+  """
+  def expect_coordinator_calculate_distribution(agents, return_value) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:calculate_distribution, fn ^agents, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator suggest_redistribution.
+  """
+  def expect_coordinator_suggest_redistribution(return_value) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:suggest_redistribution, fn _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator update_node_capacity.
+  """
+  def expect_coordinator_update_capacity(capacity_update, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:update_node_capacity, fn ^capacity_update, _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator get_sync_status.
+  """
+  def expect_coordinator_get_sync_status(return_value) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:get_sync_status, fn _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator get_cluster_health.
+  """
+  def expect_coordinator_get_cluster_health(return_value) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:get_cluster_health, fn _state -> return_value end)
+  end
+
+  @doc """
+  Sets up expectation for coordinator process_coordination_event.
+  """
+  def expect_coordinator_process_event(event, return_value \\ :ok) do
+    Arbor.Test.Mocks.LocalCoordinatorMock
+    |> expect(:process_coordination_event, fn ^event, _state -> return_value end)
   end
 end

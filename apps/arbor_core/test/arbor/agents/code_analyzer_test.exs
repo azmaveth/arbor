@@ -575,9 +575,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
       "  -> ERROR: Exception during cleanup: #{inspect(exception)}. State may be inconsistent for next test."
     )
 
-    Logger.error("Cleanup exception stacktrace",
-      stacktrace: Exception.format_stacktrace(__STACKTRACE__)
-    )
+    Logger.error("Cleanup exception details", exception: inspect(exception))
   end
 
   defp wait_for_processes_down(monitors, timeout) do

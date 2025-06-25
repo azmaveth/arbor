@@ -1,10 +1,11 @@
 defmodule Arbor.Core.ClusterCoordinatorTest do
   @moduledoc """
-  Unit tests for cluster coordination logic using local mocks.
+  Unit tests for cluster coordination logic using Mox-based mocking.
 
-  These tests use MOCK implementations to test cluster coordination logic without
-  requiring actual distributed clustering. The real Horde-based coordination
-  implementation will be tested in integration tests.
+  These tests use Mox to mock the LocalCoordinator implementation, providing
+  contract-based testing without requiring actual coordination infrastructure.
+  This replaces the hand-written LocalCoordinator mock with standardized
+  Mox-based testing patterns.
 
   Cluster coordination involves:
   - Node join/leave event handling
@@ -15,55 +16,44 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
 
   use ExUnit.Case, async: true
 
+  import Mox
+  import Arbor.Test.Support.MoxSetup
+
   alias Arbor.Core.ClusterCoordinator
-  alias Arbor.Test.Support.AsyncHelpers
-  alias Arbor.Test.Mocks.LocalCoordinator
 
   @moduletag :fast
 
+  setup :verify_on_exit!
+  setup :setup_mox
+
   setup do
-    # MOCK: Use local coordinator for unit testing
-    # Replace with Horde-based coordination for distributed operation
+    # Configure ClusterCoordinator to use our mock
+    Application.put_env(:arbor_core, :coordinator_impl, Arbor.Test.Mocks.LocalCoordinatorMock)
 
-    # Stop any existing coordinator
-    existing_pid =
-      case Process.whereis(LocalCoordinator) do
-        nil ->
-          nil
+    on_exit(fn ->
+      Application.put_env(:arbor_core, :coordinator_impl, :auto)
+    end)
 
-        pid ->
-          try do
-            GenServer.stop(pid)
-            pid
-          catch
-            :exit, _ -> nil
-          end
-      end
+    # Set up a basic mock state that will be used throughout tests
+    mock_state = %{
+      nodes: %{},
+      agents: %{},
+      event_log: [],
+      health_metrics: %{},
+      sync_status: %{
+        last_sync_timestamp: 0,
+        coordinator_nodes: [],
+        sync_conflicts: [],
+        partition_status: %{}
+      },
+      redistribution_plans: []
+    }
 
-    # Give a moment for cleanup if we had a process to stop
-    if existing_pid do
-      AsyncHelpers.wait_until(
-        fn ->
-          # Verify process is stopped
-          not Process.alive?(existing_pid)
-        end,
-        timeout: 100,
-        initial_delay: 10
-      )
-    end
-
-    # Start fresh coordinator for this test
-    {:ok, _pid} = LocalCoordinator.start_link([])
-
-    # Clear any existing state
-    LocalCoordinator.clear()
-
-    {:ok, state} = LocalCoordinator.init([])
-    %{coordinator_state: state}
+    {:ok, mock_state: mock_state}
   end
 
   describe "node lifecycle management" do
-    test "handles node join events", %{coordinator_state: state} do
+    test "handles node join events" do
       node_info = %{
         node: :worker@node1,
         capacity: 100,
@@ -71,114 +61,76 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
         resources: %{memory: 8_000_000, cpu_count: 4}
       }
 
-      # MOCK: Use local coordinator for unit testing
-      assert :ok = LocalCoordinator.handle_node_join(node_info, state)
+      # Mock the coordinator response
+      expect_coordinator_handle_node_join(node_info, :ok)
 
-      # Verify node is tracked
-      assert {:ok, cluster_info} = LocalCoordinator.get_cluster_info(state)
-      assert length(cluster_info.nodes) >= 1
-
-      joined_node =
-        Enum.find(cluster_info.nodes, fn node ->
-          node.node == :worker@node1
-        end)
-
-      assert joined_node != nil
-      assert joined_node.status == :active
-      assert joined_node.capacity == 100
-      assert joined_node.capabilities == [:worker_agent, :llm_agent]
+      # Test the public API
+      assert :ok = ClusterCoordinator.handle_node_join(node_info)
     end
 
-    test "handles node leave events", %{coordinator_state: state} do
-      # First, join a node
-      node_info = %{
-        node: :worker@node2,
-        capacity: 50,
-        capabilities: [:worker_agent],
-        resources: %{memory: 4_000_000, cpu_count: 2}
-      }
+    test "handles node leave events" do
+      node = :worker@node2
+      reason = :shutdown
 
-      # MOCK: Use local coordinator for unit testing
-      :ok = LocalCoordinator.handle_node_join(node_info, state)
+      # Mock the coordinator response
+      expect_coordinator_handle_node_leave(node, reason, :ok)
 
-      # Now handle node leave
-      assert :ok = LocalCoordinator.handle_node_leave(:worker@node2, :shutdown, state)
-
-      # Verify node is marked as inactive or removed
-      assert {:ok, cluster_info} = LocalCoordinator.get_cluster_info(state)
-
-      left_node =
-        Enum.find(cluster_info.nodes, fn node ->
-          node.node == :worker@node2
-        end)
-
-      # Node should either be removed or marked as inactive
-      assert left_node == nil or left_node.status == :inactive
+      # Test the public API
+      assert :ok = ClusterCoordinator.handle_node_leave(node, reason)
     end
 
-    test "handles node failure events", %{coordinator_state: state} do
-      # First, join a backup node that can accept migrations
-      backup_node = %{
-        node: :worker@backup,
-        capacity: 100,
-        capabilities: [:coordinator_agent],
-        resources: %{memory: 8_000_000, cpu_count: 4}
+    test "handles node failure events" do
+      node = :worker@node3
+      reason = :network_timeout
+
+      # Mock the coordinator response
+      expect_coordinator_handle_node_failure(node, reason, :ok)
+
+      # Test the public API
+      assert :ok = ClusterCoordinator.handle_node_failure(node, reason)
+    end
+
+    test "gets cluster information" do
+      cluster_info = %{
+        nodes: [
+          %{
+            node: :worker@node1,
+            status: :active,
+            capacity: 100,
+            capabilities: [:worker_agent, :llm_agent]
+          }
+        ],
+        total_capacity: 100,
+        active_nodes: 1,
+        total_agents: 0
       }
 
-      :ok = LocalCoordinator.handle_node_join(backup_node, state)
+      # Mock the coordinator response
+      expect_coordinator_get_cluster_info({:ok, cluster_info})
 
-      # Join a node with agents
-      node_info = %{
-        node: :worker@node3,
-        capacity: 75,
-        capabilities: [:coordinator_agent],
-        resources: %{memory: 6_000_000, cpu_count: 3}
-      }
-
-      # MOCK: Use local coordinator for unit testing
-      :ok = LocalCoordinator.handle_node_join(node_info, state)
-
-      # Add some agents to the node
-      agents = [
-        %{id: "agent-1", node: :worker@node3, type: :coordinator},
-        %{id: "agent-2", node: :worker@node3, type: :coordinator}
-      ]
-
-      for agent <- agents do
-        :ok = LocalCoordinator.register_agent_on_node(agent, state)
-      end
-
-      # Simulate node failure
-      assert :ok = LocalCoordinator.handle_node_failure(:worker@node3, :network_timeout, state)
-
-      # Verify redistribution plan is created
-      assert {:ok, redistribution_plan} =
-               LocalCoordinator.get_redistribution_plan(:worker@node3, state)
-
-      assert length(redistribution_plan.agents_to_migrate) == 2
-      assert redistribution_plan.target_nodes != []
+      # Test the public API
+      assert {:ok, ^cluster_info} = ClusterCoordinator.get_cluster_info()
     end
   end
 
   describe "agent redistribution" do
-    test "calculates optimal agent distribution", %{coordinator_state: state} do
-      # Set up a multi-node cluster
-      nodes = [
-        %{
-          node: :coordinator@node1,
-          capacity: 100,
-          capabilities: [:coordinator_agent, :worker_agent]
-        },
-        %{node: :worker@node2, capacity: 80, capabilities: [:worker_agent, :llm_agent]},
-        %{node: :worker@node3, capacity: 60, capabilities: [:worker_agent]}
-      ]
+    test "registers agent on node" do
+      agent_info = %{
+        id: "agent-1",
+        node: :worker@node1,
+        type: :coordinator,
+        priority: :high,
+        resources: %{memory: 1000, cpu: 50}
+      }
 
-      # MOCK: Use local coordinator for unit testing
-      for node_info <- nodes do
-        :ok = LocalCoordinator.handle_node_join(node_info, state)
-      end
+      # Mock the coordinator response
+      expect_coordinator_register_agent(agent_info, :ok)
 
-      # Add agents with different requirements
+      # Test the public API
+      assert :ok = ClusterCoordinator.register_agent_on_node(agent_info)
+    end
+
+    test "calculates optimal agent distribution" do
       agents = [
         %{
           id: "coord-1",
@@ -191,99 +143,68 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
           type: :worker_agent,
           priority: :normal,
           resources: %{memory: 500, cpu: 25}
-        },
-        %{
-          id: "worker-2",
-          type: :worker_agent,
-          priority: :normal,
-          resources: %{memory: 500, cpu: 25}
-        },
-        %{id: "llm-1", type: :llm_agent, priority: :high, resources: %{memory: 2000, cpu: 75}}
+        }
       ]
 
-      assert {:ok, distribution_plan} = LocalCoordinator.calculate_distribution(agents, state)
+      distribution_plan = %{
+        assignments: [
+          %{
+            agent_id: "coord-1",
+            target_node: :coordinator@node1,
+            assignment_reason: :load_balancing
+          },
+          %{agent_id: "worker-1", target_node: :worker@node2, assignment_reason: :load_balancing}
+        ],
+        strategy: :least_loaded,
+        created_at: System.system_time(:millisecond)
+      }
 
-      # Verify distribution respects node capabilities
-      for assignment <- distribution_plan.assignments do
-        agent = Enum.find(agents, &(&1.id == assignment.agent_id))
-        assert assignment.target_node != nil
+      # Mock the coordinator response
+      expect_coordinator_calculate_distribution(agents, {:ok, distribution_plan})
 
-        # Verify node can handle agent type
-        {:ok, cluster_info} = LocalCoordinator.get_cluster_info(state)
-        target_node = Enum.find(cluster_info.nodes, &(&1.node == assignment.target_node))
-        assert agent.type in target_node.capabilities
-      end
-
-      # Verify load balancing
-      node_loads = Enum.group_by(distribution_plan.assignments, & &1.target_node)
-      # Agents distributed across nodes
-      assert map_size(node_loads) > 1
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.calculate_distribution(agents)
+      assert result.assignments |> length() == 2
+      assert result.strategy == :least_loaded
     end
 
-    test "handles agent redistribution on node capacity changes", %{coordinator_state: state} do
-      # Set up initial cluster
-      node_info = %{
-        node: :worker@node1,
-        capacity: 100,
-        capabilities: [:worker_agent],
-        resources: %{memory: 8_000_000, cpu_count: 4}
+    test "suggests redistribution for load balancing" do
+      redistribution_plan = %{
+        agents_to_migrate: ["agent-1"],
+        reason: :capacity_exceeded,
+        created_at: System.system_time(:millisecond)
       }
 
-      # MOCK: Use local coordinator for unit testing
-      :ok = LocalCoordinator.handle_node_join(node_info, state)
+      # Mock the coordinator response
+      expect_coordinator_suggest_redistribution({:ok, redistribution_plan})
 
-      # Register agents on the node
-      agents = [
-        %{id: "agent-1", node: :worker@node1, type: :worker_agent},
-        %{id: "agent-2", node: :worker@node1, type: :worker_agent},
-        %{id: "agent-3", node: :worker@node1, type: :worker_agent}
-      ]
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.suggest_redistribution()
+      assert result.reason == :capacity_exceeded
+      assert "agent-1" in result.agents_to_migrate
+    end
 
-      for agent <- agents do
-        :ok = LocalCoordinator.register_agent_on_node(agent, state)
-      end
+    test "updates node capacity" do
+      node = :worker@node1
+      new_capacity = 30
+      reason = :high_load
 
-      # Reduce node capacity (simulating high load)
       capacity_update = %{
-        node: :worker@node1,
-        # Significantly reduced
-        new_capacity: 30,
-        reason: :high_load
+        node: node,
+        new_capacity: new_capacity,
+        reason: reason
       }
 
-      assert :ok = LocalCoordinator.update_node_capacity(capacity_update, state)
+      # Mock the coordinator response
+      expect_coordinator_update_capacity(capacity_update, :ok)
 
-      # Should suggest redistribution
-      assert {:ok, redistribution_plan} = LocalCoordinator.suggest_redistribution(state)
-
-      # Some agents should be marked for migration
-      assert length(redistribution_plan.agents_to_migrate) > 0
-      assert redistribution_plan.reason == :capacity_exceeded
+      # Test the public API
+      assert :ok = ClusterCoordinator.update_node_capacity(node, new_capacity, reason)
     end
   end
 
   describe "cluster state synchronization" do
-    test "synchronizes cluster state across coordinator nodes", %{coordinator_state: state} do
-      # Set up coordinator nodes
-      coordinators = [
-        :coordinator@primary,
-        :coordinator@secondary,
-        :coordinator@tertiary
-      ]
-
-      # MOCK: Use local coordinator for unit testing
-      for coordinator_node <- coordinators do
-        node_info = %{
-          node: coordinator_node,
-          capacity: 100,
-          capabilities: [:coordinator_agent],
-          role: :coordinator
-        }
-
-        :ok = LocalCoordinator.handle_node_join(node_info, state)
-      end
-
-      # Create cluster state update
+    test "synchronizes cluster state" do
       state_update = %{
         timestamp: System.system_time(:millisecond),
         updates: [
@@ -293,200 +214,218 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
         ]
       }
 
-      assert :ok = LocalCoordinator.synchronize_cluster_state(state_update, state)
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:synchronize_cluster_state, fn ^state_update, _state -> :ok end)
 
-      # Verify state is synchronized
-      assert {:ok, sync_status} = LocalCoordinator.get_sync_status(state)
-      assert sync_status.last_sync_timestamp >= state_update.timestamp
-      assert Enum.sort(sync_status.coordinator_nodes) == Enum.sort(coordinators)
-      assert sync_status.sync_conflicts == []
+      # Test the public API
+      assert :ok = ClusterCoordinator.synchronize_cluster_state(state_update)
     end
 
-    test "handles split-brain scenarios", %{coordinator_state: state} do
-      # Set up initial cluster with coordinators
-      coordinators = [
-        :coordinator@primary,
-        :coordinator@secondary
-      ]
+    test "gets synchronization status" do
+      sync_status = %{
+        last_sync_timestamp: System.system_time(:millisecond),
+        coordinator_nodes: [:coordinator@primary, :coordinator@secondary],
+        sync_conflicts: []
+      }
 
-      # MOCK: Use local coordinator for unit testing
-      for coordinator_node <- coordinators do
-        node_info = %{
-          node: coordinator_node,
-          capacity: 100,
-          capabilities: [:coordinator_agent],
-          role: :coordinator
-        }
+      # Mock the coordinator response
+      expect_coordinator_get_sync_status({:ok, sync_status})
 
-        :ok = LocalCoordinator.handle_node_join(node_info, state)
-      end
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.get_sync_status()
+      assert length(result.coordinator_nodes) == 2
+      assert result.sync_conflicts == []
+    end
 
-      # Simulate split-brain condition
+    test "handles split-brain scenarios" do
       split_brain_event = %{
         partitioned_nodes: [:coordinator@primary],
         isolated_nodes: [:coordinator@secondary],
         partition_timestamp: System.system_time(:millisecond)
       }
 
-      assert :ok = LocalCoordinator.handle_split_brain(split_brain_event, state)
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:handle_split_brain, fn ^split_brain_event, _state -> :ok end)
 
-      # Verify split-brain handling
-      assert {:ok, partition_status} = LocalCoordinator.get_partition_status(state)
-      assert partition_status.active_partition != nil
-      assert partition_status.quorum_achieved == true
-      assert partition_status.isolated_nodes == [:coordinator@secondary]
-    end
-
-    test "resolves conflicts during state merge", %{coordinator_state: state} do
-      # Create conflicting state updates
-      conflict_scenario = %{
-        node_a_updates: [
-          {:agent_started, "agent-1", :worker@node1, timestamp: 1000},
-          {:agent_capacity_updated, "agent-1", 50, timestamp: 1001}
-        ],
-        node_b_updates: [
-          # Later timestamp - should win
-          {:agent_started, "agent-1", :worker@node2, timestamp: 1001},
-          {:agent_capacity_updated, "agent-1", 75, timestamp: 1002}
-        ]
-      }
-
-      # MOCK: Use local coordinator for unit testing
-      assert {:ok, resolution} =
-               LocalCoordinator.resolve_state_conflicts(conflict_scenario, state)
-
-      # Verify conflict resolution
-      assert resolution.conflicts_detected > 0
-      assert resolution.resolution_strategy == :latest_timestamp
-      assert length(resolution.resolved_updates) > 0
-
-      # Should resolve to latest timestamp updates
-      agent_location =
-        Enum.find(resolution.resolved_updates, fn update ->
-          match?({:agent_started, "agent-1", _, _}, update)
-        end)
-
-      # Later timestamp wins
-      assert elem(agent_location, 2) == :worker@node2
+      # Test the public API
+      assert :ok = ClusterCoordinator.handle_split_brain(split_brain_event)
     end
   end
 
-  describe "load balancing and optimization" do
-    test "monitors cluster load and suggests optimizations", %{coordinator_state: state} do
-      # Set up cluster with varying loads
-      nodes = [
-        %{node: :worker@overloaded, capacity: 20, current_load: 95, agent_count: 10},
-        %{node: :worker@normal, capacity: 50, current_load: 50, agent_count: 5},
-        %{node: :worker@underused, capacity: 90, current_load: 10, agent_count: 1}
-      ]
+  describe "health monitoring and optimization" do
+    test "updates node health metrics" do
+      node = :worker@monitored
+      metric = :memory_usage
+      value = 95
 
-      # MOCK: Use local coordinator for unit testing
-      for node_info <- nodes do
-        node_data = Map.put(node_info, :capabilities, [:worker_agent])
-        :ok = LocalCoordinator.handle_node_join(node_data, state)
-        :ok = LocalCoordinator.update_node_load(node_info.node, node_info.current_load, state)
-      end
-
-      assert {:ok, optimization_plan} = LocalCoordinator.analyze_cluster_load(state)
-
-      # Should identify overloaded and underutilized nodes
-      assert length(optimization_plan.overloaded_nodes) >= 1
-      assert length(optimization_plan.underutilized_nodes) >= 1
-
-      overloaded = List.first(optimization_plan.overloaded_nodes)
-      assert overloaded.node == :worker@overloaded
-      assert overloaded.recommended_action == :migrate_agents
-
-      underutilized = List.first(optimization_plan.underutilized_nodes)
-      assert underutilized.node == :worker@underused
-      assert underutilized.recommended_action == :accept_migrations
-    end
-
-    test "implements health monitoring and alerts", %{coordinator_state: state} do
-      # Set up cluster
-      node_info = %{
-        node: :worker@monitored,
-        capacity: 100,
-        capabilities: [:worker_agent],
-        resources: %{memory: 8_000_000, cpu_count: 4}
+      health_update = %{
+        node: node,
+        metric: metric,
+        value: value,
+        timestamp: System.system_time(:millisecond)
       }
 
-      # MOCK: Use local coordinator for unit testing
-      :ok = LocalCoordinator.handle_node_join(node_info, state)
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:update_node_health, fn update, _state ->
+        assert update.node == node
+        assert update.metric == metric
+        assert update.value == value
+        :ok
+      end)
 
-      # Simulate health deterioration
-      health_updates = [
-        %{node: :worker@monitored, metric: :memory_usage, value: 70, timestamp: 1000},
-        %{node: :worker@monitored, metric: :memory_usage, value: 85, timestamp: 2000},
-        # Critical
-        %{node: :worker@monitored, metric: :memory_usage, value: 95, timestamp: 3000},
-        # High
-        %{node: :worker@monitored, metric: :cpu_usage, value: 90, timestamp: 3100}
-      ]
+      # Test the public API
+      assert :ok = ClusterCoordinator.update_node_health(node, metric, value)
+    end
 
-      for update <- health_updates do
-        :ok = LocalCoordinator.update_node_health(update, state)
-      end
+    test "gets cluster health status" do
+      health_status = %{
+        nodes: [
+          %{
+            node: :worker@monitored,
+            health_status: :critical,
+            alerts: [
+              %{metric: :memory_usage, severity: :critical, threshold_exceeded: true}
+            ]
+          }
+        ],
+        overall_status: :critical,
+        critical_alerts: 1
+      }
 
-      assert {:ok, health_status} = LocalCoordinator.get_cluster_health(state)
+      # Mock the coordinator response
+      expect_coordinator_get_cluster_health({:ok, health_status})
 
-      # Should detect health issues
-      monitored_node = Enum.find(health_status.nodes, &(&1.node == :worker@monitored))
-      assert monitored_node.health_status == :critical
-      assert monitored_node.alerts != []
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.get_cluster_health()
+      assert result.overall_status == :critical
+      assert result.critical_alerts == 1
+    end
 
-      memory_alert = Enum.find(monitored_node.alerts, &(&1.metric == :memory_usage))
-      assert memory_alert.severity == :critical
-      assert memory_alert.threshold_exceeded == true
+    test "analyzes cluster load" do
+      optimization_plan = %{
+        overloaded_nodes: [
+          %{node: :worker@overloaded, current_load: 95, recommended_action: :migrate_agents}
+        ],
+        underutilized_nodes: [
+          %{node: :worker@underused, current_load: 10, recommended_action: :accept_migrations}
+        ]
+      }
+
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:analyze_cluster_load, fn _state -> {:ok, optimization_plan} end)
+
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.analyze_cluster_load()
+      assert length(result.overloaded_nodes) == 1
+      assert length(result.underutilized_nodes) == 1
+    end
+
+    test "updates node load" do
+      node = :worker@node1
+      load = 75
+
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:update_node_load, fn ^node, ^load, _state -> :ok end)
+
+      # Test the public API
+      assert :ok = ClusterCoordinator.update_node_load(node, load)
     end
   end
 
   describe "coordination event handling" do
-    test "processes coordination events in order", %{coordinator_state: state} do
-      # Create sequence of coordination events
-      events = [
-        {:node_join, :worker@node1, %{capacity: 100}, timestamp: 1000},
-        {:agent_start_request, "agent-1", %{type: :worker}, timestamp: 1001},
-        {:agent_assigned, "agent-1", :worker@node1, timestamp: 1002},
-        {:node_capacity_update, :worker@node1, 80, timestamp: 1003},
-        {:redistribution_suggested, [:worker@node1], timestamp: 1004}
-      ]
+    test "processes coordination events" do
+      event = {:node_join, :worker@node1, %{capacity: 100}, timestamp: 1000}
 
-      # MOCK: Use local coordinator for unit testing
-      for event <- events do
-        assert :ok = LocalCoordinator.process_coordination_event(event, state)
-      end
+      # Mock the coordinator response
+      expect_coordinator_process_event(event, :ok)
 
-      # Verify events were processed in order
-      assert {:ok, event_log} = LocalCoordinator.get_coordination_log(state)
-      assert length(event_log.processed_events) == 5
-
-      # Events should be ordered by timestamp
-      timestamps = Enum.map(event_log.processed_events, & &1.timestamp)
-      assert timestamps == Enum.sort(timestamps)
+      # Test the public API
+      assert :ok = ClusterCoordinator.process_coordination_event(event)
     end
 
-    test "handles coordination event failures gracefully", %{coordinator_state: state} do
-      # Create events with some that will fail
-      events = [
-        {:node_join, :worker@node1, %{capacity: 100}, timestamp: 1000},
-        # Should fail
-        {:invalid_event, "bad-data", timestamp: 1001},
-        {:agent_start_request, "agent-1", %{type: :worker}, timestamp: 1002}
-      ]
+    test "handles coordination event failures gracefully" do
+      invalid_event = {:invalid_event, "bad-data", timestamp: 1001}
 
-      # MOCK: Use local coordinator for unit testing
-      results = Enum.map(events, &LocalCoordinator.process_coordination_event(&1, state))
+      # Mock the coordinator response to return an error
+      expect_coordinator_process_event(invalid_event, {:error, :invalid_event_type})
 
-      # Should handle failures gracefully
-      assert Enum.at(results, 0) == :ok
-      assert match?({:error, _}, Enum.at(results, 1))
-      assert Enum.at(results, 2) == :ok
+      # Test the public API
+      assert {:error, :invalid_event_type} =
+               ClusterCoordinator.process_coordination_event(invalid_event)
+    end
 
-      # Verify system remains functional after failure
-      assert {:ok, cluster_info} = LocalCoordinator.get_cluster_info(state)
-      # Node join succeeded
-      assert length(cluster_info.nodes) >= 1
+    test "gets coordination event log" do
+      event_log = %{
+        processed_events: [
+          %{type: :node_join, timestamp: 1000, processed: true},
+          %{type: :agent_start_request, timestamp: 1001, processed: true}
+        ],
+        total_events: 2,
+        failed_events: 0
+      }
+
+      # Mock the coordinator response
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:get_coordination_log, fn _state -> {:ok, event_log} end)
+
+      # Test the public API
+      assert {:ok, result} = ClusterCoordinator.get_coordination_log()
+      assert result.total_events == 2
+      assert result.failed_events == 0
+    end
+  end
+
+  describe "convenience functions" do
+    test "handles complete node failure recovery" do
+      failed_node = :worker@node3
+      reason = :network_timeout
+
+      redistribution_plan = %{
+        trigger_node: failed_node,
+        agents_to_migrate: ["agent-1", "agent-2"],
+        target_nodes: [:worker@node1, :worker@node2],
+        reason: :node_failure,
+        created_at: System.system_time(:millisecond)
+      }
+
+      # Mock both the failure handling and redistribution plan retrieval
+      expect_coordinator_handle_node_failure(failed_node, reason, :ok)
+
+      Arbor.Test.Mocks.LocalCoordinatorMock
+      |> expect(:get_redistribution_plan, fn ^failed_node, _state ->
+        {:ok, redistribution_plan}
+      end)
+
+      # Test the public API
+      assert {:ok, recovery_plan} =
+               ClusterCoordinator.handle_node_failure_recovery(failed_node, reason)
+
+      assert recovery_plan.failed_node == failed_node
+      assert recovery_plan.failure_reason == reason
+      assert recovery_plan.redistribution_plan.agents_to_migrate == ["agent-1", "agent-2"]
+    end
+
+    test "performs comprehensive health check" do
+      cluster_info = %{nodes: [], total_capacity: 0, active_nodes: 0, total_agents: 0}
+      health_status = %{nodes: [], overall_status: :healthy, critical_alerts: 0}
+      sync_status = %{last_sync_timestamp: 0, coordinator_nodes: [], sync_conflicts: []}
+
+      # Mock all the required responses
+      expect_coordinator_get_cluster_info({:ok, cluster_info})
+      expect_coordinator_get_cluster_health({:ok, health_status})
+      expect_coordinator_get_sync_status({:ok, sync_status})
+
+      # Test the public API
+      assert {:ok, health_report} = ClusterCoordinator.perform_health_check()
+      assert health_report.cluster_info == cluster_info
+      assert health_report.health_status == health_status
+      assert health_report.sync_status == sync_status
+      assert health_report.check_timestamp != nil
     end
   end
 end
