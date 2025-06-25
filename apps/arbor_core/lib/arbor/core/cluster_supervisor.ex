@@ -367,14 +367,14 @@ defmodule Arbor.Core.ClusterSupervisor do
     # For production, use Horde supervisor
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.LocalSupervisor
+        Arbor.Test.Mocks.SupervisorMock
 
       :horde ->
         Arbor.Core.HordeSupervisor
 
       :auto ->
         if Application.get_env(:arbor_core, :env) == :test do
-          Arbor.Test.Mocks.LocalSupervisor
+          Arbor.Test.Mocks.SupervisorMock
         else
           Arbor.Core.HordeSupervisor
         end

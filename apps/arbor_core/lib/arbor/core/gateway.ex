@@ -732,17 +732,21 @@ defmodule Arbor.Core.Gateway do
   defp get_supervisor_impl() do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.LocalSupervisor
+        Arbor.Test.Mocks.SupervisorMock
 
       :horde ->
         Arbor.Core.HordeSupervisor
 
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
-          Arbor.Test.Mocks.LocalSupervisor
+          Arbor.Test.Mocks.SupervisorMock
         else
           Arbor.Core.HordeSupervisor
         end
+
+      module when is_atom(module) ->
+        # Direct module injection for Mox testing
+        module
     end
   end
 

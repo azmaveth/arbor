@@ -574,14 +574,14 @@ defmodule Arbor.Core.ClusterManager do
   defp get_supervisor_impl do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.LocalSupervisor
+        Arbor.Test.Mocks.SupervisorMock
 
       :horde ->
         HordeSupervisor
 
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
-          Arbor.Test.Mocks.LocalSupervisor
+          Arbor.Test.Mocks.SupervisorMock
         else
           HordeSupervisor
         end
