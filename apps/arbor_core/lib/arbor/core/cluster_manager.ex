@@ -49,9 +49,10 @@ defmodule Arbor.Core.ClusterManager do
   """
 
   use GenServer
-  require Logger
 
   alias Arbor.Core.{ClusterCoordinator, HordeCoordinator, HordeRegistry, HordeSupervisor}
+
+  require Logger
 
   @type topology :: atom()
   @type node_event :: :nodeup | :nodedown

@@ -1,9 +1,10 @@
 defmodule Arbor.Persistence.EventTest do
   use ExUnit.Case, async: true
-  @moduletag :fast
 
   alias Arbor.Contracts.Events.Event, as: ContractEvent
   alias Arbor.Persistence.Event
+
+  @moduletag :fast
 
   describe "from_contract/1" do
     test "creates valid persistence event from contract event" do

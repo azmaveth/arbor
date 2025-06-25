@@ -220,7 +220,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to generate redistribution plan
   """
   @spec suggest_redistribution() :: {:ok, redistribution_plan()} | {:error, term()}
-  def suggest_redistribution() do
+  def suggest_redistribution do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 
@@ -294,7 +294,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to get sync status
   """
   @spec get_sync_status() :: {:ok, map()} | {:error, term()}
-  def get_sync_status() do
+  def get_sync_status do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 
@@ -370,7 +370,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to get health status
   """
   @spec get_cluster_health() :: {:ok, health_status()} | {:error, term()}
-  def get_cluster_health() do
+  def get_cluster_health do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 
@@ -389,7 +389,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to analyze cluster load
   """
   @spec analyze_cluster_load() :: {:ok, map()} | {:error, term()}
-  def analyze_cluster_load() do
+  def analyze_cluster_load do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 
@@ -456,7 +456,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to get event log
   """
   @spec get_coordination_log() :: {:ok, map()} | {:error, term()}
-  def get_coordination_log() do
+  def get_coordination_log do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 
@@ -532,7 +532,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to perform health check
   """
   @spec perform_health_check() :: {:ok, map()} | {:error, term()}
-  def perform_health_check() do
+  def perform_health_check do
     with {:ok, cluster_info} <- get_cluster_info(),
          {:ok, health_status} <- get_cluster_health(),
          {:ok, sync_status} <- get_sync_status() do
@@ -549,7 +549,7 @@ defmodule Arbor.Core.ClusterCoordinator do
 
   # Implementation selection
 
-  defp get_coordinator_impl() do
+  defp get_coordinator_impl do
     # Use configuration to select implementation
     # MOCK: For testing, use local coordinator
     # For production, use Horde-based coordinator
@@ -569,7 +569,7 @@ defmodule Arbor.Core.ClusterCoordinator do
     end
   end
 
-  defp get_coordinator_state() do
+  defp get_coordinator_state do
     # For mock implementation, create a fresh state
     # For Horde, this would be the actual coordinator state
     impl = get_coordinator_impl()

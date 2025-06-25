@@ -455,7 +455,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
 
   @doc "Get registry status for cluster manager"
   @spec get_registry_status() :: {:ok, map()}
-  def get_registry_status() do
+  def get_registry_status do
     {:ok,
      %{
        status: :healthy,

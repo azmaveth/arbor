@@ -16,9 +16,10 @@ defmodule Arbor.Core.HordeCoordinator do
   """
 
   use GenServer
-  require Logger
 
   alias Arbor.Core.ClusterHealth
+
+  require Logger
 
   # Coordination state stored in CRDT
   @coordination_registry Arbor.Core.HordeCoordinationRegistry

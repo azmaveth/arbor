@@ -335,7 +335,7 @@ defmodule Arbor.Core.HordeRegistry do
   end
 
   @spec get_registry_status() :: map()
-  def get_registry_status() do
+  def get_registry_status do
     members = Horde.Cluster.members(@registry_name)
     {:ok, count} = count(nil)
 

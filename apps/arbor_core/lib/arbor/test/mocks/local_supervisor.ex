@@ -8,11 +8,11 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   IMPORTANT: This is a MOCK - replace with Horde for distributed operation!
   """
 
-  @behaviour Arbor.Contracts.Cluster.Supervisor
+  use Agent
 
   alias Arbor.Core.ClusterRegistry
 
-  use Agent
+  @behaviour Arbor.Contracts.Cluster.Supervisor
 
   defstruct [
     :agents,
@@ -216,7 +216,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def list_agents() do
+  def list_agents do
     Agent.get(__MODULE__, fn state ->
       agents =
         Enum.map(state.agents, fn {agent_id, record} ->
@@ -343,7 +343,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def health_metrics() do
+  def health_metrics do
     Agent.get(__MODULE__, fn state ->
       agents = Map.values(state.agents)
 
@@ -520,7 +520,7 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   Mock implementation for testing.
   """
   @spec get_supervisor_status() :: map()
-  def get_supervisor_status() do
+  def get_supervisor_status do
     %{
       status: :healthy,
       members: [node()],

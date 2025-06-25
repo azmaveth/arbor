@@ -11,10 +11,11 @@ defmodule Arbor.Core.AgentReconciler do
   """
 
   use GenServer
-  require Logger
 
   alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry, TelemetryHelper}
-  alias DynamicSupervisor
+  alias Horde.DynamicSupervisor
+
+  require Logger
 
   @behaviour Arbor.Contracts.Agent.Reconciler
 

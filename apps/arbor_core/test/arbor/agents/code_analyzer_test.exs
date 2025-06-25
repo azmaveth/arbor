@@ -487,58 +487,7 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
     try do
       case HordeSupervisor.list_agents() do
         {:ok, agents} ->
-          running_agents = Enum.filter(agents, &(&1.status == :running))
-          agent_ids_to_stop = Enum.map(agents, & &1.id)
-
-          monitors =
-            if Enum.any?(running_agents) do
-              pids_to_monitor = Enum.map(running_agents, & &1.pid)
-              IO.puts("  -> Monitoring #{length(pids_to_monitor)} running processes.")
-              Enum.map(pids_to_monitor, &Process.monitor/1)
-            else
-              []
-            end
-
-          if Enum.any?(agent_ids_to_stop) do
-            IO.puts("  -> Stopping #{length(agent_ids_to_stop)} agents (running and specs)...")
-            Enum.each(agent_ids_to_stop, &HordeSupervisor.stop_agent/1)
-          else
-            IO.puts("  -> No agents or specs to clean up.")
-          end
-
-          if Enum.any?(monitors) do
-            IO.puts("  -> Waiting for processes to terminate (max 3s)...")
-            wait_for_processes_down(monitors, 3000)
-          end
-
-          # Verification step
-          # Wait for distributed state to sync
-          AsyncHelpers.wait_until(
-            fn ->
-              # Just wait for CRDT sync time
-              Process.sleep(200)
-              true
-            end,
-            timeout: 300,
-            initial_delay: 200
-          )
-
-          IO.puts("  -> Verifying cleanup...")
-
-          case HordeSupervisor.list_agents() do
-            {:ok, []} ->
-              IO.puts("    -> OK: All agents stopped and unregistered.")
-
-            {:ok, remaining_agents} ->
-              IO.puts("    -> WARNING: #{length(remaining_agents)} remain after cleanup.")
-
-              Logger.warning("Remaining agents after cleanup", remaining_agents: remaining_agents)
-
-            {:error, reason} ->
-              IO.puts(
-                "    -> WARNING: Could not verify cleanup, list_agents failed: #{inspect(reason)}"
-              )
-          end
+          process_agents_cleanup(agents)
 
         {:error, reason} ->
           IO.puts(
@@ -547,16 +496,88 @@ defmodule Arbor.Agents.CodeAnalyzerTest do
       end
     rescue
       exception ->
-        IO.puts(
-          "  -> ERROR: Exception during cleanup: #{inspect(exception)}. State may be inconsistent for next test."
-        )
-
-        Logger.error("Cleanup exception stacktrace",
-          stacktrace: Exception.format_stacktrace(__STACKTRACE__)
-        )
+        handle_cleanup_exception(exception)
     end
 
     IO.puts("--- Horde cleanup finished ---\n")
+  end
+
+  defp process_agents_cleanup(agents) do
+    running_agents = Enum.filter(agents, &(&1.status == :running))
+    agent_ids_to_stop = Enum.map(agents, & &1.id)
+
+    monitors = monitor_running_agents(running_agents)
+    stop_agents_if_any(agent_ids_to_stop)
+    wait_for_monitored_processes(monitors)
+    wait_for_distributed_sync()
+    verify_cleanup_complete()
+  end
+
+  defp monitor_running_agents(running_agents) do
+    if Enum.any?(running_agents) do
+      pids_to_monitor = Enum.map(running_agents, & &1.pid)
+      IO.puts("  -> Monitoring #{length(pids_to_monitor)} running processes.")
+      Enum.map(pids_to_monitor, &Process.monitor/1)
+    else
+      []
+    end
+  end
+
+  defp stop_agents_if_any(agent_ids_to_stop) do
+    if Enum.any?(agent_ids_to_stop) do
+      IO.puts("  -> Stopping #{length(agent_ids_to_stop)} agents (running and specs)...")
+      Enum.each(agent_ids_to_stop, &HordeSupervisor.stop_agent/1)
+    else
+      IO.puts("  -> No agents or specs to clean up.")
+    end
+  end
+
+  defp wait_for_monitored_processes(monitors) do
+    if Enum.any?(monitors) do
+      IO.puts("  -> Waiting for processes to terminate (max 3s)...")
+      wait_for_processes_down(monitors, 3000)
+    end
+  end
+
+  defp wait_for_distributed_sync do
+    # Wait for distributed state to sync
+    AsyncHelpers.wait_until(
+      fn ->
+        # Just wait for CRDT sync time
+        Process.sleep(200)
+        true
+      end,
+      timeout: 300,
+      initial_delay: 200
+    )
+  end
+
+  defp verify_cleanup_complete do
+    IO.puts("  -> Verifying cleanup...")
+
+    case HordeSupervisor.list_agents() do
+      {:ok, []} ->
+        IO.puts("    -> OK: All agents stopped and unregistered.")
+
+      {:ok, remaining_agents} ->
+        IO.puts("    -> WARNING: #{length(remaining_agents)} remain after cleanup.")
+        Logger.warning("Remaining agents after cleanup", remaining_agents: remaining_agents)
+
+      {:error, reason} ->
+        IO.puts(
+          "    -> WARNING: Could not verify cleanup, list_agents failed: #{inspect(reason)}"
+        )
+    end
+  end
+
+  defp handle_cleanup_exception(exception) do
+    IO.puts(
+      "  -> ERROR: Exception during cleanup: #{inspect(exception)}. State may be inconsistent for next test."
+    )
+
+    Logger.error("Cleanup exception stacktrace",
+      stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+    )
   end
 
   defp wait_for_processes_down(monitors, timeout) do
