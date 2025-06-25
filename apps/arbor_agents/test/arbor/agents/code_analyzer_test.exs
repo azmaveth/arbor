@@ -1,5 +1,7 @@
 defmodule Arbor.Agents.CodeAnalyzerTest do
   use ExUnit.Case, async: false
+  
+  @moduletag :slow
 
   alias Arbor.Core.ClusterSupervisor
 

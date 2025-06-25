@@ -8,6 +8,8 @@ defmodule Arbor.Core.ClusterEventsTest do
 
   use Arbor.Test.Support.IntegrationCase
 
+  @moduletag :slow
+
   alias Arbor.Core.{AgentReconciler, ClusterEvents, HordeSupervisor}
 
   describe "agent lifecycle events" do

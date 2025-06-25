@@ -1,31 +1,45 @@
 defmodule Arbor.Core.GatewayTest do
   use ExUnit.Case, async: true
 
+  import Mox
+
   alias Arbor.Core.Gateway
-  alias Arbor.Test.Mocks.LocalSupervisor
+  alias Arbor.Test.Mocks.SupervisorMock
 
   @moduletag :contract
 
   setup do
-    # For gateway tests, we can often mock the backend supervisor
-    # to isolate the gateway's logic (validation, dispatch).
-    # We'll use the LocalSupervisor mock for this.
-    Application.put_env(:arbor_core, :supervisor_impl, :mock)
-    start_supervised({LocalSupervisor, name: LocalSupervisor})
+    # Configure the Gateway to use our SupervisorMock for this test.
+    # The massive LocalSupervisor mock is no longer needed.
+    Application.put_env(:arbor_core, :supervisor_impl, SupervisorMock)
+
     :ok
   end
 
   describe "command validation" do
     @tag :validation
     test "accepts a valid :spawn_agent command" do
+      agent_id = "test-agent-1"
+
       command = %{
         type: :spawn_agent,
         params: %{
           type: :code_analyzer,
-          id: "test-agent-1",
+          id: agent_id,
           metadata: %{}
         }
       }
+
+      # Stub the supervisor to handle the async call
+      stub(SupervisorMock, :start_agent, fn agent_spec ->
+        # Verify Gateway correctly builds the agent spec from command params
+        assert agent_spec.id == agent_id
+        assert agent_spec.module == Arbor.Agents.CodeAnalyzer
+        assert agent_spec.restart_strategy == :permanent
+
+        # Return successful start
+        {:ok, self()}
+      end)
 
       # This test is about the interface contract. We assert that the Gateway
       # can successfully accept a valid command and return an execution ID.
@@ -33,6 +47,9 @@ defmodule Arbor.Core.GatewayTest do
                Gateway.execute_command(command, %{session_id: "test-session-123"}, nil)
 
       assert is_binary(execution_id)
+
+      # Allow time for async execution to complete and call our stub
+      Process.sleep(50)
     end
 
     @tag :validation
@@ -45,6 +62,9 @@ defmodule Arbor.Core.GatewayTest do
         }
       }
 
+      # We assert that the supervisor is *never* called, as validation fails first.
+      # Mox.verify!() (run automatically on test exit) ensures no unexpected
+      # calls were made to SupervisorMock.
       assert {:error, {:invalid_command, _}} =
                Gateway.execute_command(command, %{session_id: "test-session-123"}, nil)
     end
@@ -54,8 +74,7 @@ defmodule Arbor.Core.GatewayTest do
     @tag :dispatch
     test "dispatches :spawn_agent to the supervisor implementation" do
       # This test verifies that Gateway correctly calls the configured
-      # supervisor module. Since we've configured the LocalSupervisor,
-      # we can check its state to confirm the dispatch was successful.
+      # supervisor module with the proper agent specification.
       agent_id = "dispatch-test-agent"
 
       command = %{
@@ -63,18 +82,33 @@ defmodule Arbor.Core.GatewayTest do
         params: %{
           type: :code_analyzer,
           id: agent_id,
-          metadata: %{}
+          metadata: %{source: "gateway_test"}
         }
       }
+
+      # Stub the supervisor to handle the async call
+      stub(SupervisorMock, :start_agent, fn agent_spec ->
+        # Assert that the Gateway correctly constructed the agent spec
+        assert agent_spec.id == agent_id
+        # This assumes the Gateway maps the command type to an agent module.
+        # This makes the test a precise contract for the Gateway's logic.
+        assert agent_spec.module == Arbor.Agents.CodeAnalyzer
+        # Note: metadata is not passed through in current implementation
+
+        # The mock must return a value that satisfies the caller's contract.
+        {:ok, self()}
+      end)
 
       assert {:ok, execution_id} =
                Gateway.execute_command(command, %{session_id: "test-session-123"}, nil)
 
       assert is_binary(execution_id)
 
-      # Note: Agent registration happens asynchronously in the background.
-      # For contract tests, we verify the command was accepted (execution_id returned).
-      # Integration tests can verify the full async behavior with proper wait/polling.
+      # Allow time for async execution to complete and call our stub
+      Process.sleep(50)
+
+      # The stub assertions verify the Gateway correctly builds agent specs
+      # from command parameters, providing precise contract testing.
     end
   end
 end

@@ -19,7 +19,7 @@ exclude_tags =
   cond do
     is_watch_mode ->
       # In watch mode, only run fast tests
-      [integration: true, distributed: true, chaos: true, contract: true]
+      [integration: true, distributed: true, chaos: true, contract: true, slow: true]
 
     run_distributed_tests ->
       # When running distributed tests, don't exclude anything

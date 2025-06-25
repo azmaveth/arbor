@@ -20,6 +20,7 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
   alias Arbor.Test.Support.AsyncHelpers
 
   @moduletag :distributed
+  @moduletag :slow
   @moduletag timeout: 60_000
 
   setup_all do
