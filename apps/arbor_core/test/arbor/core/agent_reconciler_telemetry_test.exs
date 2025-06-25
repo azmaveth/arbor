@@ -8,7 +8,7 @@ defmodule Arbor.Core.AgentReconcilerTelemetryTest do
 
   use Arbor.Test.Support.IntegrationCase
 
-  alias Arbor.Core.{HordeSupervisor, AgentReconciler}
+  alias Arbor.Core.{AgentReconciler, HordeSupervisor}
 
   describe "reconciliation telemetry" do
     test "emits comprehensive telemetry events during reconciliation" do

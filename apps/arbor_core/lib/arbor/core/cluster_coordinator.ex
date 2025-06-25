@@ -154,7 +154,7 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to retrieve cluster info
   """
   @spec get_cluster_info() :: {:ok, cluster_info()} | {:error, term()}
-  def get_cluster_info() do
+  def get_cluster_info do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
 

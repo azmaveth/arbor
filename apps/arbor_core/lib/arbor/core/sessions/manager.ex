@@ -44,10 +44,10 @@ defmodule Arbor.Core.Sessions.Manager do
       :ok = Manager.end_session(session_id)
   """
 
+  @behaviour Arbor.Contracts.Session.Manager
+
   use GenServer
   require Logger
-
-  @behaviour Arbor.Contracts.Session.Manager
 
   alias Arbor.Core.{ClusterSupervisor, SessionRegistry}
   alias Arbor.Core.Sessions.Session

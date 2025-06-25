@@ -43,7 +43,8 @@ defmodule Arbor.Core.MixProject do
       {:highlander, "~> 0.2"},
       {:plug, "~> 1.14"},
       {:plug_cowboy, "~> 2.6"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:mox, "~> 1.1", only: :test}
     ]
   end
 

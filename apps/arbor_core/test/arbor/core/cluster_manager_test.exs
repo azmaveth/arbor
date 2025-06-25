@@ -1,14 +1,15 @@
 defmodule Arbor.Core.ClusterManagerTest do
   use ExUnit.Case, async: false
 
+  import Arbor.Test.Support.MoxSetup
+
   alias Arbor.Core.ClusterManager
 
   @moduletag :integration
 
   setup_all do
-    # Use mock implementations for testing
-    Application.put_env(:arbor_core, :registry_impl, :mock)
-    Application.put_env(:arbor_core, :supervisor_impl, :mock)
+    # Use Mox-based mock implementations
+    setup_mock_implementations()
 
     # Ensure ClusterManager is started under test supervisor
     case Process.whereis(ClusterManager) do
@@ -21,12 +22,13 @@ defmodule Arbor.Core.ClusterManagerTest do
 
     on_exit(fn ->
       # Reset to auto configuration
-      Application.put_env(:arbor_core, :registry_impl, :auto)
-      Application.put_env(:arbor_core, :supervisor_impl, :auto)
+      reset_implementations()
     end)
 
     :ok
   end
+
+  setup :setup_mox
 
   describe "cluster_status/0" do
     test "returns current cluster status" do

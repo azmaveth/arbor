@@ -378,6 +378,10 @@ defmodule Arbor.Core.ClusterSupervisor do
         else
           Arbor.Core.HordeSupervisor
         end
+
+      module when is_atom(module) ->
+        # Direct module specification (for Mox and other custom implementations)
+        module
     end
   end
 

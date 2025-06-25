@@ -144,7 +144,7 @@ defmodule ArborCli.Cli do
   defp render_simple_success(result) do
     # Simple text-based output for terminals that don't support rich formatting.
     IO.puts("Command successful.")
-    IO.inspect(result, pretty: true)
+    Jason.encode!(result) |> IO.puts()
   end
 
   defp render_enhanced_success(result) do

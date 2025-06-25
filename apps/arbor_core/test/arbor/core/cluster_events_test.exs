@@ -8,7 +8,7 @@ defmodule Arbor.Core.ClusterEventsTest do
 
   use Arbor.Test.Support.IntegrationCase
 
-  alias Arbor.Core.{ClusterEvents, HordeSupervisor, AgentReconciler}
+  alias Arbor.Core.{AgentReconciler, ClusterEvents, HordeSupervisor}
 
   describe "agent lifecycle events" do
     test "broadcasts agent_started events when agents are created" do

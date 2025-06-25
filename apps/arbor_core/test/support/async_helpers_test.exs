@@ -68,7 +68,7 @@ defmodule Arbor.Test.Support.AsyncHelpersTest do
           end,
           # Start with 50ms
           initial_delay: 50,
-          # Triple each time  
+          # Triple each time
           factor: 3,
           # Cap at 200ms
           max_delay: 200

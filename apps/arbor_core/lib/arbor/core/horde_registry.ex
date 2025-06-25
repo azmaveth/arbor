@@ -17,11 +17,11 @@ defmodule Arbor.Core.HordeRegistry do
   - Group entries: {{:group, group_name, agent_id}, true}
   """
 
-  alias Arbor.Contracts.Cluster.Registry, as: RegistryContract
+  @behaviour Arbor.Contracts.Cluster.Registry
 
   require Logger
 
-  @behaviour RegistryContract
+  alias Arbor.Contracts.Cluster.Registry, as: RegistryContract
 
   # Registry name - must match what's started in supervisor
   @registry_name Arbor.Core.HordeAgentRegistry

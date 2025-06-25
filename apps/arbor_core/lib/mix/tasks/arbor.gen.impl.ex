@@ -17,11 +17,11 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   directory based on its name (e.g., `Arbor.Core.*` modules are placed
   in the `arbor_core` app).
   """
+  @shortdoc "Generates an implementation for a contract"
+
   use Mix.Task
 
   alias Arbor.CodeGen.ImplementationGenerator
-
-  @shortdoc "Generates an implementation for a contract"
 
   @impl Mix.Task
   def run(args) do

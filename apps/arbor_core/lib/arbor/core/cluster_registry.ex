@@ -178,7 +178,7 @@ defmodule Arbor.Core.ClusterRegistry do
   - `{:ok, count}` - Number of registered agents cluster-wide
   """
   @spec agent_count() :: {:ok, non_neg_integer()}
-  def agent_count() do
+  def agent_count do
     registry_impl = get_registry_impl()
     state = get_registry_state()
 
@@ -242,7 +242,7 @@ defmodule Arbor.Core.ClusterRegistry do
   - `:sync_status` - Registry synchronization status
   """
   @spec health_check() :: {:ok, map()}
-  def health_check() do
+  def health_check do
     registry_impl = get_registry_impl()
     state = get_registry_state()
 
@@ -304,7 +304,7 @@ defmodule Arbor.Core.ClusterRegistry do
   """
   @spec list_all_agents() ::
           {:ok, [{Types.agent_id(), pid(), agent_metadata()}]} | {:error, term()}
-  def list_all_agents() do
+  def list_all_agents do
     registry_impl = get_registry_impl()
     state = get_registry_state()
 

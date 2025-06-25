@@ -98,7 +98,7 @@ defmodule Arbor.Core.ClusterManager do
           },
           uptime: non_neg_integer()
         }
-  def cluster_status() do
+  def cluster_status do
     GenServer.call(__MODULE__, :cluster_status)
   end
 
@@ -139,7 +139,7 @@ defmodule Arbor.Core.ClusterManager do
   the configured topology. Use with caution in production.
   """
   @spec reform_cluster() :: :ok
-  def reform_cluster() do
+  def reform_cluster do
     GenServer.call(__MODULE__, :reform_cluster)
   end
 
@@ -153,7 +153,7 @@ defmodule Arbor.Core.ClusterManager do
   - Last health check timestamps
   """
   @spec get_cluster_health() :: {:ok, map()} | {:error, term()}
-  def get_cluster_health() do
+  def get_cluster_health do
     GenServer.call(__MODULE__, :get_cluster_health)
   end
 
@@ -169,7 +169,7 @@ defmodule Arbor.Core.ClusterManager do
   Force a health check across all cluster nodes.
   """
   @spec perform_health_check() :: :ok
-  def perform_health_check() do
+  def perform_health_check do
     GenServer.call(__MODULE__, :perform_health_check)
   end
 
@@ -544,7 +544,7 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  defp get_topology_key() do
+  defp get_topology_key do
     # Use application environment or default
     case Application.get_env(:arbor_core, :env, :prod) do
       :dev -> :arbor_dev
@@ -554,7 +554,7 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  defp get_registry_impl() do
+  defp get_registry_impl do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
         Arbor.Test.Mocks.LocalClusterRegistry
@@ -571,7 +571,7 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  defp get_supervisor_impl() do
+  defp get_supervisor_impl do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
         Arbor.Test.Mocks.LocalSupervisor
@@ -590,7 +590,7 @@ defmodule Arbor.Core.ClusterManager do
 
   # Health monitoring functions
 
-  defp schedule_health_check() do
+  defp schedule_health_check do
     # Schedule health check every 30 seconds
     health_interval = Application.get_env(:arbor_core, :health_check_interval, 30_000)
     Process.send_after(self(), :health_check, health_interval)
@@ -721,39 +721,37 @@ defmodule Arbor.Core.ClusterManager do
     end)
   end
 
-  defp get_load_average() do
-    try do
-      # Check if :cpu_sup module is available (part of :os_mon application)
-      case Application.ensure_all_started(:os_mon) do
-        {:ok, _} ->
-          case Code.ensure_loaded(:cpu_sup) do
-            {:module, :cpu_sup} ->
-              case :cpu_sup.avg1() do
-                # Convert to standard load average format
-                {:ok, load} -> load / 256
-                _ -> :unavailable
-              end
+  defp get_load_average do
+    # Check if :cpu_sup module is available (part of :os_mon application)
+    case Application.ensure_all_started(:os_mon) do
+      {:ok, _} ->
+        case Code.ensure_loaded(:cpu_sup) do
+          {:module, :cpu_sup} ->
+            case :cpu_sup.avg1() do
+              # Convert to standard load average format
+              {:ok, load} -> load / 256
+              _ -> :unavailable
+            end
 
-            {:error, _} ->
-              :unavailable
-          end
+          {:error, _} ->
+            :unavailable
+        end
 
-        _ ->
-          :unavailable
-      end
-    rescue
-      # Specific rescue for OS monitoring failures. This is expected on some platforms
-      # where os_mon is not available or doesn't have required permissions.
-      error in [UndefinedFunctionError, RuntimeError] ->
-        Logger.debug("OS monitoring not available", error: inspect(error))
-        :unavailable
-
-      other_error ->
-        Logger.warning("Unexpected error getting load average",
-          error: inspect(other_error)
-        )
-
+      _ ->
         :unavailable
     end
+  rescue
+    # Specific rescue for OS monitoring failures. This is expected on some platforms
+    # where os_mon is not available or doesn't have required permissions.
+    error in [UndefinedFunctionError, RuntimeError] ->
+      Logger.debug("OS monitoring not available", error: inspect(error))
+      :unavailable
+
+    other_error ->
+      Logger.warning("Unexpected error getting load average",
+        error: inspect(other_error)
+      )
+
+      :unavailable
   end
 end

@@ -65,6 +65,7 @@ defmodule Arbor.MixProject do
       # Testing
       {:excoveralls, "~> 0.18", only: :test},
       {:mock, "~> 0.3", only: :test},
+      {:mox, "~> 1.1", only: :test},
       {:ex_machina, "~> 2.7", only: :test},
 
       # Development tools

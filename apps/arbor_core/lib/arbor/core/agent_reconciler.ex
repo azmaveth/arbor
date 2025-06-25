@@ -12,12 +12,12 @@ defmodule Arbor.Core.AgentReconciler do
 
   use GenServer
 
-  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry, TelemetryHelper}
-  alias Horde.DynamicSupervisor
+  @behaviour Arbor.Contracts.Agent.Reconciler
 
   require Logger
 
-  @behaviour Arbor.Contracts.Agent.Reconciler
+  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry, TelemetryHelper}
+  alias Horde.DynamicSupervisor
 
   # Configuration
   @registry_name Arbor.Core.HordeAgentRegistry
@@ -178,12 +178,10 @@ defmodule Arbor.Core.AgentReconciler do
 
   @impl Arbor.Contracts.Agent.Reconciler
   def reconcile_agents do
-    try do
-      do_reconcile_agents()
-      :ok
-    rescue
-      error -> {:error, {error, __STACKTRACE__}}
-    end
+    do_reconcile_agents()
+    :ok
+  rescue
+    error -> {:error, {error, __STACKTRACE__}}
   end
 
   @impl Arbor.Contracts.Agent.Reconciler

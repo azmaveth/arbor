@@ -8,11 +8,11 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   IMPORTANT: This is a MOCK - replace with Horde for distributed operation!
   """
 
+  @behaviour Arbor.Contracts.Cluster.Supervisor
+
   use Agent
 
   alias Arbor.Core.ClusterRegistry
-
-  @behaviour Arbor.Contracts.Cluster.Supervisor
 
   defstruct [
     :agents,

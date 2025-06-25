@@ -270,7 +270,7 @@ defmodule Arbor.Test.Support.IntegrationCase do
           children ->
             # Check that no test agents remain
             not Enum.any?(children, fn {agent_id, _, _, _} ->
-              is_binary(agent_id) and is_test_agent_id?(agent_id)
+              is_binary(agent_id) and test_agent_id?(agent_id)
             end)
         end
       end,

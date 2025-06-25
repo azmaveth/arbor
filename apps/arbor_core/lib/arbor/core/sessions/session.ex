@@ -44,6 +44,7 @@ defmodule Arbor.Core.Sessions.Session do
   """
 
   use GenServer
+
   require Logger
 
   alias Arbor.Contracts.Core.{Capability, Message}

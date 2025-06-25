@@ -1,6 +1,4 @@
 defmodule Arbor.Core.ClusterCoordinatorTest do
-  alias Arbor.Test.Support.AsyncHelpers
-
   @moduledoc """
   Unit tests for cluster coordination logic using local mocks.
 
@@ -17,10 +15,11 @@ defmodule Arbor.Core.ClusterCoordinatorTest do
 
   use ExUnit.Case, async: true
 
-  @moduletag :fast
-
   alias Arbor.Core.ClusterCoordinator
+  alias Arbor.Test.Support.AsyncHelpers
   alias Arbor.Test.Mocks.LocalCoordinator
+
+  @moduletag :fast
 
   setup do
     # MOCK: Use local coordinator for unit testing

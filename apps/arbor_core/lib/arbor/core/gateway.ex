@@ -40,16 +40,16 @@ defmodule Arbor.Core.Gateway do
       Gateway.subscribe_execution(execution_id)
   """
 
+  @behaviour Arbor.Contracts.Gateway.API
+
   use GenServer
   require Logger
 
-  @behaviour Arbor.Contracts.Gateway.API
-
+  alias Arbor.Agents.CodeAnalyzer
+  alias Arbor.Contracts.Client.Command
   alias Arbor.Core.{ClusterRegistry, Sessions}
   alias Arbor.Core.Sessions.Manager, as: SessionManager
   alias Arbor.{Identifiers, Types}
-  alias Arbor.Agents.CodeAnalyzer
-  alias Arbor.Contracts.Client.Command
 
   @typedoc "Information about an available capability"
   @type capability_info :: %{

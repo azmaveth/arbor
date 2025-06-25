@@ -8,7 +8,7 @@ defmodule Arbor.Core.AgentCheckpointTest do
 
   use Arbor.Test.Support.IntegrationCase
 
-  alias Arbor.Core.{HordeSupervisor, AgentCheckpoint, StatefulTestAgent, AgentReconciler}
+  alias Arbor.Core.{AgentCheckpoint, AgentReconciler, HordeSupervisor, StatefulTestAgent}
 
   describe "checkpoint persistence" do
     test "agents can save and load checkpoints" do

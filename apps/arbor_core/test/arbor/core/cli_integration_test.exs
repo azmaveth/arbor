@@ -2,13 +2,13 @@ defmodule Arbor.Core.CliIntegrationTest do
   use ExUnit.Case, async: false
 
   # Skip due to intermittent circular dependency issues in CI
+  alias Arbor.Core.Gateway
+  alias Arbor.Test.Support.AsyncHelpers
+  alias ArborCli.Commands.Agent
+
   @moduletag :skip
   @moduletag :integration
   @moduletag timeout: 30_000
-
-  alias Arbor.Core.Gateway
-  alias ArborCli.Commands.Agent
-  alias Arbor.Test.Support.AsyncHelpers
 
   setup_all do
     # Configure application environment for integration testing with Horde.
