@@ -37,6 +37,8 @@ defmodule Arbor.Core.ClusterSupervisor do
   and runtime configuration.
   """
 
+  @behaviour Arbor.Contracts.Cluster.Supervisor
+
   alias Arbor.Contracts.Cluster.Supervisor, as: SupervisorContract
   alias Arbor.Types
 

@@ -28,6 +28,8 @@ defmodule Arbor.Core.ClusterRegistry do
   and runtime configuration.
   """
 
+  @behaviour Arbor.Contracts.Cluster.Registry
+
   alias Arbor.Types
 
   @type agent_metadata :: %{

@@ -6,6 +6,8 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   alive throughout the application lifecycle. All checkpoints are registered
   to this process's PID, ensuring they survive when individual agent processes die.
   """
+
+  @behaviour Arbor.Contracts.Cluster.CheckpointRegistry
   use GenServer
 
   require Logger
@@ -17,6 +19,7 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   @doc """
   Starts the checkpoint registry anchor process.
   """
+  @impl true
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: :checkpoint_registry_anchor)
   end

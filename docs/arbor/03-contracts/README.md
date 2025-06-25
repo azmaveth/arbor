@@ -4,6 +4,13 @@ This section covers Arbor's contract specifications and schema-driven design app
 
 ## Documents in this Section
 
+### [Dual Contract System](./dual-contract-system.md) ⭐ NEW
+Understanding Arbor's sophisticated two-layer contract architecture:
+- TypedStruct for data structure contracts
+- Behaviors for interface contracts
+- Integration with Mox for testing
+- Migration patterns and best practices
+
 ### [Core Contracts](./core-contracts.md)
 Complete specification of Arbor's core data contracts:
 - Message contracts and envelopes

@@ -1,0 +1,347 @@
+{
+  "timestamp": "2025-06-25T16:42:58.730357Z",
+  "classified_modules": {
+    "agent": [
+      {
+        "module": "Arbor.Core.AgentBehavior",
+        "domain": "agent",
+        "contract_name": "Behavior",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/agent/behavior.ex"
+      },
+      {
+        "module": "Arbor.Core.AgentCheckpoint",
+        "domain": "agent",
+        "contract_name": "Checkpoint",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/agent/checkpoint.ex"
+      },
+      {
+        "module": "Arbor.Core.AgentReconciler",
+        "domain": "agent",
+        "contract_name": "Reconciler",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/agent/reconciler.ex"
+      }
+    ],
+    "agents": [
+      {
+        "module": "Arbor.Agents.CodeAnalyzer",
+        "domain": "agents",
+        "contract_name": "CodeAnalyzer",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/agents/codeanalyzer.ex"
+      }
+    ],
+    "cluster": [
+      {
+        "module": "Arbor.Core.ClusterCoordinator",
+        "domain": "cluster",
+        "contract_name": "Coordinator",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/coordinator.ex"
+      },
+      {
+        "module": "Arbor.Core.ClusterEvents",
+        "domain": "cluster",
+        "contract_name": "Events",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/events.ex"
+      },
+      {
+        "module": "Arbor.Core.ClusterHealth",
+        "domain": "cluster",
+        "contract_name": "Health",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/health.ex"
+      },
+      {
+        "module": "Arbor.Core.ClusterManager",
+        "domain": "cluster",
+        "contract_name": "Manager",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/manager.ex"
+      },
+      {
+        "module": "Arbor.Core.ClusterRegistry",
+        "domain": "cluster",
+        "contract_name": "Registry",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/registry.ex"
+      },
+      {
+        "module": "Arbor.Core.ClusterSupervisor",
+        "domain": "cluster",
+        "contract_name": "Supervisor",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/supervisor.ex"
+      },
+      {
+        "module": "Arbor.Core.HordeCheckpointRegistry",
+        "domain": "cluster",
+        "contract_name": "CheckpointRegistry",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/checkpointregistry.ex"
+      },
+      {
+        "module": "Arbor.Core.HordeCoordinator",
+        "domain": "cluster",
+        "contract_name": "Coordinator",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/coordinator.ex"
+      },
+      {
+        "module": "Arbor.Core.HordeRegistry",
+        "domain": "cluster",
+        "contract_name": "Registry",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/registry.ex"
+      },
+      {
+        "module": "Arbor.Core.HordeSupervisor",
+        "domain": "cluster",
+        "contract_name": "Supervisor",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/cluster/supervisor.ex"
+      }
+    ],
+    "codegen": [
+      {
+        "module": "Arbor.CodeGen.ContractAnalyzer",
+        "domain": "codegen",
+        "contract_name": "CodeGen.ContractAnalyzer",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/codegen/codegen.contractanalyzer.ex"
+      },
+      {
+        "module": "Arbor.CodeGen.FileGenerator",
+        "domain": "codegen",
+        "contract_name": "CodeGen.FileGenerator",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/codegen/codegen.filegenerator.ex"
+      },
+      {
+        "module": "Arbor.CodeGen.ImplementationGenerator",
+        "domain": "codegen",
+        "contract_name": "CodeGen.ImplementationGenerator",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/codegen/codegen.implementationgenerator.ex"
+      }
+    ],
+    "core": [
+      {
+        "module": "Arbor.Core",
+        "domain": "core",
+        "contract_name": "Core",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/core/core.ex"
+      },
+      {
+        "module": "Arbor.Core.Application",
+        "domain": "core",
+        "contract_name": "Application",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/core/application.ex"
+      }
+    ],
+    "gateway": [
+      {
+        "module": "Arbor.Core.Gateway",
+        "domain": "gateway",
+        "contract_name": "Gateway",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/gateway/gateway.ex"
+      },
+      {
+        "module": "Arbor.Core.GatewayHTTP",
+        "domain": "gateway",
+        "contract_name": "GatewayHTTP",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/gateway/gatewayhttp.ex"
+      }
+    ],
+    "session": [
+      {
+        "module": "Arbor.Core.SessionRegistry",
+        "domain": "session",
+        "contract_name": "SessionRegistry",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/session/sessionregistry.ex"
+      },
+      {
+        "module": "Arbor.Core.Sessions.Manager",
+        "domain": "session",
+        "contract_name": "Manager",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/session/manager.ex"
+      },
+      {
+        "module": "Arbor.Core.Sessions.Session",
+        "domain": "session",
+        "contract_name": "Session",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/session/session.ex"
+      }
+    ],
+    "tasks": [
+      {
+        "module": "Mix.Tasks.Arbor.Gen.Impl",
+        "domain": "tasks",
+        "contract_name": "Gen.Impl",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/tasks/gen.impl.ex"
+      },
+      {
+        "module": "Mix.Tasks.Credo.Refactor",
+        "domain": "tasks",
+        "contract_name": "Credo.Refactor",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/tasks/credo.refactor.ex"
+      }
+    ],
+    "telemetry": [
+      {
+        "module": "Arbor.Core.TelemetryHelper",
+        "domain": "telemetry",
+        "contract_name": "TelemetryHelper",
+        "contract_path": "apps/arbor_contracts/lib/arbor/contracts/telemetry/telemetryhelper.ex"
+      }
+    ]
+  },
+  "misplaced_callbacks": [
+    {
+      "module": "Arbor.Core.AgentBehavior",
+      "file": "apps/arbor_core/lib/arbor/core/agent_behavior.ex",
+      "callbacks": [
+        {
+          "line": 66,
+          "signature": "extract_state(state :: any()) :: {:ok, any()} | {:error, any()}"
+        },
+        {
+          "line": 77,
+          "signature": "restore_state(agent_spec :: map(), restored_state :: any()) ::"
+        },
+        {
+          "line": 87,
+          "signature": "get_agent_metadata(state :: any()) :: map()"
+        },
+        {
+          "line": 95,
+          "signature": "handle_registration_result("
+        }
+      ]
+    },
+    {
+      "module": "Arbor.Core.AgentCheckpoint",
+      "file": "apps/arbor_core/lib/arbor/core/agent_checkpoint.ex",
+      "callbacks": [
+        {
+          "line": 84,
+          "signature": "extract_checkpoint_data(agent_state()) :: checkpoint_data()"
+        },
+        {
+          "line": 92,
+          "signature": "restore_from_checkpoint(checkpoint_data(), agent_state()) :: agent_state()"
+        }
+      ]
+    },
+    {
+      "module": "Arbor.Test.Support.LocalCoordinatorBehaviour",
+      "file": "apps/arbor_core/test/support/local_coordinator_behaviour.ex",
+      "callbacks": [
+        {
+          "line": 28,
+          "signature": "init(any()) :: {:ok, state()}"
+        },
+        {
+          "line": 31,
+          "signature": "handle_node_join(node_info(), state()) :: :ok"
+        },
+        {
+          "line": 32,
+          "signature": "handle_node_leave(node(), any(), state()) :: :ok"
+        },
+        {
+          "line": 33,
+          "signature": "handle_node_failure(node(), any(), state()) :: :ok"
+        },
+        {
+          "line": 34,
+          "signature": "get_cluster_info(state()) :: {:ok, cluster_info()}"
+        },
+        {
+          "line": 35,
+          "signature": "get_redistribution_plan(node(), state()) ::"
+        },
+        {
+          "line": 39,
+          "signature": "register_agent_on_node(agent_info(), state()) :: :ok"
+        },
+        {
+          "line": 40,
+          "signature": "calculate_distribution([map()], state()) :: {:ok, distribution_plan()}"
+        },
+        {
+          "line": 41,
+          "signature": "update_node_capacity(capacity_update(), state()) :: :ok"
+        },
+        {
+          "line": 42,
+          "signature": "suggest_redistribution(state()) :: {:ok, redistribution_plan()}"
+        },
+        {
+          "line": 45,
+          "signature": "synchronize_cluster_state(state_update(), state()) :: :ok"
+        },
+        {
+          "line": 46,
+          "signature": "get_sync_status(state()) :: {:ok, sync_status()}"
+        },
+        {
+          "line": 47,
+          "signature": "handle_split_brain(split_brain_event(), state()) :: :ok"
+        },
+        {
+          "line": 48,
+          "signature": "get_partition_status(state()) :: {:ok, map() | nil}"
+        },
+        {
+          "line": 49,
+          "signature": "resolve_state_conflicts(conflict_scenario(), state()) :: {:ok, map()}"
+        },
+        {
+          "line": 52,
+          "signature": "update_node_load(node(), number(), state()) :: :ok"
+        },
+        {
+          "line": 53,
+          "signature": "analyze_cluster_load(state()) :: {:ok, optimization_plan()}"
+        },
+        {
+          "line": 54,
+          "signature": "update_node_health(health_update(), state()) :: :ok"
+        },
+        {
+          "line": 55,
+          "signature": "get_cluster_health(state()) :: {:ok, health_status()}"
+        },
+        {
+          "line": 58,
+          "signature": "process_coordination_event(coordination_event(), state()) :: :ok | {:error, any()}"
+        },
+        {
+          "line": 59,
+          "signature": "get_coordination_log(state()) :: {:ok, event_log()}"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "misplaced_callback_files": 3,
+    "modules_needing_contracts": 27,
+    "total_misplaced_callbacks": 28
+  },
+  "target_modules": [
+    "Arbor.Agents.CodeAnalyzer",
+    "Arbor.CodeGen.ContractAnalyzer",
+    "Arbor.CodeGen.FileGenerator",
+    "Arbor.CodeGen.ImplementationGenerator",
+    "Arbor.Core",
+    "Arbor.Core.AgentBehavior",
+    "Arbor.Core.AgentCheckpoint",
+    "Arbor.Core.AgentReconciler",
+    "Arbor.Core.Application",
+    "Arbor.Core.ClusterCoordinator",
+    "Arbor.Core.ClusterEvents",
+    "Arbor.Core.ClusterHealth",
+    "Arbor.Core.ClusterManager",
+    "Arbor.Core.ClusterRegistry",
+    "Arbor.Core.ClusterSupervisor",
+    "Arbor.Core.Gateway",
+    "Arbor.Core.GatewayHTTP",
+    "Arbor.Core.HordeCheckpointRegistry",
+    "Arbor.Core.HordeCoordinator",
+    "Arbor.Core.HordeRegistry",
+    "Arbor.Core.HordeSupervisor",
+    "Arbor.Core.SessionRegistry",
+    "Arbor.Core.Sessions.Manager",
+    "Arbor.Core.Sessions.Session",
+    "Arbor.Core.TelemetryHelper",
+    "Mix.Tasks.Arbor.Gen.Impl",
+    "Mix.Tasks.Credo.Refactor"
+  ]
+}

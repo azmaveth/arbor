@@ -70,7 +70,9 @@ defmodule Arbor.MixProject do
 
       # Development tools
       {:observer_cli, "~> 1.7", only: :dev},
-      {:benchee, "~> 1.3", only: :dev}
+      {:benchee, "~> 1.3", only: :dev},
+      {:jason, "~> 1.4"},
+      {:sourceror, "~> 1.0", only: :dev}
     ]
   end
 

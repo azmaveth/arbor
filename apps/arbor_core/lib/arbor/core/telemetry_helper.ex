@@ -6,6 +6,8 @@ defmodule Arbor.Core.TelemetryHelper do
   like agent operations, reconciliation, and performance measurements.
   """
 
+  @behaviour Arbor.Contracts.Telemetry.TelemetryHelper
+
   alias Arbor.Contracts.Telemetry.AgentEvent
   alias Arbor.Contracts.Telemetry.PerformanceEvent
   alias Arbor.Contracts.Telemetry.ReconciliationEvent

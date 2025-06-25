@@ -6,6 +6,8 @@ defmodule Arbor.CodeGen.FileGenerator do
   and handles writing generated code to the file system.
   """
 
+  @behaviour Arbor.Contracts.Codegen.CodeGen.FileGenerator
+
   @doc """
   Writes the given code to a file determined by the implementation module name.
 

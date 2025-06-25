@@ -81,6 +81,7 @@ defmodule Arbor.Test.Mocks.InMemoryPersistence do
     end
   end
 
+  @impl true
   defp handle_append_with_version_check(stream_id, events, expected_version, state) do
     case check_version(stream_id, expected_version, state) do
       :ok ->

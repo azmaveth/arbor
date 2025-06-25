@@ -1,0 +1,23 @@
+defmodule Arbor.Contracts.Codegen.CodeGen.FileGenerator do
+  @moduledoc """
+  Contract for codegen.filegenerator codegen operations.
+
+  This contract defines the interface for codegen components in the Arbor system.
+  Original implementation: Arbor.CodeGen.FileGenerator
+
+  ## Responsibilities
+
+  - Define the core interface for codegen operations
+  - Ensure consistent behavior across implementations
+  - Provide clear contracts for testing and mocking
+  - Enable dependency injection and modularity
+
+  @version "1.0.0"
+  """
+
+  alias Arbor.Types
+
+  @callback process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+
+  @callback configure(options :: keyword()) :: :ok | {:error, term()}
+end

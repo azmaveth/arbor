@@ -13,6 +13,8 @@ defmodule Arbor.Core.Application do
   restart capabilities while maintaining system consistency.
   """
 
+  @behaviour Arbor.Contracts.Core.Application
+
   use Application
   require Logger
 

@@ -26,11 +26,12 @@ defmodule Arbor.Core.AgentReconciler do
   @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000)
 
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  @impl GenServer
+  @impl true
   def init(_opts) do
     # Schedule initial reconciliation
     schedule_reconciliation()
@@ -45,7 +46,7 @@ defmodule Arbor.Core.AgentReconciler do
     {:ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:reconcile, state) do
     Logger.debug("Starting agent reconciliation")
 
@@ -99,12 +100,12 @@ defmodule Arbor.Core.AgentReconciler do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(_msg, state) do
     {:noreply, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:status, _from, state) do
     status = %{
       last_reconcile: state.last_reconcile,
@@ -115,7 +116,7 @@ defmodule Arbor.Core.AgentReconciler do
     {:reply, status, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:force_reconcile, _from, state) do
     # Prevent overlapping reconciliation cycles
     case Map.get(state, :reconciling, false) do

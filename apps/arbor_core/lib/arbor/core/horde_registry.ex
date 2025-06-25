@@ -257,13 +257,13 @@ defmodule Arbor.Core.HordeRegistry do
      }}
   end
 
-  @impl RegistryContract
+  @impl true
   def handle_node_up(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
-  @impl RegistryContract
+  @impl true
   def handle_node_down(_node, state) do
     # Horde handles this automatically
     {:ok, state}

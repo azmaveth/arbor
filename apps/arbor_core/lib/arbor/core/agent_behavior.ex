@@ -54,54 +54,6 @@ defmodule Arbor.Core.AgentBehavior do
 
   @behaviour Arbor.Contracts.Agent.Behavior
 
-  @doc """
-  Callback for extracting agent state for migration.
-
-  This is called when an agent needs to be migrated to another node.
-  The extracted state should be serializable and contain all necessary
-  information to restore the agent on another node.
-
-  The default implementation returns the full state wrapped in an `:ok` tuple.
-  """
-  @callback extract_state(state :: any()) :: {:ok, any()} | {:error, any()}
-
-  @doc """
-  Callback for restoring agent state after migration.
-
-  This is called after an agent has been restarted on a new node.
-  It receives the agent's specification (initial state) and the extracted
-  state from the previous instance.
-
-  The default implementation replaces the current state with the extracted state.
-  """
-  @callback restore_state(agent_spec :: map(), restored_state :: any()) ::
-              {:ok, any()} | {:error, any()}
-
-  @doc """
-  Callback for providing agent-specific metadata for registration.
-
-  This is called by the HordeSupervisor after the agent starts.
-  The returned map will be merged with runtime metadata and registered
-  in the cluster registry.
-  """
-  @callback get_agent_metadata(state :: any()) :: map()
-
-  @doc """
-  Handles the result of an agent's registration attempt.
-
-  After an agent starts, the system may attempt to register it with a central
-  registry. This callback informs the agent of the outcome.
-  """
-  @callback handle_registration_result(
-              state :: any(),
-              result :: {:ok, any()} | {:error, any()}
-            ) :: any()
-
-  @optional_callbacks extract_state: 1,
-                      restore_state: 2,
-                      get_agent_metadata: 1,
-                      handle_registration_result: 2
-
   # Implement Arbor.Contracts.Agent.Behavior callbacks by delegating to the module's callbacks
   @impl Arbor.Contracts.Agent.Behavior
   def extract_state(state) do
@@ -121,7 +73,7 @@ defmodule Arbor.Core.AgentBehavior do
     %{}
   end
 
-  @impl Arbor.Contracts.Agent.Behavior
+  @impl true
   def handle_registration_result(state, _result) do
     # This is a default implementation - modules using AgentBehavior will override
     state
@@ -147,18 +99,18 @@ defmodule Arbor.Core.AgentBehavior do
       @impl Arbor.Core.AgentBehavior
       def get_agent_metadata(_state), do: %{}
 
-      @impl Arbor.Core.AgentBehavior
+      @impl true
       def handle_registration_result(state, _result), do: state
 
       # GenServer callbacks for state management
 
-      @impl GenServer
+      @impl true
       def handle_call(:extract_state, _from, state) do
         result = extract_state(state)
         {:reply, result, state}
       end
 
-      @impl GenServer
+      @impl true
       def handle_call({:restore_state, restored_state}, _from, state) do
         # The current `state` is passed as the `agent_spec`.
         # Note: Default implementation always returns {:ok, term()}, but custom
@@ -185,18 +137,18 @@ defmodule Arbor.Core.AgentBehavior do
         {:reply, {:error, :invalid_return}, state}
       end
 
-      @impl GenServer
+      @impl true
       def handle_call(:get_agent_metadata, _from, state) do
         {:reply, get_agent_metadata(state), state}
       end
 
-      @impl GenServer
+      @impl true
       def handle_call(:get_state, _from, state) do
         {:reply, state, state}
       end
 
       # Centralized registration logic
-      @impl GenServer
+      @impl true
       def handle_continue(:register_with_supervisor, state) do
         supervisor_impl = Application.get_env(:arbor_core, :supervisor_impl, :auto)
         Logger.debug("AgentBehavior: handle_continue called", supervisor_impl: supervisor_impl)
@@ -221,7 +173,7 @@ defmodule Arbor.Core.AgentBehavior do
         end
       end
 
-      @impl GenServer
+      @impl true
       def handle_info({:attempt_registration, retries_left, delay}, state) do
         agent_id = Map.fetch!(state, :agent_id)
         metadata = get_agent_metadata(state)

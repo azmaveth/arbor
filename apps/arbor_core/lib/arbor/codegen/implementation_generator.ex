@@ -2,6 +2,8 @@ defmodule Arbor.CodeGen.ImplementationGenerator do
   @moduledoc """
   Orchestrates the generation of a contract implementation.
   """
+
+  @behaviour Arbor.Contracts.Codegen.CodeGen.ImplementationGenerator
   alias Arbor.CodeGen.{ContractAnalyzer, FileGenerator}
 
   @doc """

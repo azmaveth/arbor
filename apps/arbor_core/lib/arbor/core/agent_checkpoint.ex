@@ -66,6 +66,8 @@ defmodule Arbor.Core.AgentCheckpoint do
   implement the checkpoint behavior.
   """
 
+  @behaviour Arbor.Contracts.Agent.Checkpoint
+
   alias Arbor.Types
   require Logger
 
@@ -81,7 +83,6 @@ defmodule Arbor.Core.AgentCheckpoint do
   the agent's critical state. Avoid including temporary data, cached
   values, or large datasets.
   """
-  @callback extract_checkpoint_data(agent_state()) :: checkpoint_data()
 
   @doc """
   Restore agent state from checkpoint data.
@@ -89,7 +90,6 @@ defmodule Arbor.Core.AgentCheckpoint do
   This callback receives the previously saved checkpoint data and the
   current initial state, and should return the restored state.
   """
-  @callback restore_from_checkpoint(checkpoint_data(), agent_state()) :: agent_state()
 
   @doc """
   Save agent state to a persistent checkpoint.

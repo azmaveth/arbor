@@ -48,6 +48,8 @@ defmodule Arbor.Core.ClusterManager do
         ]
   """
 
+  @behaviour Arbor.Contracts.Cluster.Manager
+
   use GenServer
 
   alias Arbor.Core.{ClusterCoordinator, HordeCoordinator, HordeRegistry, HordeSupervisor}
@@ -78,6 +80,7 @@ defmodule Arbor.Core.ClusterManager do
   - `:connect_timeout` - Timeout for initial cluster connection (default: 30_000)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -175,7 +178,7 @@ defmodule Arbor.Core.ClusterManager do
 
   # GenServer callbacks
 
-  @impl GenServer
+  @impl true
   def init(opts) do
     # Trap exits to handle node failures gracefully
     Process.flag(:trap_exit, true)
@@ -203,7 +206,7 @@ defmodule Arbor.Core.ClusterManager do
     {:ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:cluster_status, _from, state) do
     # Get appropriate implementations based on config
     registry_impl = get_registry_impl()
@@ -249,7 +252,7 @@ defmodule Arbor.Core.ClusterManager do
     {:reply, status, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:connect_node, target_node}, _from, state) do
     case Node.connect(target_node) do
       true ->
@@ -264,20 +267,20 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:disconnect_node, target_node}, _from, state) do
     Node.disconnect(target_node)
     # The nodedown message will handle cleanup
     {:reply, :ok, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:register_event_handler, callback}, _from, state) do
     updated_handlers = [callback | state.event_handlers]
     {:reply, :ok, %{state | event_handlers: updated_handlers}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:reform_cluster, _from, state) do
     Logger.warning("Reforming cluster - disconnecting all nodes")
 
@@ -290,13 +293,13 @@ defmodule Arbor.Core.ClusterManager do
     {:reply, :ok, %{state | connected_nodes: []}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_cluster_health, _from, state) do
     health_data = collect_cluster_health_data(state)
     {:reply, {:ok, health_data}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:get_node_health, target_node}, _from, state) do
     case Map.get(state.node_health_data, target_node) do
       nil ->
@@ -307,13 +310,13 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:perform_health_check, _from, state) do
     new_state = perform_cluster_health_check(state)
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:initialize_cluster, state) do
     Logger.info("Initializing Arbor cluster formation")
 
@@ -341,7 +344,7 @@ defmodule Arbor.Core.ClusterManager do
     {:noreply, updated_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info({:nodeup, node, _node_type}, state) do
     Logger.info("Node joined cluster: #{node}")
 
@@ -363,7 +366,7 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_info({:nodedown, node, _node_type}, state) do
     Logger.warning("Node left cluster: #{node}")
 
@@ -416,7 +419,7 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:health_check, state) do
     # Perform health check and schedule the next one
     updated_state = perform_cluster_health_check(state)
@@ -426,7 +429,7 @@ defmodule Arbor.Core.ClusterManager do
     {:noreply, final_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(msg, state) do
     Logger.debug("ClusterManager received unexpected message: #{inspect(msg)}")
     {:noreply, state}

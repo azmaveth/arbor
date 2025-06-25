@@ -5,6 +5,8 @@ defmodule Arbor.Core.GatewayHTTP do
   Exposes Gateway functionality via RESTful HTTP endpoints.
   """
 
+  @behaviour Arbor.Contracts.Gateway.GatewayHTTP
+
   use Plug.Router
   require Logger
 

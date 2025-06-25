@@ -15,6 +15,8 @@ defmodule Arbor.Core.HordeCoordinator do
   - Load balancing and health monitoring
   """
 
+  @behaviour Arbor.Contracts.Cluster.Coordinator
+
   use GenServer
 
   alias Arbor.Core.ClusterHealth
@@ -107,6 +109,7 @@ defmodule Arbor.Core.HordeCoordinator do
   Start the distributed coordinator.
   """
   @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -153,16 +156,19 @@ defmodule Arbor.Core.HordeCoordinator do
   # Node lifecycle management
 
   @spec handle_node_join(map(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_join(node_info, _state) do
     GenServer.call(__MODULE__, {:handle_node_join, node_info})
   end
 
   @spec handle_node_leave(node(), any(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_leave(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_leave, node, reason})
   end
 
   @spec handle_node_failure(node(), any(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_failure(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_failure, node, reason})
   end
@@ -212,6 +218,7 @@ defmodule Arbor.Core.HordeCoordinator do
   end
 
   @spec handle_split_brain(map(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_split_brain(split_brain_event, _state) do
     GenServer.call(__MODULE__, {:handle_split_brain, split_brain_event})
   end
@@ -262,7 +269,7 @@ defmodule Arbor.Core.HordeCoordinator do
 
   # GenServer callbacks
 
-  @impl GenServer
+  @impl true
   def init(opts) do
     node_id = Keyword.get(opts, :node_id, generate_node_id())
 
@@ -284,7 +291,7 @@ defmodule Arbor.Core.HordeCoordinator do
      }, {:continue, :register_coordinator}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_continue(:register_coordinator, state) do
     # Register this coordinator
     try do
@@ -303,7 +310,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:noreply, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:join_coordination, joining_node}, _from, state) do
     # Update local state
     updated_coordinators =
@@ -318,7 +325,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:leave_coordination, leaving_node}, _from, state) do
     # Update local state
     updated_coordinators = List.delete(state.sync_status.coordinator_nodes, leaving_node)
@@ -331,7 +338,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:handle_node_join, node_info}, _from, state) do
     node_data = %{
       node: node_info.node,
@@ -353,7 +360,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:handle_node_leave, node, reason}, _from, state) do
     case Map.get(state.nodes, node) do
       nil ->
@@ -371,7 +378,7 @@ defmodule Arbor.Core.HordeCoordinator do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:handle_node_failure, node, reason}, _from, state) do
     case Map.get(state.nodes, node) do
       nil ->
@@ -411,7 +418,7 @@ defmodule Arbor.Core.HordeCoordinator do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_cluster_info, _from, state) do
     cluster_info = %{
       nodes: Map.values(state.nodes),
@@ -423,7 +430,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, cluster_info}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:get_redistribution_plan, node}, _from, state) do
     plan =
       Enum.find(state.redistribution_plans, fn plan ->
@@ -436,7 +443,7 @@ defmodule Arbor.Core.HordeCoordinator do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:register_agent_on_node, agent_info}, _from, state) do
     agent_data = %{
       id: agent_info.id,
@@ -463,7 +470,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:calculate_distribution, agents}, _from, state) do
     assignments =
       Enum.map(agents, fn agent ->
@@ -498,7 +505,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, distribution_plan}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:update_node_capacity, capacity_update}, _from, state) do
     case Map.get(state.nodes, capacity_update.node) do
       nil ->
@@ -518,7 +525,7 @@ defmodule Arbor.Core.HordeCoordinator do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:suggest_redistribution, _from, state) do
     # Find overloaded nodes
     overloaded_nodes =
@@ -545,7 +552,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, redistribution_plan}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:synchronize_cluster_state, state_update}, _from, state) do
     # Process state updates
     updated_state = process_state_updates(state_update, state)
@@ -561,12 +568,12 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, final_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_sync_status, _from, state) do
     {:reply, {:ok, state.sync_status}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:handle_split_brain, split_brain_event}, _from, state) do
     # Determine quorum based on coordinator count
     partitioned_count = length(split_brain_event.partitioned_nodes)
@@ -596,12 +603,12 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_partition_status, _from, state) do
     {:reply, {:ok, state.sync_status.partition_status}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:resolve_state_conflicts, conflict_scenario}, _from, state) do
     # Simple conflict resolution: latest timestamp wins
     all_updates = conflict_scenario.node_a_updates ++ conflict_scenario.node_b_updates
@@ -654,7 +661,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, resolution}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:update_node_load, node, load}, _from, state) do
     updated_nodes =
       Map.update(state.nodes, node, %{}, fn node_data ->
@@ -665,7 +672,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:analyze_cluster_load, _from, state) do
     overloaded_nodes =
       state.nodes
@@ -705,7 +712,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, optimization_plan}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:update_node_health, health_update}, _from, state) do
     current_health =
       Map.get(state.health_metrics, health_update.node, %{
@@ -729,7 +736,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, :ok, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_cluster_health, _from, state) do
     nodes_health =
       Enum.map(state.nodes, fn {node, node_info} ->
@@ -763,7 +770,7 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, cluster_health}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call({:process_coordination_event, event}, _from, state) do
     case process_coordination_event_internal(event, state) do
       {:ok, updated_state} ->
@@ -797,7 +804,7 @@ defmodule Arbor.Core.HordeCoordinator do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_coordination_log, _from, state) do
     processed_events = Enum.sort_by(state.event_log, & &1.timestamp)
 
@@ -810,14 +817,14 @@ defmodule Arbor.Core.HordeCoordinator do
     {:reply, {:ok, log_info}, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info({:coordination_event, event}, state) do
     # Handle coordination events from other nodes
     updated_state = handle_distributed_coordination_event(event, state)
     {:noreply, updated_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(_msg, state) do
     {:noreply, state}
   end

@@ -2,7 +2,17 @@
 
 ## Overview
 
-Arbor is being restructured as an Elixir umbrella application to create a production-ready, distributed AI agent orchestration system. This document provides the high-level architecture and serves as the entry point for understanding the system.
+Arbor is a production-ready, distributed AI agent orchestration system built as an Elixir umbrella application. This document provides the high-level architecture and serves as the entry point for understanding the system.
+
+## Current Production State
+
+The Arbor system is now in production with the following capabilities fully implemented:
+- ✅ **Distributed Architecture**: Full Horde-based cluster management with automatic failover
+- ✅ **Contract System**: Dual-contract system with TypedStruct for data and behaviors for interfaces
+- ✅ **Security**: Capability-based security kernel with fine-grained permissions
+- ✅ **Two-Tier Supervision**: HordeSupervisor for immediate recovery + AgentReconciler for global consistency
+- ✅ **Event Streaming**: Gateway with async command execution and real-time updates
+- ✅ **Production Monitoring**: Comprehensive telemetry and observability
 
 ## Goals
 
@@ -79,26 +89,26 @@ Fine-grained permissions:
 
 ## Implementation Phases
 
-### Phase 1: Foundation (Current)
-- [ ] Create umbrella structure
-- [ ] Implement `arbor_contracts` contracts
-- [ ] Basic `arbor_security` with OTP isolation
-- [ ] Simple `arbor_persistence` with DETS
-- [ ] Minimal viable `arbor_core`
-- [ ] Basic `arbor_cli` client
+### Phase 1: Foundation ✅ COMPLETE
+- ✅ Create umbrella structure
+- ✅ Implement `arbor_contracts` contracts with dual-contract system
+- ✅ Production `arbor_security` with capability-based security kernel
+- ✅ Event-sourced `arbor_persistence` with selective journaling
+- ✅ Full-featured `arbor_core` with Gateway pattern
+- ✅ Working `arbor_cli` client with event streaming
 
-### Phase 2: Production Hardening
-- [ ] Distributed operation with Horde
-- [ ] PostgreSQL persistence backend
-- [ ] Web dashboard with Phoenix LiveView
-- [ ] Comprehensive telemetry and monitoring
-- [ ] Performance optimization
+### Phase 2: Production Hardening ✅ COMPLETE
+- ✅ Distributed operation with Horde (cluster-wide coordination)
+- ✅ PostgreSQL persistence backend (event store + hot cache)
+- ⏳ Web dashboard with Phoenix LiveView (planned)
+- ✅ Comprehensive telemetry and monitoring (OpenTelemetry integration)
+- ✅ Performance optimization (FastAuthorizer pattern)
 
-### Phase 3: Advanced Features
-- [ ] Multi-region deployment
-- [ ] Advanced scheduling algorithms
-- [ ] Machine learning integration
-- [ ] External system integrations
+### Phase 3: Advanced Features ⏳ IN PROGRESS
+- ✅ Multi-node deployment with automatic agent redistribution
+- ⏳ Advanced scheduling algorithms (basic version complete)
+- ⏳ Machine learning integration (architecture defined)
+- ✅ External system integrations (MCP protocol support)
 
 ## Next Steps
 
@@ -110,6 +120,7 @@ Fine-grained permissions:
 ## Related Documents
 
 - [state-persistence.md](../04-components/arbor-persistence/state-persistence.md) - Persistence layer design
-- [agent-architecture.md](../05-architecture/agent-architecture.md) - Agent coordination patterns
 - [gateway-patterns.md](../04-components/arbor-core/gateway-patterns.md) - Dynamic capability discovery and gateway patterns
 - [communication-patterns.md](../05-architecture/communication-patterns.md) - High-performance native communication for same-node agents
+- [Architecture Overview](./architecture-overview.md) - Comprehensive current architecture
+- [Core Contracts](../03-contracts/core-contracts.md) - Contract specifications

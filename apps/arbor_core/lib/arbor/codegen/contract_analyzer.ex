@@ -3,6 +3,8 @@ defmodule Arbor.CodeGen.ContractAnalyzer do
   Analyzes a contract module to extract callback information.
   """
 
+  @behaviour Arbor.Contracts.Codegen.CodeGen.ContractAnalyzer
+
   @doc """
   Analyzes the given contract module and extracts its callbacks.
 

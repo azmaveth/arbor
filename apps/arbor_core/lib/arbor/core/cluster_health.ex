@@ -7,6 +7,8 @@ defmodule Arbor.Core.ClusterHealth do
   for cluster health calculations.
   """
 
+  @behaviour Arbor.Contracts.Cluster.Health
+
   @doc """
   Calculates a balance score for the cluster based on load distribution.
 

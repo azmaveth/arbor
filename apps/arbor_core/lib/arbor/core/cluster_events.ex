@@ -49,6 +49,8 @@ defmodule Arbor.Core.ClusterEvents do
   - Additional event-specific data
   """
 
+  @behaviour Arbor.Contracts.Cluster.Events
+
   alias Phoenix.PubSub
   require Logger
 

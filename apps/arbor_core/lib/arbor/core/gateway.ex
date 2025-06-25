@@ -40,6 +40,8 @@ defmodule Arbor.Core.Gateway do
       Gateway.subscribe_execution(execution_id)
   """
 
+  @behaviour Arbor.Contracts.Gateway.Gateway
+
   @behaviour Arbor.Contracts.Gateway.API
 
   use GenServer
@@ -152,6 +154,7 @@ defmodule Arbor.Core.Gateway do
   - `:name` - Process name (defaults to module name)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -318,7 +321,7 @@ defmodule Arbor.Core.Gateway do
 
   # Server callbacks
 
-  @impl GenServer
+  @impl true
   def init(opts) do
     Logger.info("Starting Arbor Gateway", opts: opts)
 

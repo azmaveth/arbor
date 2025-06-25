@@ -8,9 +8,28 @@
       },
       strict: true,
       color: true,
-      requires: [],
+      requires: ["./lib/arbor/credo/checks/"],
       checks: [
-        # Custom Architectural Guardrails temporarily disabled during development
+        # Custom Architectural Guardrails for Arbor's Dual-Contract System
+        #
+        # These checks enforce Arbor's architectural principles:
+        # 1. All public modules must implement behavior contracts from arbor_contracts
+        # 2. All behavior callbacks must be marked with @impl true
+        # 3. Behavior definitions (@callback) must only exist in arbor_contracts
+        #
+        # This ensures clean separation of contracts and implementations while
+        # maintaining the dual-contract system (TypedStruct + Behaviors)
+        #
+        {Arbor.Credo.Check.ContractEnforcement, [
+          excluded_patterns: ["Test", "Mock", "Stub", "Support"],
+          require_impl: true
+        ]},
+        {Arbor.Credo.Check.ImplTrueEnforcement, [
+          strict: true
+        ]},
+        {Arbor.Credo.Check.BehaviorLocationCheck, [
+          allowed_paths: ["apps/arbor_contracts/lib/"]
+        ]},
 
         # Consistency checks - especially important for contracts
         {Credo.Check.Consistency.ExceptionNames, []},

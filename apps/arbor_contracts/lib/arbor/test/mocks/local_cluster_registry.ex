@@ -65,6 +65,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
         }
 
   @spec init(keyword()) :: {:ok, state()}
+  @impl true
   def init(opts) do
     name = opts[:name] || :mock_registry
 
@@ -345,6 +346,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   end
 
   @spec terminate(any(), state()) :: :ok
+  @impl true
   def terminate(_reason, state) do
     # Clean up ETS tables
     :ets.delete(state.names_table)

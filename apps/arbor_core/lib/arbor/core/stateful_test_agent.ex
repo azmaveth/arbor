@@ -17,6 +17,7 @@ defmodule Arbor.Core.StatefulTestAgent do
   # Client API
 
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
@@ -43,7 +44,7 @@ defmodule Arbor.Core.StatefulTestAgent do
 
   # GenServer callbacks
 
-  @impl GenServer
+  @impl true
   def init(args) do
     agent_id = Keyword.get(args, :agent_id)
     _agent_metadata = Keyword.get(args, :agent_metadata, %{})
@@ -104,7 +105,7 @@ defmodule Arbor.Core.StatefulTestAgent do
     {:ok, state, {:continue, :register_with_supervisor}}
   end
 
-  @impl GenServer
+  @impl true
   def handle_continue(:register_with_supervisor, state) do
     # Register the agent with the HordeSupervisor
     agent_metadata = %{
@@ -125,14 +126,14 @@ defmodule Arbor.Core.StatefulTestAgent do
     end
   end
 
-  @impl GenServer
+  @impl true
   def handle_cast(:increment, state) do
     new_state = %{state | counter: state.counter + 1}
     Logger.debug("Incremented counter to #{new_state.counter}")
     {:noreply, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_cast({:set_value, key, value}, state) do
     new_data = Map.put(state.data, key, value)
     new_state = %{state | data: new_data}
@@ -140,7 +141,7 @@ defmodule Arbor.Core.StatefulTestAgent do
     {:noreply, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_cast(:checkpoint, state) do
     # save_checkpoint always returns :ok according to its spec
     :ok = AgentCheckpoint.save_checkpoint(state.agent_id, state)
@@ -154,31 +155,31 @@ defmodule Arbor.Core.StatefulTestAgent do
     {:noreply, new_state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_call(:prepare_checkpoint, _from, state) do
     # Extract checkpoint data for migration/restore
     checkpoint_data = extract_checkpoint_data(state)
     {:reply, checkpoint_data, state}
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(:checkpoint, state) do
     # Handle automatic checkpoint trigger
     handle_cast(:checkpoint, state)
   end
 
-  @impl GenServer
+  @impl true
   def handle_info(msg, state) do
     Logger.debug("StatefulTestAgent received unexpected message: #{inspect(msg)}")
     {:noreply, state}
   end
 
-  @impl GenServer
+  @impl true
   def terminate(_reason, state) do
     # Save final checkpoint (registration cleanup handled by HordeSupervisor)
     if state.agent_id do
