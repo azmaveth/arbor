@@ -10,7 +10,7 @@ defmodule Arbor.Core.TestServiceImpl do
 
   @doc false
   @impl true
-  def stop_service() do
+  def stop_service do
     # TODO: Implement this callback.
     {:error, :not_implemented}
   end

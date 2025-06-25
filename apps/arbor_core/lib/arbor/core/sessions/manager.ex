@@ -49,7 +49,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
   @behaviour Arbor.Contracts.Session.Manager
 
-  alias Arbor.Core.ClusterSupervisor
+  alias Arbor.Core.{ClusterSupervisor, SessionRegistry}
   alias Arbor.Core.Sessions.Session
   alias Arbor.Types
 
@@ -231,7 +231,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
       _ ->
         # For production, use distributed SessionRegistry
-        case Arbor.Core.SessionRegistry.lookup_session(session_id) do
+        case SessionRegistry.lookup_session(session_id) do
           {:ok, {pid, metadata}} -> {:ok, pid, metadata}
           {:error, :not_found} -> {:error, :not_found}
         end
@@ -277,7 +277,7 @@ defmodule Arbor.Core.Sessions.Manager do
 
       _ ->
         # For production, use distributed SessionRegistry
-        Arbor.Core.SessionRegistry.list_all_sessions()
+        SessionRegistry.list_all_sessions()
     end
   end
 
@@ -500,7 +500,7 @@ defmodule Arbor.Core.Sessions.Manager do
           )
 
         _ ->
-          Arbor.Core.SessionRegistry.session_count()
+          SessionRegistry.session_count()
       end
 
     stats =
@@ -614,7 +614,7 @@ defmodule Arbor.Core.Sessions.Manager do
         end
 
       _ ->
-        case Arbor.Core.SessionRegistry.lookup_session(session_id) do
+        case SessionRegistry.lookup_session(session_id) do
           {:ok, pid} -> {:ok, pid}
           {:error, reason} -> {:error, reason}
         end
@@ -652,7 +652,7 @@ defmodule Arbor.Core.Sessions.Manager do
             )
 
           _ ->
-            case Arbor.Core.SessionRegistry.list_all_sessions() do
+            case SessionRegistry.list_all_sessions() do
               {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
               {:error, _} -> []
             end

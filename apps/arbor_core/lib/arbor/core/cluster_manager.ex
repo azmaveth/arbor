@@ -345,7 +345,9 @@ defmodule Arbor.Core.ClusterManager do
     Logger.info("Node joined cluster: #{node}")
 
     # Add to connected nodes if not already present
-    if node not in state.connected_nodes do
+    if node in state.connected_nodes do
+      {:noreply, state}
+    else
       # Add node to all Horde clusters
       add_node_to_horde_clusters(node)
 
@@ -357,8 +359,6 @@ defmodule Arbor.Core.ClusterManager do
       # Update state
       updated_nodes = Enum.uniq([node | state.connected_nodes])
       {:noreply, %{state | connected_nodes: updated_nodes}}
-    else
-      {:noreply, state}
     end
   end
 
@@ -727,7 +727,7 @@ defmodule Arbor.Core.ClusterManager do
         {:ok, _} ->
           case Code.ensure_loaded(:cpu_sup) do
             {:module, :cpu_sup} ->
-              case apply(:cpu_sup, :avg1, []) do
+              case :cpu_sup.avg1() do
                 # Convert to standard load average format
                 {:ok, load} -> load / 256
                 _ -> :unavailable

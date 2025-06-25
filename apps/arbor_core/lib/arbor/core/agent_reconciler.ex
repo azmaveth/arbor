@@ -13,7 +13,8 @@ defmodule Arbor.Core.AgentReconciler do
   use GenServer
   require Logger
 
-  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, TelemetryHelper}
+  alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry, TelemetryHelper}
+  alias DynamicSupervisor
 
   @behaviour Arbor.Contracts.Agent.Reconciler
 
@@ -751,7 +752,7 @@ defmodule Arbor.Core.AgentReconciler do
   defp get_running_children do
     children =
       @supervisor_name
-      |> Horde.DynamicSupervisor.which_children()
+      |> DynamicSupervisor.which_children()
       |> Enum.map(fn
         {:undefined, pid, _type, _modules} ->
           Logger.debug("Found child with undefined ID", pid: inspect(pid))
@@ -799,7 +800,7 @@ defmodule Arbor.Core.AgentReconciler do
         cleanup_stale_registry_entry(agent_id)
 
         # Check if agent is actually running after cleanup
-        case Arbor.Core.HordeRegistry.lookup_agent_name(agent_id) do
+        case HordeRegistry.lookup_agent_name(agent_id) do
           {:ok, pid, _metadata} ->
             # Agent is running and alive, skip restart
             Logger.debug("Agent found running during restart attempt after cleanup, skipping.",
@@ -853,7 +854,7 @@ defmodule Arbor.Core.AgentReconciler do
       type: :worker
     }
 
-    case Horde.DynamicSupervisor.start_child(@supervisor_name, child_spec) do
+    case DynamicSupervisor.start_child(@supervisor_name, child_spec) do
       {:ok, pid} ->
         restart_duration = System.monotonic_time(:millisecond) - start_time
 
@@ -901,7 +902,7 @@ defmodule Arbor.Core.AgentReconciler do
           started_at: System.system_time(:millisecond)
         }
 
-        case Arbor.Core.HordeRegistry.register_agent_name(agent_id, pid, runtime_metadata) do
+        case HordeRegistry.register_agent_name(agent_id, pid, runtime_metadata) do
           {:ok, ^pid} ->
             Logger.debug("Already running agent registered in runtime registry",
               agent_id: agent_id,
@@ -973,7 +974,7 @@ defmodule Arbor.Core.AgentReconciler do
     # inadvertently unregister the newly started agent. This is acceptable as the
     # reconciler will detect and restart it in the next cycle. A "compare-and-swap"
     # unregister operation in Horde.Registry would eliminate this race.
-    case Arbor.Core.HordeRegistry.lookup_agent_name_raw(agent_id) do
+    case HordeRegistry.lookup_agent_name_raw(agent_id) do
       {:ok, pid, _metadata} ->
         if Process.alive?(pid) do
           # Process is alive, no cleanup needed
@@ -985,7 +986,7 @@ defmodule Arbor.Core.AgentReconciler do
             pid: inspect(pid)
           )
 
-          Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
+          HordeRegistry.unregister_agent_name(agent_id)
           true
         end
 
@@ -1033,11 +1034,11 @@ defmodule Arbor.Core.AgentReconciler do
       # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
       # Only unregister if agent_id is not :undefined
       if agent_id != :undefined do
-        Arbor.Core.HordeRegistry.unregister_agent_name(agent_id)
+        HordeRegistry.unregister_agent_name(agent_id)
       end
 
       # Terminate the orphaned process
-      case Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid) do
+      case DynamicSupervisor.terminate_child(@supervisor_name, pid) do
         :ok ->
           Logger.info("Successfully cleaned up orphaned agent", agent_id: agent_id)
 

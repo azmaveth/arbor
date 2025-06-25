@@ -49,7 +49,16 @@ defmodule Arbor.Test.Support.IntegrationCase do
   Ensures all required infrastructure is running with proper coordination.
   """
   def ensure_infrastructure do
-    # Start distributed Erlang with unique name per test suite
+    start_distributed_erlang()
+    start_pubsub()
+    start_horde_supervisor()
+    start_agent_reconciler()
+    setup_cluster_membership()
+    wait_for_infrastructure_ready()
+    :ok
+  end
+
+  defp start_distributed_erlang do
     node_name = "arbor_integration_#{System.unique_integer([:positive])}@localhost"
 
     case :net_kernel.start([String.to_atom(node_name), :shortnames]) do
@@ -63,17 +72,20 @@ defmodule Arbor.Test.Support.IntegrationCase do
         IO.puts("Warning: Could not start distributed Erlang: #{inspect(reason)}")
         :ok
     end
+  end
 
-    # Start Phoenix.PubSub if not running
+  defp start_pubsub do
     case GenServer.whereis(Arbor.Core.PubSub) do
       nil ->
         {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
+        :ok
 
       _pid ->
         :ok
     end
+  end
 
-    # Start HordeSupervisor infrastructure
+  defp start_horde_supervisor do
     if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
       case Arbor.Core.HordeSupervisor.start_supervisor() do
         {:ok, _} ->
@@ -86,23 +98,17 @@ defmodule Arbor.Test.Support.IntegrationCase do
           raise "Failed to start Horde supervisor: #{inspect(reason)}"
       end
     end
+  end
 
-    # Start AgentReconciler if needed
+  defp start_agent_reconciler do
     case GenServer.whereis(Arbor.Core.AgentReconciler) do
       nil ->
         {:ok, _} = start_supervised(Arbor.Core.AgentReconciler)
+        :ok
 
       _pid ->
         :ok
     end
-
-    # Configure cluster membership
-    setup_cluster_membership()
-
-    # Wait for stabilization
-    wait_for_infrastructure_ready()
-
-    :ok
   end
 
   @doc """

@@ -46,7 +46,9 @@ defmodule Arbor.Core.Gateway do
   @behaviour Arbor.Contracts.Gateway.API
 
   alias Arbor.Core.{ClusterRegistry, Sessions}
-  alias Arbor.Types
+  alias Arbor.Core.Sessions.Manager, as: SessionManager
+  alias Arbor.{Identifiers, Types}
+  alias Arbor.Agents.CodeAnalyzer
   alias Arbor.Contracts.Client.Command
 
   @typedoc "Information about an available capability"
@@ -349,7 +351,7 @@ defmodule Arbor.Core.Gateway do
       context: opts[:metadata] || %{}
     }
 
-    case Sessions.Manager.create_session(session_params, Sessions.Manager) do
+    case SessionManager.create_session(session_params, SessionManager) do
       {:ok, session_struct} ->
         session_id = session_struct.id
 
@@ -415,7 +417,7 @@ defmodule Arbor.Core.Gateway do
     command_type = Map.get(command, :type)
     params = Map.get(command, :params, %{})
 
-    execution_id = Arbor.Identifiers.generate_execution_id()
+    execution_id = Identifiers.generate_execution_id()
 
     # Start async execution
     task =
@@ -458,7 +460,7 @@ defmodule Arbor.Core.Gateway do
 
   @impl true
   def handle_call({:execute, session_id, command, params}, _from, state) do
-    execution_id = Arbor.Identifiers.generate_execution_id()
+    execution_id = Identifiers.generate_execution_id()
 
     # Start async execution
     task =
@@ -501,7 +503,7 @@ defmodule Arbor.Core.Gateway do
 
   @impl true
   def handle_call({:end_session, session_id}, _from, state) do
-    case Sessions.Manager.end_session(session_id) do
+    case SessionManager.end_session(session_id) do
       :ok ->
         # Remove from gateway tracking
         new_sessions = Map.delete(state.sessions, session_id)
@@ -1176,7 +1178,7 @@ defmodule Arbor.Core.Gateway do
   defp spawn_code_analyzer_agent(agent_id, working_dir) do
     agent_spec = %{
       id: agent_id,
-      module: Arbor.Agents.CodeAnalyzer,
+      module: CodeAnalyzer,
       args: [agent_id: agent_id, working_dir: working_dir],
       restart_strategy: :permanent
     }
@@ -1290,7 +1292,7 @@ defmodule Arbor.Core.Gateway do
 
   defp execute_command_on_agent(agent_id, command, args) do
     try do
-      result = Arbor.Agents.CodeAnalyzer.exec(agent_id, command, args)
+      result = CodeAnalyzer.exec(agent_id, command, args)
       {:ok, result}
     rescue
       e -> {:error, {:agent_command_failed, Exception.message(e)}}

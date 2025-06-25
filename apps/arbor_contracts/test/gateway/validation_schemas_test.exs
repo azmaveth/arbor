@@ -1,9 +1,10 @@
 defmodule Arbor.Contracts.Gateway.ValidationSchemasTest do
   use ExUnit.Case
-  @moduletag :fast
 
   alias Arbor.Contracts.Gateway.ValidationSchemas
   alias Arbor.Contracts.Validation
+
+  @moduletag :fast
 
   # Helper to enable validation for specific tests
   defp enable_validation(_context) do

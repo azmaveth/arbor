@@ -9,6 +9,7 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   require Logger
 
   alias Arbor.Test.Support.AsyncHelpers
+  alias HordeSupervisor
 
   @type node_config :: %{
           name: atom(),
@@ -183,7 +184,7 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   """
   @spec get_agent_node(String.t()) :: node() | nil
   def get_agent_node(agent_id) do
-    case Arbor.Core.HordeSupervisor.get_agent_info(agent_id) do
+    case HordeSupervisor.get_agent_info(agent_id) do
       {:ok, agent_info} -> agent_info.node
       {:error, _} -> nil
     end
@@ -194,7 +195,7 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   """
   @spec get_agents_on_node(node()) :: [String.t()]
   def get_agents_on_node(target_node) do
-    case Arbor.Core.HordeSupervisor.list_agents() do
+    case HordeSupervisor.list_agents() do
       {:ok, agents} ->
         agents
         |> Enum.filter(&(&1.node == target_node))

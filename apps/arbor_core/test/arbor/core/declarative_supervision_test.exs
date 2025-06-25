@@ -674,27 +674,9 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
     check_fun = fn ->
       registry_members = Horde.Cluster.members(@registry_name)
       supervisor_members = Horde.Cluster.members(@supervisor_name)
-      current_node = node()
 
-      # Check for proper named members in various formats that Horde can return
-      # Handle keyword list format: [arbor_test@localhost: :arbor_test@localhost]
-      registry_ready =
-        Enum.any?(registry_members, fn
-          {@registry_name, node} when node == current_node -> true
-          {node, node} when node == current_node -> true
-          member when is_atom(member) and member == current_node -> true
-          _ -> false
-        end) or
-          (is_list(registry_members) and
-             Keyword.get(registry_members, current_node) == current_node)
-
-      supervisor_ready =
-        Enum.any?(supervisor_members, fn
-          {@supervisor_name, node} when node == current_node -> true
-          {node, node} when node == current_node -> true
-          member when is_atom(member) and member == current_node -> true
-          _ -> false
-        end)
+      registry_ready = check_membership_ready(registry_members, @registry_name)
+      supervisor_ready = check_membership_ready(supervisor_members, @supervisor_name)
 
       if registry_ready and supervisor_ready do
         IO.puts("  -> Horde membership is ready.")
@@ -741,6 +723,22 @@ defmodule Arbor.Core.DeclarativeSupervisionTest do
         - Supervisor Members: #{inspect(supervisor_members)}
         """
     end
+  end
+
+  defp check_membership_ready(members, expected_name) do
+    current_node = node()
+
+    # Check for proper named members in various formats that Horde can return
+    has_member =
+      Enum.any?(members, fn
+        {^expected_name, node} when node == current_node -> true
+        {node, node} when node == current_node -> true
+        member when is_atom(member) and member == current_node -> true
+        _ -> false
+      end)
+
+    # Handle keyword list format: [arbor_test@localhost: :arbor_test@localhost]
+    has_member or (is_list(members) and Keyword.get(members, current_node) == current_node)
   end
 
   defp cleanup_all_test_agents do

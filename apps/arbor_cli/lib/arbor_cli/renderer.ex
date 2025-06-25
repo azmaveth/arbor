@@ -41,30 +41,39 @@ defmodule ArborCli.Renderer do
     end
   end
 
+  @error_prefixes %{
+    session_creation_failed: "Failed to create session",
+    command_failed: "Command failed",
+    spawn_failed: "Agent spawn failed",
+    list_failed: "Agent list failed",
+    status_failed: "Agent status failed",
+    exec_failed: "Agent command execution failed"
+  }
+
   @spec format_error_details(any()) :: {String.t(), String.t() | nil}
-  defp format_error_details(error) do
-    case error do
-      {:session_creation_failed, reason} -> 
-        {"Failed to create session: #{format_error(reason)}", nil}
-      {:command_failed, reason} -> 
-        {"Command failed: #{format_error(reason)}", nil}
-      {:spawn_failed, reason} -> 
-        {"Agent spawn failed: #{format_error(reason)}", nil}
-      {:list_failed, reason} -> 
-        {"Agent list failed: #{format_error(reason)}", nil}
-      {:status_failed, reason} -> 
-        {"Agent status failed: #{format_error(reason)}", nil}
-      {:exec_failed, reason} -> 
-        {"Agent command execution failed: #{format_error(reason)}", nil}
-      {:invalid_args, message, args} -> 
-        {"Invalid arguments: #{message}", "Provided: #{inspect(args)}"}
-      {:unknown_subcommand, subcommand} -> 
-        {"Unknown subcommand: #{subcommand}", nil}
-      {:unknown_command, command} -> 
-        {"Unknown command: #{command}", nil}
-      other -> 
-        {"Error: #{format_error(other)}", nil}
+  defp format_error_details({:invalid_args, message, args}) do
+    {"Invalid arguments: #{message}", "Provided: #{inspect(args)}"}
+  end
+
+  defp format_error_details({:unknown_subcommand, subcommand}) do
+    {"Unknown subcommand: #{subcommand}", nil}
+  end
+
+  defp format_error_details({:unknown_command, command}) do
+    {"Unknown command: #{command}", nil}
+  end
+
+  defp format_error_details({type, reason}) when is_atom(type) do
+    prefix = Map.get(@error_prefixes, type)
+    if prefix do
+      {"#{prefix}: #{format_error(reason)}", nil}
+    else
+      {"Error: #{format_error({type, reason})}", nil}
     end
+  end
+
+  defp format_error_details(other) do
+    {"Error: #{format_error(other)}", nil}
   end
 
   @doc """

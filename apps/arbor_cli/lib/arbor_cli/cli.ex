@@ -22,6 +22,8 @@ defmodule ArborCli.CLI do
   - `--help` - Show help information
   """
 
+  alias ArborCli.{FormatHelpers, RendererEnhanced}
+
   @doc """
   Main entry point for the CLI application.
 
@@ -140,10 +142,10 @@ defmodule ArborCli.CLI do
   """
   @spec handle_error(Exception.t()) :: :ok
   def handle_error(exception) do
-    ArborCli.RendererEnhanced.show_error("Unexpected error occurred: #{Exception.message(exception)}")
+    RendererEnhanced.show_error("Unexpected error occurred: #{Exception.message(exception)}")
 
     if Application.get_env(:arbor_cli, :verbose, false) do
-      ArborCli.RendererEnhanced.show_command_output_box(Exception.format(:error, exception, []))
+      RendererEnhanced.show_command_output_box(Exception.format(:error, exception, []))
     end
   end
 
@@ -153,41 +155,41 @@ defmodule ArborCli.CLI do
   defp render_enhanced_success(result) do
     case result.action do
       "spawn" ->
-        ArborCli.RendererEnhanced.show_agent_spawn(result)
+        RendererEnhanced.show_agent_spawn(result)
 
       "list" ->
         agents = extract_agents_from_result(result)
-        ArborCli.RendererEnhanced.show_agent_status_table(agents)
+        RendererEnhanced.show_agent_status_table(agents)
 
       "status" ->
         if agent_status = extract_status_from_result(result) do
-          ArborCli.RendererEnhanced.show_agent_status_table([agent_status])
+          RendererEnhanced.show_agent_status_table([agent_status])
         else
-          ArborCli.RendererEnhanced.show_error("Failed to retrieve agent status for #{result.agent_id}")
-          ArborCli.RendererEnhanced.show_command_output_box(result.result)
+          RendererEnhanced.show_error("Failed to retrieve agent status for #{result.agent_id}")
+          RendererEnhanced.show_command_output_box(result.result)
         end
 
       "exec" ->
-        ArborCli.RendererEnhanced.show_success("Command '#{result.command}' executed on agent #{result.agent_id}")
+        RendererEnhanced.show_success("Command '#{result.command}' executed on agent #{result.agent_id}")
         if result.result do
-          ArborCli.RendererEnhanced.show_command_output_box(result.result)
+          RendererEnhanced.show_command_output_box(result.result)
         end
 
       _ ->
-        ArborCli.RendererEnhanced.show_success("Command completed successfully")
-        ArborCli.RendererEnhanced.show_command_output_box(result)
+        RendererEnhanced.show_success("Command completed successfully")
+        RendererEnhanced.show_command_output_box(result)
     end
   end
 
   @spec render_enhanced_error(any()) :: :ok
   defp render_enhanced_error(reason) do
     error_message = format_error_message(reason)
-    ArborCli.RendererEnhanced.show_error(error_message)
+    RendererEnhanced.show_error(error_message)
 
     # Show additional info for invalid args
     case reason do
       {:invalid_args, _message, args} ->
-        ArborCli.RendererEnhanced.show_info("Provided: #{inspect(args)}")
+        RendererEnhanced.show_info("Provided: #{inspect(args)}")
       _ ->
         :ok
     end
@@ -260,7 +262,7 @@ defmodule ArborCli.CLI do
       start_time = agent_data[:started_at] ->
         if is_binary(start_time) do
           case DateTime.from_iso8601(start_time) do
-            {:ok, datetime, _} -> ArborCli.FormatHelpers.format_time_ago(datetime)
+            {:ok, datetime, _} -> FormatHelpers.format_time_ago(datetime)
             _ -> "Unknown"
           end
         else
@@ -269,7 +271,7 @@ defmodule ArborCli.CLI do
 
       uptime = agent_data[:uptime] ->
         if is_integer(uptime) do
-          ArborCli.FormatHelpers.format_duration(uptime)
+          FormatHelpers.format_duration(uptime)
         else
           to_string(uptime)
         end
