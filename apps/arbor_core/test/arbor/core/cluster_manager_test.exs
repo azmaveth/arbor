@@ -1,9 +1,9 @@
 defmodule Arbor.Core.ClusterManagerTest do
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-
   alias Arbor.Core.ClusterManager
+
+  @moduletag :integration
 
   setup_all do
     # Use mock implementations for testing

@@ -9,10 +9,10 @@ defmodule Arbor.Core.ClusterSupervisorTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-
   alias Arbor.Core.ClusterSupervisor
   alias Arbor.Test.Mocks.LocalSupervisor
+
+  @moduletag :integration
 
   setup do
     # MOCK: Use local implementations for unit testing

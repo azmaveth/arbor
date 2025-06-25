@@ -1,10 +1,10 @@
 defmodule Arbor.Core.LocationTransparencyTest do
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-
-  alias Arbor.Core.{Gateway, ClusterRegistry, ClusterSupervisor}
+  alias Arbor.Core.{ClusterRegistry, ClusterSupervisor, Gateway}
   alias Arbor.Core.Sessions.Manager, as: SessionManager
+
+  @moduletag :integration
 
   setup_all do
     # Ensure Phoenix.PubSub is running

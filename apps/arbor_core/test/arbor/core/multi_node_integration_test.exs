@@ -16,11 +16,11 @@ defmodule Arbor.Core.MultiNodeIntegrationTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :distributed
-  @moduletag timeout: 60_000
-
   alias Arbor.Core.{HordeSupervisor, MultiNodeTestHelper}
   alias Arbor.Test.Support.AsyncHelpers
+
+  @moduletag :distributed
+  @moduletag timeout: 60_000
 
   setup_all do
     # Only run if multi-node testing is explicitly enabled

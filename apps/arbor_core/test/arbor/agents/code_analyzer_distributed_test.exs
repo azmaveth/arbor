@@ -11,13 +11,14 @@ defmodule Arbor.Agents.CodeAnalyzerDistributedTest do
 
   use ExUnit.Case, async: false
 
+  alias Arbor.Agents.CodeAnalyzer
+  alias Arbor.Core.{ClusterTestHelper, HordeSupervisor, MultiNodeTestHelper}
+  alias Arbor.Test.Support.AsyncHelpers
+
+  require Logger
+
   @moduletag :distributed
   @moduletag timeout: 120_000
-
-  alias Arbor.Agents.CodeAnalyzer
-  alias Arbor.Core.{HordeSupervisor, ClusterTestHelper, MultiNodeTestHelper}
-  alias Arbor.Test.Support.AsyncHelpers
-  require Logger
 
   @temp_dir_prefix "/tmp/arbor_distributed_test_"
 

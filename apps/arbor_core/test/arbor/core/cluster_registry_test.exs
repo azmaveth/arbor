@@ -9,9 +9,9 @@ defmodule Arbor.Core.ClusterRegistryTest do
 
   use ExUnit.Case, async: true
 
-  @moduletag :integration
-
   alias Arbor.Test.Mocks.LocalClusterRegistry
+
+  @moduletag :integration
 
   setup do
     # MOCK: Use local registry for unit testing
