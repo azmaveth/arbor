@@ -47,7 +47,7 @@ defmodule Arbor.Core.Gateway do
 
   alias Arbor.Agents.CodeAnalyzer
   alias Arbor.Contracts.Client.Command
-  alias Arbor.Core.{ClusterRegistry, Sessions}
+  alias Arbor.Core.ClusterRegistry
   alias Arbor.Core.Sessions.Manager, as: SessionManager
   alias Arbor.{Identifiers, Types}
 
