@@ -1,4 +1,12 @@
 defmodule Arbor.Persistence.EventJournalTest do
+  @moduledoc """
+  Integration tests for the EventJournal module.
+
+  Tests event journaling functionality including batching,
+  file rotation, and recovery mechanisms. These tests use
+  actual file I/O for realistic validation.
+  """
+
   # Not async due to file I/O and named GenServer
   use ExUnit.Case, async: false
 

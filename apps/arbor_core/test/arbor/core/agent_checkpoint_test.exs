@@ -53,7 +53,7 @@ defmodule Arbor.Core.AgentCheckpointTest do
       assert {:ok, info} = AgentCheckpoint.get_checkpoint_info(agent_id)
       assert is_integer(info.timestamp)
       assert info.node == node()
-      assert info.version == 1
+      assert info.snapshot_version == "1.0.0"
       assert is_integer(info.age_ms)
 
       # Clean up

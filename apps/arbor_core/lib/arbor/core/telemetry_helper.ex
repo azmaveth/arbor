@@ -18,7 +18,35 @@ defmodule Arbor.Core.TelemetryHelper do
   Emit telemetry for a timed operation.
 
   Returns the result of the operation and the duration in milliseconds.
+
+  Process telemetry operations for the given input.
+  Currently supports timed operation execution.
   """
+  @impl true
+  @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+  def process({:timed_operation, event_prefix, operation_name, func, metadata}) do
+    try do
+      result = timed_operation(event_prefix, operation_name, func, metadata)
+      {:ok, result}
+    rescue
+      error -> {:error, error}
+    end
+  end
+
+  def process(_input) do
+    {:error, :unsupported_operation}
+  end
+
+  @doc """
+  Configure the telemetry helper with options.
+  Currently no configuration options are supported.
+  """
+  @impl true
+  @spec configure(options :: keyword()) :: :ok | {:error, term()}
+  def configure(_options) do
+    :ok
+  end
+
   @spec timed_operation(atom(), atom(), function(), map()) :: {any(), non_neg_integer()}
   def timed_operation(event_prefix, operation_name, func, metadata \\ %{}) do
     start_time = System.monotonic_time(:millisecond)

@@ -6,10 +6,10 @@ defmodule Arbor.Core.MultiNodeTestHelper do
   for testing distributed behavior, node failures, and cluster resilience.
   """
 
-  require Logger
-
   alias Arbor.Test.Support.AsyncHelpers
   alias HordeSupervisor
+
+  require Logger
 
   @type node_config :: %{
           name: atom(),

@@ -1,9 +1,16 @@
 defmodule Arbor.Agents.CodeAnalyzerTest do
+  @moduledoc """
+  Integration tests for the CodeAnalyzer agent.
+
+  Tests agent lifecycle management, code analysis capabilities,
+  and interaction with the distributed Horde supervisor.
+  """
+
   use ExUnit.Case, async: false
   
-  @moduletag :slow
-
   alias Arbor.Core.ClusterSupervisor
+
+  @moduletag :slow
 
   # Using setup_all to start Horde once for all tests in this module
   setup_all do

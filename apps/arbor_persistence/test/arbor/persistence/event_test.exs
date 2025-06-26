@@ -1,4 +1,11 @@
 defmodule Arbor.Persistence.EventTest do
+  @moduledoc """
+  Unit tests for the Event module.
+
+  Tests conversion between contract events and persistence events,
+  validation, and serialization of event data.
+  """
+
   use ExUnit.Case, async: true
 
   alias Arbor.Contracts.Events.Event, as: ContractEvent

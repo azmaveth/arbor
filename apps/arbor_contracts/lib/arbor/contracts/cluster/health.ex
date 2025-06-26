@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Cluster.Health do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @callback start_service(config :: map()) :: {:ok, pid()} | {:error, term()}
 
   @callback stop_service(reason :: term()) :: :ok

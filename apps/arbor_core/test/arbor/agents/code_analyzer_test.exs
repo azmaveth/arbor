@@ -1,11 +1,11 @@
 defmodule Arbor.Agents.CodeAnalyzerTest do
   use ExUnit.Case, async: false
 
-  @moduletag :integration
-
   alias Arbor.Agents.CodeAnalyzer
   alias Arbor.Core.HordeSupervisor
   alias Arbor.Test.Support.AsyncHelpers
+
+  @moduletag :integration
 
   @temp_dir "/tmp/arbor_test_#{System.unique_integer([:positive])}"
   # Use hardcoded names as expected by HordeSupervisor

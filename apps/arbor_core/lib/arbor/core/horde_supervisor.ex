@@ -80,7 +80,6 @@ defmodule Arbor.Core.HordeSupervisor do
   Starts the HordeSupervisor GenServer.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -92,6 +91,34 @@ defmodule Arbor.Core.HordeSupervisor do
   @spec register_agent(pid(), String.t(), map()) :: {:ok, pid()} | {:error, atom()}
   def register_agent(pid, agent_id, agent_specific_metadata) do
     GenServer.call(__MODULE__, {:register_agent, pid, agent_id, agent_specific_metadata})
+  end
+
+  # ================================
+  # Service Lifecycle Callbacks
+  # ================================
+
+  @impl SupervisorContract
+  def start_service(config) do
+    # HordeSupervisor is started as part of the supervision tree
+    # This callback is for compatibility with the contract
+    start_link(config)
+  end
+
+  @impl SupervisorContract
+  def stop_service(_reason) do
+    # HordeSupervisor is stopped as part of the supervision tree
+    :ok
+  end
+
+  @impl SupervisorContract
+  def get_status() do
+    # Return the status of the supervisor
+    {:ok,
+     %{
+       status: :healthy,
+       supervisor_name: @supervisor_name,
+       registry_name: @registry_name
+     }}
   end
 
   # ================================
@@ -297,7 +324,6 @@ defmodule Arbor.Core.HordeSupervisor do
     :ok
   end
 
-  @impl true
   def handle_agent_handoff(agent_id, operation, state_data) do
     case operation do
       :handoff ->
@@ -481,11 +507,13 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @spec extract_agent_state(String.t(), any()) :: {:ok, any()} | {:error, term()}
+  @impl true
   def extract_agent_state(agent_id, _state \\ nil) do
     handle_agent_handoff(agent_id, :handoff, nil)
   end
 
   @spec restore_agent_state(String.t(), any(), any()) :: {:ok, any()} | {:error, term()}
+  @impl true
   def restore_agent_state(agent_id, state_data, _state \\ nil) do
     handle_agent_handoff(agent_id, :takeover, state_data)
   end
@@ -827,21 +855,19 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   defp extract_agent_state_safely(pid) do
-    try do
-      case GenServer.call(pid, :extract_state, 5000) do
-        {:ok, extracted} when is_map(extracted) ->
-          {:ok, extracted}
+    case GenServer.call(pid, :extract_state, 5000) do
+      {:ok, extracted} when is_map(extracted) ->
+        {:ok, extracted}
 
-        extracted when is_map(extracted) ->
-          # fallback for direct map returns
-          {:ok, extracted}
+      extracted when is_map(extracted) ->
+        # fallback for direct map returns
+        {:ok, extracted}
 
-        _ ->
-          {:ok, %{}}
-      end
-    catch
-      _, _ -> {:ok, %{}}
+      _ ->
+        {:ok, %{}}
     end
+  catch
+    _, _ -> {:ok, %{}}
   end
 
   defp perform_state_takeover(agent_id, state_data) do
@@ -855,11 +881,9 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   defp restore_agent_state_safely(pid, state_data) do
-    try do
-      GenServer.call(pid, {:restore_state, state_data}, 5000)
-    catch
-      _, _ -> :ok
-    end
+    GenServer.call(pid, {:restore_state, state_data}, 5000)
+  catch
+    _, _ -> :ok
   end
 
   defp reply_with_registration_success(pid, agent_id, spec_metadata, state, log_message) do

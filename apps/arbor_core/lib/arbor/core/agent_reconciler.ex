@@ -10,14 +10,14 @@ defmodule Arbor.Core.AgentReconciler do
   This provides self-healing capabilities for the distributed agent system.
   """
 
-  use GenServer
-
   @behaviour Arbor.Contracts.Agent.Reconciler
 
-  require Logger
+  use GenServer
 
   alias Arbor.Core.{AgentCheckpoint, ClusterEvents, HordeRegistry, TelemetryHelper}
   alias Horde.DynamicSupervisor
+
+  require Logger
 
   # Configuration
   @registry_name Arbor.Core.HordeAgentRegistry
@@ -26,9 +26,29 @@ defmodule Arbor.Core.AgentReconciler do
   @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000)
 
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
+  end
+
+  @impl Arbor.Contracts.Agent.Reconciler
+  @spec execute_task(task :: any()) :: {:ok, result :: any()} | {:error, term()}
+  def execute_task(task) do
+    case task do
+      :reconcile ->
+        GenServer.call(__MODULE__, :reconcile_now)
+
+      {:reconcile_agent, agent_id} ->
+        GenServer.call(__MODULE__, {:reconcile_agent, agent_id})
+
+      _ ->
+        {:error, :invalid_task}
+    end
+  end
+
+  @impl Arbor.Contracts.Agent.Reconciler
+  @spec get_state() :: {:ok, state :: any()} | {:error, term()}
+  def get_state() do
+    GenServer.call(__MODULE__, :get_state)
   end
 
   @impl true
@@ -155,6 +175,28 @@ defmodule Arbor.Core.AgentReconciler do
     end
   end
 
+  @impl true
+  def handle_call(:get_state, _from, state) do
+    {:reply, {:ok, state}, state}
+  end
+
+  @impl true
+  def handle_call(:reconcile_now, from, state) do
+    # Delegate to :force_reconcile for immediate reconciliation
+    handle_call(:force_reconcile, from, state)
+  end
+
+  @impl true
+  def handle_call({:reconcile_agent, agent_id}, _from, state) do
+    case restart_agent(%{id: agent_id}, :manual_reconcile) do
+      {:ok, _pid} ->
+        {:reply, {:ok, :reconciled}, state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
   # Public API
 
   @doc """
@@ -177,7 +219,6 @@ defmodule Arbor.Core.AgentReconciler do
   # Arbor.Contracts.Agent.Reconciler callbacks
   #
 
-  @impl Arbor.Contracts.Agent.Reconciler
   def reconcile_agents do
     do_reconcile_agents()
     :ok
@@ -185,7 +226,6 @@ defmodule Arbor.Core.AgentReconciler do
     error -> {:error, {error, __STACKTRACE__}}
   end
 
-  @impl Arbor.Contracts.Agent.Reconciler
   def find_missing_agents do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
@@ -207,7 +247,6 @@ defmodule Arbor.Core.AgentReconciler do
     end)
   end
 
-  @impl Arbor.Contracts.Agent.Reconciler
   def cleanup_orphaned_processes do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
@@ -239,7 +278,6 @@ defmodule Arbor.Core.AgentReconciler do
     :ok
   end
 
-  @impl Arbor.Contracts.Agent.Reconciler
   def restart_agent(agent_spec, reason) do
     Logger.info("Restarting agent via contract",
       agent_id: agent_spec.id,
@@ -1032,9 +1070,14 @@ defmodule Arbor.Core.AgentReconciler do
       )
 
       # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
-      # Only unregister if agent_id is not :undefined
-      if agent_id != :undefined do
-        HordeRegistry.unregister_agent_name(agent_id)
+      # Only unregister if agent_id is a valid string
+      case agent_id do
+        id when is_binary(id) ->
+          HordeRegistry.unregister_agent_name(id)
+
+        _ ->
+          # Skip unregistration for undefined or invalid agent_id
+          :ok
       end
 
       # Terminate the orphaned process
@@ -1133,14 +1176,12 @@ defmodule Arbor.Core.AgentReconciler do
 
   # Get process memory usage safely
   defp get_process_memory(pid) do
-    try do
-      case Process.info(pid, :memory) do
-        {:memory, memory} -> memory
-        nil -> 0
-      end
-    rescue
-      _ -> 0
+    case Process.info(pid, :memory) do
+      {:memory, memory} -> memory
+      nil -> 0
     end
+  rescue
+    _ -> 0
   end
 
   # Classify errors for telemetry grouping

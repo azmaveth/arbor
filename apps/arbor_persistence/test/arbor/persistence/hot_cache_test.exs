@@ -1,4 +1,11 @@
 defmodule Arbor.Persistence.HotCacheTest do
+  @moduledoc """
+  Tests for the HotCache module.
+
+  Verifies ETS-based caching functionality including stream caching,
+  projection updates, and concurrent access patterns.
+  """
+
   use ExUnit.Case, async: true
 
   alias Arbor.Persistence.HotCache

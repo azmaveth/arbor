@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Agent.Checkpoint do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @type checkpoint_data :: any()
   @type agent_state :: any()
 

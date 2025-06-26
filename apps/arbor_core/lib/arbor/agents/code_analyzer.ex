@@ -31,12 +31,51 @@ defmodule Arbor.Agents.CodeAnalyzer do
 
   @behaviour Arbor.Contracts.Agents.CodeAnalyzer
 
-  @compile {:nowarn_unused_function, [handle_restore_result: 2]}
+  # Note: The following warning is acceptable and expected:
+  # "this clause of defp handle_restore_result/2 is never used"
+  # This occurs because AgentBehavior generates defensive error handling
+  # for restore_state/2, but this module uses the default implementation
+  # which always returns {:ok, _}. The error clauses are needed for other
+  # modules that override restore_state/2 to return errors.
   use Arbor.Core.AgentBehavior
 
   # 10MB
   @max_file_size 10 * 1024 * 1024
   @allowed_extensions ~w(.ex .exs .py .js .ts .rb .go .rs .java .c .cpp .h .hpp)
+
+  # ================================
+  # Behaviour Callbacks
+  # ================================
+
+  @impl Arbor.Contracts.Agents.CodeAnalyzer
+  @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+  def process(input) do
+    # This is a generic process function that could be used for batch operations
+    # or alternative processing modes. For now, it delegates to the appropriate
+    # function based on the input format.
+    case input do
+      {:analyze_file, agent_id, path} ->
+        analyze_file(agent_id, path)
+
+      {:analyze_directory, agent_id, path} ->
+        analyze_directory(agent_id, path)
+
+      {:list_files, agent_id, path} ->
+        list_files(agent_id, path)
+
+      _ ->
+        {:error, :invalid_input}
+    end
+  end
+
+  @impl Arbor.Contracts.Agents.CodeAnalyzer
+  @spec configure(options :: keyword()) :: :ok | {:error, term()}
+  def configure(options) do
+    # Configuration could include setting working directory, max file size, etc.
+    # For now, we'll accept any configuration
+    _ = options
+    :ok
+  end
 
   # ================================
   # Client API
@@ -50,7 +89,6 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
     GenServer.start_link(__MODULE__, args, name: via_name(agent_id))
@@ -430,12 +468,14 @@ defmodule Arbor.Agents.CodeAnalyzer do
   defp execute_analyze_command(args, state) do
     case args do
       [path] ->
-        full_path = Path.join(state.working_dir, path)
-
-        if File.dir?(full_path) do
-          perform_directory_analysis(full_path)
+        with {:ok, safe_path} <- validate_path(path, state.working_dir) do
+          if File.dir?(safe_path) do
+            perform_directory_analysis(safe_path)
+          else
+            perform_file_analysis(safe_path)
+          end
         else
-          perform_file_analysis(full_path)
+          error -> error
         end
 
       _ ->
@@ -445,9 +485,18 @@ defmodule Arbor.Agents.CodeAnalyzer do
 
   defp execute_list_command(args, state) do
     case args do
-      [] -> list_directory_files(state.working_dir)
-      [path] -> list_directory_files(Path.join(state.working_dir, path))
-      _ -> {:error, :invalid_args_for_list}
+      [] ->
+        list_directory_files(state.working_dir)
+
+      [path] ->
+        with {:ok, safe_path} <- validate_path(path, state.working_dir) do
+          list_directory_files(safe_path)
+        else
+          error -> error
+        end
+
+      _ ->
+        {:error, :invalid_args_for_list}
     end
   end
 

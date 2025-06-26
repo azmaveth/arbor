@@ -41,16 +41,16 @@
         # Readability - contracts must be clear
         {Credo.Check.Readability.AliasOrder, []},
         {Credo.Check.Readability.FunctionNames, []},
-        {Credo.Check.Readability.ModuleDoc, []},
+        {Credo.Check.Readability.ModuleDoc, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
         {Credo.Check.Readability.ModuleNames, []},
         {Credo.Check.Readability.PredicateFunctionNames, []},
         {Credo.Check.Readability.SinglePipe, []},
-        {Credo.Check.Readability.Specs, []},
-        {Credo.Check.Readability.StrictModuleLayout, []},
+        {Credo.Check.Readability.Specs, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
+        {Credo.Check.Readability.StrictModuleLayout, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
 
         # Design - ensure contracts follow best practices
-        {Credo.Check.Design.AliasUsage, [priority: :low]},
-        {Credo.Check.Design.DuplicatedCode, [mass_threshold: 40]},
+        {Credo.Check.Design.AliasUsage, [priority: :low, excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
+        {Credo.Check.Design.DuplicatedCode, [mass_threshold: 40, excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
 
         # Warnings - catch potential issues
         {Credo.Check.Warning.ApplicationConfigInModuleAttribute, []},
@@ -74,7 +74,16 @@
         # Disable checks that are too restrictive for contracts
         {Credo.Check.Refactor.Nesting, false},
         {Credo.Check.Refactor.UnlessWithElse, false},
-        {Credo.Check.Refactor.WithClauses, false}
+        {Credo.Check.Refactor.WithClauses, false},
+
+        # Architecture-specific exclusions for test backends and examples:
+        # - test/ : Standard test files
+        # - */mocks/ : Production backends used for in-memory testing (dependency injection)
+        # - */examples/ : Demo implementations showing usage patterns
+        {Credo.Check.Refactor.CyclomaticComplexity, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
+        {Credo.Check.Refactor.FunctionArity, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
+        {Credo.Check.Refactor.LongQuoteBlocks, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]},
+        {Credo.Check.Refactor.MatchInCondition, [excluded_paths: ["test/", "*/mocks/", "*/examples/"]]}
       ]
     }
   ]

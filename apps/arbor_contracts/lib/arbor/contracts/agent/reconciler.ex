@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Agent.Reconciler do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @callback execute_task(task :: any()) :: {:ok, result :: any()} | {:error, term()}
 
   @callback get_state() :: {:ok, state :: any()} | {:error, term()}

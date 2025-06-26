@@ -10,10 +10,10 @@ defmodule Arbor.Core.SimulatedMultiNodeTest do
 
   use ExUnit.Case, async: false
 
-  @moduletag :distributed
-
-  alias Arbor.Core.{HordeSupervisor, AgentReconciler}
+  alias Arbor.Core.{AgentReconciler, HordeSupervisor}
   alias Arbor.Test.Support.AsyncHelpers
+
+  @moduletag :distributed
 
   @registry_name Arbor.Core.HordeAgentRegistry
   @supervisor_name Arbor.Core.HordeAgentSupervisor

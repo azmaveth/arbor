@@ -1,4 +1,11 @@
 defmodule Arbor.Core.ClusterManagerTest do
+  @moduledoc """
+  Integration tests for the ClusterManager module.
+
+  Tests cluster coordination, node membership, health monitoring,
+  and distributed state synchronization using Mox-based mocks.
+  """
+
   use ExUnit.Case, async: false
 
   import Arbor.Test.Support.MoxSetup

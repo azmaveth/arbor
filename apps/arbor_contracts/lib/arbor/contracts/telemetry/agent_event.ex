@@ -195,107 +195,101 @@ defmodule Arbor.Contracts.Telemetry.AgentEvent do
   Validates a given agent event against its contract.
   """
   @impl Event
-  @spec validate(t()) :: :ok | {:error, term()}
-  def validate(%__MODULE__.Start{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_start_event}
-    end
-  end
+  @spec validate(Event.t()) :: :ok | {:error, term()}
+  def validate(event) do
+    case event do
+      %__MODULE__.Start{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_start_event}
+        end
 
-  def validate(%__MODULE__.Stop{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_stop_event}
-    end
-  end
+      %__MODULE__.Stop{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_stop_event}
+        end
 
-  def validate(%__MODULE__.Restart{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_restart_event}
-    end
-  end
+      %__MODULE__.Restart{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_restart_event}
+        end
 
-  def validate(%__MODULE__.RestartAttempt{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.measurements, :start_time),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_restart_attempt_event}
-    end
-  end
+      %__MODULE__.RestartAttempt{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.measurements, :start_time),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_restart_attempt_event}
+        end
 
-  def validate(%__MODULE__.Restarted{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.measurements, :restart_duration_ms),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_restarted_event}
-    end
-  end
+      %__MODULE__.Restarted{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.measurements, :restart_duration_ms),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_restarted_event}
+        end
 
-  def validate(%__MODULE__.RestartFailed{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.measurements, :restart_duration_ms),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :reason),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_restart_failed_event}
-    end
-  end
+      %__MODULE__.RestartFailed{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.measurements, :restart_duration_ms),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :reason),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_restart_failed_event}
+        end
 
-  def validate(%__MODULE__.CleanupAttempt{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :pid),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_cleanup_attempt_event}
-    end
-  end
+      %__MODULE__.CleanupAttempt{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :pid),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_cleanup_attempt_event}
+        end
 
-  def validate(%__MODULE__.CleanedUp{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :pid),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_cleaned_up_event}
-    end
-  end
+      %__MODULE__.CleanedUp{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :pid),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_cleaned_up_event}
+        end
 
-  def validate(%__MODULE__.CleanupFailed{} = event) do
-    with :ok <- validate_base_fields(event),
-         true <- Map.has_key?(event.metadata, :agent_id),
-         true <- Map.has_key?(event.metadata, :pid),
-         true <- Map.has_key?(event.metadata, :reason),
-         true <- Map.has_key?(event.metadata, :node) do
-      :ok
-    else
-      _ -> {:error, :invalid_cleanup_failed_event}
-    end
-  end
+      %__MODULE__.CleanupFailed{} ->
+        with :ok <- validate_base_fields(event),
+             true <- Map.has_key?(event.metadata, :agent_id),
+             true <- Map.has_key?(event.metadata, :pid),
+             true <- Map.has_key?(event.metadata, :reason),
+             true <- Map.has_key?(event.metadata, :node) do
+          :ok
+        else
+          _ -> {:error, :invalid_cleanup_failed_event}
+        end
 
-  def validate(_other) do
-    {:error, :unknown_agent_event_type}
+      _ ->
+        {:error, :unknown_agent_event_type}
+    end
   end
 
   defp validate_base_fields(%{

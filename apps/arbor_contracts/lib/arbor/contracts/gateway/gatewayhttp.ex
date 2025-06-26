@@ -16,8 +16,6 @@ defmodule Arbor.Contracts.Gateway.GatewayHTTP do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @type request :: map()
   @type context :: map()
   @type response :: map()

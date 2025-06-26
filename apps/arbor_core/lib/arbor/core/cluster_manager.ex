@@ -80,7 +80,6 @@ defmodule Arbor.Core.ClusterManager do
   - `:connect_timeout` - Timeout for initial cluster connection (default: 30_000)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -437,6 +436,10 @@ defmodule Arbor.Core.ClusterManager do
 
   # Private functions
 
+  # Adds a node to all relevant Horde clusters (Registry, Supervisor, Coordinator).
+  # This function is idempotent and safe to call multiple times. It also handles
+  # cases where Horde implementations are not used (e.g., in test environments).
+  @spec add_node_to_horde_clusters(node()) :: any()
   defp add_node_to_horde_clusters(node) do
     Logger.info("Adding #{node} to Horde clusters")
 
@@ -480,6 +483,10 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
+  # Removes a node from all relevant Horde clusters.
+  # This is typically called when a node leaves the cluster. It gracefully handles
+  # cases where the node is already disconnected or Horde components are down.
+  @spec remove_node_from_horde_clusters(node()) :: any()
   defp remove_node_from_horde_clusters(node) do
     Logger.info("Removing #{node} from Horde clusters")
 
@@ -523,30 +530,36 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
+  # Executes a health check function for a component and returns its status.
+  # It normalizes various success responses to `:up` and handles exceptions
+  # by returning `:down`, preventing crashes in the health check process.
+  @spec check_component_health((-> any())) :: :up | :down
   defp check_component_health(health_fn) do
-    try do
-      case health_fn.() do
-        {:ok, _} -> :up
-        result when is_map(result) -> :up
-        _ -> :down
-      end
-    rescue
-      # Specific rescue for health check failures. These are expected when components
-      # are starting up, shutting down, or experiencing temporary issues.
-      error in [UndefinedFunctionError, RuntimeError, ArgumentError] ->
-        Logger.debug("Component health check failed", error: inspect(error))
-        :down
-
-      other_error ->
-        Logger.warning("Unexpected error during component health check",
-          error: inspect(other_error),
-          function: inspect(health_fn)
-        )
-
-        :down
+    case health_fn.() do
+      {:ok, _} -> :up
+      result when is_map(result) -> :up
+      _ -> :down
     end
+  rescue
+    # Specific rescue for health check failures. These are expected when components
+    # are starting up, shutting down, or experiencing temporary issues.
+    error in [UndefinedFunctionError, RuntimeError, ArgumentError] ->
+      Logger.debug("Component health check failed", error: inspect(error))
+      :down
+
+    other_error ->
+      Logger.warning("Unexpected error during component health check",
+        error: inspect(other_error),
+        function: inspect(health_fn)
+      )
+
+      :down
   end
 
+  # Determines the libcluster topology key based on the application environment.
+  # This allows for different cluster discovery strategies in development,
+  # testing, and production environments.
+  @spec get_topology_key() :: atom()
   defp get_topology_key do
     # Use application environment or default
     case Application.get_env(:arbor_core, :env, :prod) do
@@ -557,6 +570,10 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
+  # Determines the appropriate registry implementation module based on configuration.
+  # It allows swapping between the real `HordeRegistry` and a mock implementation
+  # for testing purposes.
+  @spec get_registry_impl() :: module()
   defp get_registry_impl do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
@@ -574,17 +591,31 @@ defmodule Arbor.Core.ClusterManager do
     end
   end
 
+  # Determines the appropriate supervisor implementation module based on configuration.
+  # It allows swapping between the real `HordeSupervisor` and a mock implementation
+  # for testing purposes, with a fallback to HordeSupervisor if the mock is not available.
+  @spec get_supervisor_impl() :: module()
   defp get_supervisor_impl do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
-        Arbor.Test.Mocks.SupervisorMock
+        # Conditionally load test mock if available
+        with {:module, module} <- Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
+          module
+        else
+          _ -> HordeSupervisor
+        end
 
       :horde ->
         HordeSupervisor
 
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
-          Arbor.Test.Mocks.SupervisorMock
+          # Conditionally load test mock if available
+          with {:module, module} <- Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
+            module
+          else
+            _ -> HordeSupervisor
+          end
         else
           HordeSupervisor
         end
@@ -730,9 +761,17 @@ defmodule Arbor.Core.ClusterManager do
       {:ok, _} ->
         case Code.ensure_loaded(:cpu_sup) do
           {:module, :cpu_sup} ->
-            case :cpu_sup.avg1() do
-              # Convert to standard load average format
-              {:ok, load} -> load / 256
+            try do
+              if function_exported?(:cpu_sup, :avg1, 0) do
+                case apply(:cpu_sup, :avg1, []) do
+                  # Convert to standard load average format
+                  {:ok, load} -> load / 256
+                  _ -> :unavailable
+                end
+              else
+                :unavailable
+              end
+            rescue
               _ -> :unavailable
             end
 
@@ -756,5 +795,26 @@ defmodule Arbor.Core.ClusterManager do
       )
 
       :unavailable
+  end
+
+  # Implement required callbacks from Arbor.Contracts.Cluster.Manager
+
+  @impl true
+  def start_service(_config) do
+    # ClusterManager is started as a GenServer by the application supervisor
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # Graceful shutdown is handled by the GenServer terminate callback
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Get current cluster status using the public API
+    status = cluster_status()
+    {:ok, status}
   end
 end

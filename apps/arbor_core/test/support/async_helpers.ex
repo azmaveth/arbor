@@ -153,13 +153,11 @@ defmodule Arbor.Test.Support.AsyncHelpers do
   """
   @spec assert_eventually_with_backoff((-> any()), keyword()) :: any()
   def assert_eventually_with_backoff(fun, opts \\ []) when is_function(fun, 0) do
-    try do
-      wait_until(fun, opts)
-    rescue
-      ExUnit.AssertionError ->
-        # Try one more time to get a better error message
-        fun.()
-    end
+    wait_until(fun, opts)
+  rescue
+    ExUnit.AssertionError ->
+      # Try one more time to get a better error message
+      fun.()
   end
 
   # Private implementation for wait_until

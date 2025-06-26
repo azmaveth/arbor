@@ -6,6 +6,19 @@ defmodule Arbor.CodeGen.ImplementationGenerator do
   @behaviour Arbor.Contracts.Codegen.CodeGen.ImplementationGenerator
   alias Arbor.CodeGen.{ContractAnalyzer, FileGenerator}
 
+  @impl true
+  def configure(_options) do
+    # ImplementationGenerator doesn't need any configuration
+    :ok
+  end
+
+  @impl true
+  def process(input) do
+    # For now, just return the input as-is
+    # This could be extended to handle generation requests
+    {:ok, input}
+  end
+
   @doc """
   Generates an implementation module for a given contract.
 

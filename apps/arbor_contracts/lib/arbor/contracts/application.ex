@@ -6,6 +6,7 @@ defmodule Arbor.Contracts.Application do
   use Application
 
   @impl true
+  @spec start(Application.start_type(), term()) :: {:ok, pid()} | {:error, term()}
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: Arbor.Contracts.Worker.start_link(arg)

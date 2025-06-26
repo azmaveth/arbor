@@ -1,4 +1,12 @@
 defmodule Arbor.Persistence.IntegrationTest do
+  @moduledoc """
+  Integration tests for the persistence layer.
+
+  Tests the full persistence stack including database interaction,
+  event sourcing, and snapshot management with a real PostgreSQL
+  database.
+  """
+
   use ExUnit.Case
 
   alias Arbor.Contracts.Events.Event, as: ContractEvent

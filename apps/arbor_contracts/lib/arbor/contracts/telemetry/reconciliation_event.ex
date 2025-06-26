@@ -248,6 +248,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.Complete.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.Complete{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :node) do
@@ -257,6 +258,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.LookupPerformance.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.LookupPerformance{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :node) do
@@ -266,6 +268,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentDiscovery.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentDiscovery{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :node) do
@@ -275,6 +278,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentRestartSuccess.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentRestartSuccess{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -285,6 +289,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentRestartFailed.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentRestartFailed{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -295,6 +300,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentRestartError.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentRestartError{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -306,6 +312,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentCleanupSuccess.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentCleanupSuccess{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -317,6 +324,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentCleanupFailed.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentCleanupFailed{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -328,6 +336,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(__MODULE__.AgentCleanupError.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.AgentCleanupError{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.metadata, :agent_id),
@@ -339,6 +348,7 @@ defmodule Arbor.Contracts.Telemetry.ReconciliationEvent do
     end
   end
 
+  @spec validate(any()) :: {:error, :unknown_reconciliation_event_type}
   def validate(_other) do
     {:error, :unknown_reconciliation_event_type}
   end

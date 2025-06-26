@@ -28,6 +28,8 @@ defmodule Arbor.Contracts.Security.Enforcer do
         @behaviour Arbor.Contracts.Security.Enforcer
 
         @impl true
+        @spec authorize(Capability.t(), String.t(), atom(), map(), term()) :: 
+                {:ok, :authorized | :denied} | {:error, term()}
         def authorize(cap, resource_uri, operation, context, state) do
           with :ok <- validate_capability(cap),
                :ok <- check_permissions(cap, resource_uri, operation),

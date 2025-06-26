@@ -1,15 +1,13 @@
-defmodule Arbor.Core.StatefulTestAgent do
+defmodule Arbor.Core.StatefulExampleAgent do
   @moduledoc """
-  A test agent that implements the checkpoint behavior for demonstration
-  and testing of stateful agent recovery capabilities.
+  An example agent that demonstrates the checkpoint behavior for 
+  stateful agent recovery capabilities.
 
   This agent periodically saves its state and can recover from failures
   by restoring the last checkpoint.
   """
 
-  @behaviour Arbor.Core.AgentCheckpoint
-
-  use GenServer
+  use Arbor.Core.AgentBehavior
 
   alias Arbor.Core.AgentCheckpoint
   require Logger
@@ -17,7 +15,6 @@ defmodule Arbor.Core.StatefulTestAgent do
   # Client API
 
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
@@ -57,7 +54,7 @@ defmodule Arbor.Core.StatefulTestAgent do
           # Try to load from checkpoint
           case AgentCheckpoint.load_checkpoint(agent_id) do
             {:ok, checkpoint_data} ->
-              Logger.info("StatefulTestAgent #{agent_id} loaded checkpoint during init",
+              Logger.info("StatefulExampleAgent #{agent_id} loaded checkpoint during init",
                 counter: checkpoint_data.counter
               )
 
@@ -71,7 +68,7 @@ defmodule Arbor.Core.StatefulTestAgent do
               }
 
             {:error, :not_found} ->
-              Logger.info("StatefulTestAgent #{agent_id} starting fresh (no checkpoint)")
+              Logger.info("StatefulExampleAgent #{agent_id} starting fresh (no checkpoint)")
 
               %{
                 agent_id: agent_id,
@@ -84,7 +81,7 @@ defmodule Arbor.Core.StatefulTestAgent do
           end
 
         recovered ->
-          Logger.info("StatefulTestAgent #{agent_id} restored from provided state",
+          Logger.info("StatefulExampleAgent #{agent_id} restored from provided state",
             counter: recovered.counter,
             checkpoint_count: recovered.checkpoint_count
           )
@@ -97,7 +94,7 @@ defmodule Arbor.Core.StatefulTestAgent do
     # Enable automatic checkpointing every 10 seconds
     AgentCheckpoint.enable_auto_checkpoint(self(), 10_000)
 
-    Logger.info("StatefulTestAgent #{agent_id} initialized",
+    Logger.info("StatefulExampleAgent #{agent_id} initialized",
       recovered: state.recovered,
       counter: state.counter
     )
@@ -105,25 +102,15 @@ defmodule Arbor.Core.StatefulTestAgent do
     {:ok, state, {:continue, :register_with_supervisor}}
   end
 
-  @impl true
-  def handle_continue(:register_with_supervisor, state) do
-    # Register the agent with the HordeSupervisor
-    agent_metadata = %{
+  @impl Arbor.Core.AgentBehavior
+  def get_agent_metadata(state) do
+    %{
+      type: :stateful_example,
       counter: state.counter,
       recovered: state.recovered,
       checkpoint_count: state.checkpoint_count,
       started_at: state.started_at
     }
-
-    case Arbor.Core.HordeSupervisor.register_agent(self(), state.agent_id, agent_metadata) do
-      {:ok, _pid} ->
-        Logger.info("StatefulTestAgent #{state.agent_id} registered successfully")
-        {:noreply, state}
-
-      {:error, reason} ->
-        Logger.error("Failed to register StatefulTestAgent #{state.agent_id}: #{inspect(reason)}")
-        {:noreply, state}
-    end
   end
 
   @impl true
@@ -175,7 +162,7 @@ defmodule Arbor.Core.StatefulTestAgent do
 
   @impl true
   def handle_info(msg, state) do
-    Logger.debug("StatefulTestAgent received unexpected message: #{inspect(msg)}")
+    Logger.debug("StatefulExampleAgent received unexpected message: #{inspect(msg)}")
     {:noreply, state}
   end
 
@@ -186,29 +173,31 @@ defmodule Arbor.Core.StatefulTestAgent do
       AgentCheckpoint.save_checkpoint(state.agent_id, state)
     end
 
-    Logger.info("StatefulTestAgent #{state.agent_id} terminated")
+    Logger.info("StatefulExampleAgent #{state.agent_id} terminated")
     :ok
   end
 
-  # Checkpoint behavior implementation
+  # AgentBehavior callback implementations
 
-  @impl AgentCheckpoint
-  def extract_checkpoint_data(state) do
+  @impl Arbor.Core.AgentBehavior
+  def extract_state(state) do
     # Return only essential state data (exclude runtime metadata)
-    %{
+    checkpoint_data = %{
       agent_id: state.agent_id,
       counter: state.counter,
       data: state.data,
       checkpoint_count: state.checkpoint_count,
       last_checkpoint: System.system_time(:millisecond)
     }
+
+    {:ok, checkpoint_data}
   end
 
-  @impl AgentCheckpoint
-  def restore_from_checkpoint(checkpoint_data, _current_state) do
+  @impl Arbor.Core.AgentBehavior
+  def restore_state(_agent_spec, checkpoint_data) do
     # Reconstruct full state from checkpoint data
     # Use Map.get to safely access keys
-    %{
+    restored_state = %{
       agent_id: Map.get(checkpoint_data, :agent_id),
       counter: Map.get(checkpoint_data, :counter, 0),
       data: Map.get(checkpoint_data, :data, %{}),
@@ -217,5 +206,22 @@ defmodule Arbor.Core.StatefulTestAgent do
       recovered: true,
       recovered_at: System.system_time(:millisecond)
     }
+
+    {:ok, restored_state}
+  end
+
+  # Legacy checkpoint functions for backward compatibility
+  def extract_checkpoint_data(state) do
+    case extract_state(state) do
+      {:ok, data} -> data
+      {:error, _} -> %{}
+    end
+  end
+
+  def restore_from_checkpoint(checkpoint_data, current_state) do
+    case restore_state(current_state, checkpoint_data) do
+      {:ok, state} -> state
+      {:error, _} -> current_state
+    end
   end
 end

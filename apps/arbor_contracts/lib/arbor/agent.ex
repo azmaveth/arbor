@@ -14,11 +14,14 @@ defmodule Arbor.Agent do
         @behaviour Arbor.Agent
 
         @impl true
+        @spec init(keyword()) :: {:ok, state()} | {:stop, reason()}
         def init(args) do
           {:ok, %{my_state: args[:initial_value]}}
         end
 
         @impl true
+        @spec handle_message(Message.t(), state()) :: 
+                {:noreply, state()} | {:reply, term(), state()} | {:stop, reason(), state()}
         def handle_message(envelope, state) do
           # Handle incoming message
           {:noreply, state}
@@ -68,6 +71,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec init(keyword()) :: {:ok, state()} | {:stop, reason()}
       def init(args) do
         initial_value = Keyword.get(args, :initial_value, 0)
         {:ok, %{counter: initial_value, history: []}}
@@ -97,6 +101,8 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec handle_message(Message.t(), state()) :: 
+              {:noreply, state()} | {:reply, term(), state()} | {:stop, reason(), state()}
       def handle_message(%Message{payload: {:increment, amount}}, state) do
         new_counter = state.counter + amount
         new_state = %{state | counter: new_counter}
@@ -129,6 +135,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec handle_capability(Capability.t(), state()) :: {:ok, state()} | {:error, reason()}
       def handle_capability(%Capability{resource_uri: "arbor://fs/read/" <> _}, state) do
         # Grant file system read access
         {:ok, %{state | can_read_files: true}}
@@ -158,6 +165,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec terminate(reason(), state()) :: :ok
       def terminate(reason, state) do
         Logger.info("Agent terminating", reason: reason, final_count: state.counter)
         # Close files, network connections, etc.
@@ -182,6 +190,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec export_state(state()) :: map()
       def export_state(state) do
         %{
           counter: state.counter,
@@ -208,6 +217,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec import_state(map()) :: {:ok, state()} | {:error, reason()}
       def import_state(persisted) do
         case persisted do
           %{counter: counter, history: history} when is_integer(counter) ->
@@ -234,6 +244,7 @@ defmodule Arbor.Agent do
 
   ## Example
 
+      @spec list_capabilities() :: [map()]
       def list_capabilities do
         [
           %{

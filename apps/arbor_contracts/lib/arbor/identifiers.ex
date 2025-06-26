@@ -52,6 +52,7 @@ defmodule Arbor.Identifiers do
     Regex.match?(@resource_uri_regex, uri)
   end
 
+  @spec valid_resource_uri?(term()) :: boolean()
   def valid_resource_uri?(_), do: false
 
   @doc """
@@ -72,6 +73,7 @@ defmodule Arbor.Identifiers do
     Regex.match?(@agent_uri_regex, uri)
   end
 
+  @spec valid_agent_uri?(term()) :: boolean()
   def valid_agent_uri?(_), do: false
 
   @doc """
@@ -188,6 +190,8 @@ defmodule Arbor.Identifiers do
     end
   end
 
+  @spec agent_uri_to_id(Types.agent_uri()) ::
+          {:ok, Types.agent_id()} | {:error, :invalid_agent_uri}
   def agent_uri_to_id(_), do: {:error, :invalid_agent_uri}
 
   @doc """
@@ -213,6 +217,8 @@ defmodule Arbor.Identifiers do
     end
   end
 
+  @spec parse_resource_uri(Types.resource_uri()) ::
+          {:ok, map()} | {:error, :invalid_resource_uri}
   def parse_resource_uri(_), do: {:error, :invalid_resource_uri}
 
   @doc """
@@ -259,5 +265,6 @@ defmodule Arbor.Identifiers do
     end
   end
 
+  @spec valid_id?(String.t(), atom()) :: boolean()
   def valid_id?(_, _), do: false
 end

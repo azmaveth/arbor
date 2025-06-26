@@ -97,16 +97,21 @@ defmodule Arbor.Test.Support.MoxSetup do
   Sets up expectation for registry lookup.
   """
   def expect_registry_lookup(agent_id, return_value) do
-    Arbor.Core.MockRegistry
-    |> expect(:lookup_name, fn {:agent, ^agent_id}, _state -> return_value end)
+    expect(Arbor.Core.MockRegistry, :lookup_name, fn {:agent, ^agent_id}, _state ->
+      return_value
+    end)
   end
 
   @doc """
   Sets up expectation for registry registration.
   """
   def expect_registry_register(agent_id, return_value \\ :ok) do
-    Arbor.Core.MockRegistry
-    |> expect(:register_name, fn {:agent, ^agent_id}, _pid, _metadata, _state -> return_value end)
+    expect(Arbor.Core.MockRegistry, :register_name, fn {:agent, ^agent_id},
+                                                       _pid,
+                                                       _metadata,
+                                                       _state ->
+      return_value
+    end)
   end
 
   @doc """

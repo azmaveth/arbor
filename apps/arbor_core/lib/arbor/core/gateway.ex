@@ -45,13 +45,14 @@ defmodule Arbor.Core.Gateway do
   @behaviour Arbor.Contracts.Gateway.API
 
   use GenServer
-  require Logger
 
   alias Arbor.Agents.CodeAnalyzer
   alias Arbor.Contracts.Client.Command
   alias Arbor.Core.ClusterRegistry
   alias Arbor.Core.Sessions.Manager, as: SessionManager
   alias Arbor.{Identifiers, Types}
+
+  require Logger
 
   @typedoc "Information about an available capability"
   @type capability_info :: %{
@@ -68,12 +69,79 @@ defmodule Arbor.Core.Gateway do
           stats: map()
         }
 
+  # =====================================================
+  # Gateway.Gateway Behaviour Callbacks
+  # =====================================================
+
+  @impl Arbor.Contracts.Gateway.Gateway
+  @spec handle_request(request :: any(), context :: map()) ::
+          {:ok, response :: any()} | {:error, reason :: term()}
+  def handle_request(request, context) do
+    case request do
+      %{type: :command, payload: command} ->
+        # Delegate to command execution
+        execute_command(command, context, [])
+
+      %{type: :query, payload: query} ->
+        # Handle query requests
+        handle_query(query, context)
+
+      _ ->
+        {:error, :invalid_request_type}
+    end
+  end
+
+  @impl Arbor.Contracts.Gateway.Gateway
+  @spec validate_request(request :: any()) :: :ok | {:error, term()}
+  def validate_request(request) do
+    with :ok <- validate_request_structure(request),
+         :ok <- validate_request_type(request),
+         :ok <- validate_request_payload(request) do
+      :ok
+    else
+      error -> error
+    end
+  end
+
+  defp validate_request_structure(%{type: _, payload: _}), do: :ok
+  defp validate_request_structure(_), do: {:error, :invalid_request_structure}
+
+  defp validate_request_type(%{type: type}) when type in [:command, :query], do: :ok
+  defp validate_request_type(_), do: {:error, :invalid_request_type}
+
+  defp validate_request_payload(%{payload: payload}) when is_map(payload), do: :ok
+  defp validate_request_payload(_), do: {:error, :invalid_request_payload}
+
+  defp handle_query(query, _context) do
+    # Placeholder for query handling
+    {:error, {:not_implemented, query}}
+  end
+
   # Contract-compliant API (Adapter Pattern)
 
   # Note: init/1 and terminate/2 callbacks conflict between GenServer and Gateway.API
   # The GenServer callbacks take precedence. Gateway API init/terminate are handled
   # by start_link/1 and proper GenServer shutdown.
 
+  @doc """
+  Executes a command asynchronously via the Gateway.
+
+  This function validates the command and, if valid, dispatches it for
+  asynchronous execution. The result is an execution ID that can be used to
+  track the command's progress.
+
+  ## Parameters
+  - `command` - The `Arbor.Contracts.Client.Command.t()` struct to execute.
+  - `context` - A map containing execution context, primarily `:session_id`.
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, execution_id}` - If the command was successfully dispatched.
+  - `{:error, :session_not_found}` - If the session ID is missing from the context.
+  - `{:error, {:invalid_command, reason}}` - If the command fails validation.
+  """
+  @spec execute_command(Command.t(), map(), any()) ::
+          {:ok, Types.execution_id()} | {:error, term()}
   @impl Arbor.Contracts.Gateway.API
   def execute_command(command, context, _state) do
     session_id = Map.get(context, :session_id)
@@ -92,52 +160,207 @@ defmodule Arbor.Core.Gateway do
     end
   end
 
+  @doc """
+  Retrieves the current status of a specific execution.
+
+  ## Parameters
+  - `execution_ref` - The ID of the execution to query.
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, status}` - A map containing the execution's status information.
+  - `{:error, :execution_not_found}` - If the execution ID does not exist.
+  """
+  @spec get_execution_status(Types.execution_id(), any()) ::
+          {:ok, map()} | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
   def get_execution_status(execution_ref, _state) do
     GenServer.call(__MODULE__, {:get_execution_status, execution_ref})
   end
 
+  @doc """
+  Cancels a running execution.
+
+  ## Parameters
+  - `execution_ref` - The ID of the execution to cancel.
+  - `reason` - The reason for the cancellation.
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `:ok` - If the cancellation request was successfully processed.
+  - `{:error, :execution_not_found}` - If the execution ID does not exist.
+  """
+  @spec cancel_execution(Types.execution_id(), any(), any()) ::
+          :ok | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
   def cancel_execution(execution_ref, reason, _state) do
     GenServer.call(__MODULE__, {:cancel_execution, execution_ref, reason})
   end
 
+  @doc """
+  Subscribes to events for a specific target.
+
+  Clients can subscribe to events related to sessions or executions to receive
+  real-time updates. The current implementation uses `Phoenix.PubSub` and does
+  not yet use the `event_types` or `subscriber` parameters.
+
+  ## Parameters
+  - `target` - The target to subscribe to, e.g., `{:session, session_id}` or `{:execution, execution_id}`.
+  - `event_types` - A list of event types to subscribe to (currently unused).
+  - `subscriber` - The PID of the process that will receive event messages (currently unused).
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, subscription_ref}` - A unique reference for the new subscription.
+  - `{:error, :invalid_subscription}` - If the subscription target is not valid.
+  """
+  @spec subscribe_events(
+          target :: {:session, Types.session_id()} | {:execution, Types.execution_id()},
+          event_types :: list(atom()),
+          subscriber :: pid(),
+          state :: any()
+        ) :: {:ok, reference()} | {:error, :invalid_subscription}
   @impl Arbor.Contracts.Gateway.API
   def subscribe_events(target, event_types, subscriber, _state) do
     GenServer.call(__MODULE__, {:subscribe_events, target, event_types, subscriber})
   end
 
+  @doc """
+  Unsubscribes from events.
+
+  Note: This is currently a placeholder and does not perform any action.
+
+  ## Parameters
+  - `subscription_ref` - The reference returned from a successful call to `subscribe_events/4`.
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `:ok` - The unsubscription was successful.
+  """
+  @spec unsubscribe_events(subscription_ref :: reference(), state :: any()) :: :ok
   @impl Arbor.Contracts.Gateway.API
   def unsubscribe_events(subscription_ref, _state) do
     GenServer.call(__MODULE__, {:unsubscribe_events, subscription_ref})
   end
 
+  @doc """
+  Lists the commands available within a given context.
+
+  This is typically used to discover what operations are permitted for a
+  specific session.
+
+  ## Parameters
+  - `context` - A map containing context, primarily `:session_id`.
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, commands}` - A list of maps, where each map describes an available command.
+  """
+  @spec list_commands(context :: map(), state :: any()) :: {:ok, list(map())}
   @impl Arbor.Contracts.Gateway.API
   def list_commands(context, _state) do
     GenServer.call(__MODULE__, {:list_commands, context})
   end
 
+  @doc """
+  Validates a command without executing it.
+
+  This can be used to check if a command is syntactically correct and if the
+  session has the required permissions before attempting execution.
+
+  ## Parameters
+  - `command` - The `Arbor.Contracts.Client.Command.t()` struct to validate.
+  - `context` - The context for validation (unused in the current implementation).
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `:ok` - If the command is valid.
+  - `{:error, reason}` - If the command is invalid.
+  """
+  @spec validate_command(command :: Command.t(), context :: map(), state :: any()) ::
+          :ok | {:error, term()}
   @impl Arbor.Contracts.Gateway.API
   def validate_command(command, context, _state) do
     GenServer.call(__MODULE__, {:validate_command, command, context})
   end
 
+  @doc """
+  Checks the health of the Gateway.
+
+  Provides a snapshot of the Gateway's operational status, including active
+  connections and performance metrics.
+
+  ## Parameters
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, health_info}` - A map containing health information.
+  """
+  @spec get_health(state :: any()) :: {:ok, map()}
   @impl Arbor.Contracts.Gateway.API
   def get_health(_state) do
     GenServer.call(__MODULE__, :get_health)
   end
 
+  @doc """
+  Checks if an operation is within the defined rate limits for a client.
+
+  Note: This is currently a placeholder and will always return `{:ok, 1000}`.
+
+  ## Parameters
+  - `client_id` - The identifier for the client (unused).
+  - `operation` - The type of operation being performed (unused).
+  - `cost` - The cost of the operation (unused).
+  - `_state` - The Gateway state (unused in this adapter function).
+
+  ## Returns
+  - `{:ok, remaining_quota}` - If the operation is allowed.
+  - `{:error, :rate_limited}` - If the operation should be denied (not currently returned).
+  """
+  @spec check_rate_limit(
+          client_id :: any(),
+          operation :: atom(),
+          cost :: non_neg_integer(),
+          state :: any()
+        ) :: {:ok, non_neg_integer()} | {:error, :rate_limited}
   @impl Arbor.Contracts.Gateway.API
   def check_rate_limit(client_id, operation, cost, _state) do
     GenServer.call(__MODULE__, {:check_rate_limit, client_id, operation, cost})
   end
 
+  @doc """
+  Initializes the Gateway.
+
+  This function is part of the `Arbor.Contracts.Gateway.API` behaviour.
+  The actual Gateway initialization is handled by `GenServer.start_link/1`.
+
+  ## Parameters
+  - `_opts` - A keyword list of options (unused).
+
+  ## Returns
+  - `{:ok, initial_state}` - An empty map representing the initial state.
+  """
+  @spec initialize_gateway(opts :: keyword()) :: {:ok, map()}
   @impl Arbor.Contracts.Gateway.API
   def initialize_gateway(_opts) do
     # Gateway initialization is handled by GenServer.start_link/3
     {:ok, %{}}
   end
 
+  @doc """
+  Shuts down the Gateway.
+
+  This function is part of the `Arbor.Contracts.Gateway.API` behaviour.
+  The actual Gateway shutdown is handled by the `GenServer.terminate/2` callback.
+
+  ## Parameters
+  - `_reason` - The reason for shutdown (unused).
+  - `_state` - The current Gateway state (unused).
+
+  ## Returns
+  - `:ok`
+  """
+  @spec shutdown_gateway(reason :: any(), state :: any()) :: :ok
   @impl Arbor.Contracts.Gateway.API
   def shutdown_gateway(_reason, _state) do
     # Gateway shutdown is handled by GenServer termination
@@ -154,7 +377,6 @@ defmodule Arbor.Core.Gateway do
   - `:name` - Process name (defaults to module name)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end

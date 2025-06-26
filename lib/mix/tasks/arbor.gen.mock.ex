@@ -195,14 +195,13 @@ defmodule Mix.Tasks.Arbor.Gen.Mock do
     imports = if Enum.any?(mocks), do: "import Mox\n", else: ""
     
     setup_mocks = mocks
-    |> Enum.map(fn %{mox_name: name, contract: contract} ->
+    |> Enum.map_join("\n", fn %{mox_name: name, contract: contract} ->
       if contract do
         "    Mox.defmock(#{name}, for: #{inspect(contract)})"
       else
         "    # TODO: Define contract for #{name}"
       end
     end)
-    |> Enum.join("\n")
     
     """
     #{imports}

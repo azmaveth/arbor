@@ -1,4 +1,11 @@
 defmodule Arbor.Persistence.StoreTest do
+  @moduledoc """
+  Unit tests for the Store module.
+
+  Tests event storage and retrieval functionality using
+  in-memory backend for fast, isolated testing.
+  """
+
   use ExUnit.Case, async: true
 
   alias Arbor.Contracts.Events.Event, as: ContractEvent

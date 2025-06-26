@@ -56,6 +56,28 @@ defmodule Arbor.Core.ClusterEvents do
 
   @pubsub_name Arbor.Core.PubSub
 
+  # Service lifecycle callbacks
+
+  @impl true
+  def start_service(_config) do
+    # ClusterEvents is started as part of the PubSub supervision tree
+    # This callback is for compatibility with the contract
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # ClusterEvents is stopped as part of the PubSub supervision tree
+    # This callback is for compatibility with the contract
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Return the status of the cluster events service
+    {:ok, %{status: :healthy, pubsub: @pubsub_name}}
+  end
+
   # Topic names
   @agent_events_topic "agent_events"
   @cluster_events_topic "cluster_events"

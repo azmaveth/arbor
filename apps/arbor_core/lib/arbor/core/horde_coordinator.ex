@@ -109,7 +109,6 @@ defmodule Arbor.Core.HordeCoordinator do
   Start the distributed coordinator.
   """
   @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
-  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -156,19 +155,16 @@ defmodule Arbor.Core.HordeCoordinator do
   # Node lifecycle management
 
   @spec handle_node_join(map(), any()) :: {:ok, any()} | {:error, any()}
-  @impl true
   def handle_node_join(node_info, _state) do
     GenServer.call(__MODULE__, {:handle_node_join, node_info})
   end
 
   @spec handle_node_leave(node(), any(), any()) :: {:ok, any()} | {:error, any()}
-  @impl true
   def handle_node_leave(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_leave, node, reason})
   end
 
   @spec handle_node_failure(node(), any(), any()) :: {:ok, any()} | {:error, any()}
-  @impl true
   def handle_node_failure(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_failure, node, reason})
   end
@@ -218,7 +214,6 @@ defmodule Arbor.Core.HordeCoordinator do
   end
 
   @spec handle_split_brain(map(), any()) :: {:ok, any()} | {:error, any()}
-  @impl true
   def handle_split_brain(split_brain_event, _state) do
     GenServer.call(__MODULE__, {:handle_split_brain, split_brain_event})
   end
@@ -971,5 +966,34 @@ defmodule Arbor.Core.HordeCoordinator do
       {_type, _arg1, timestamp: timestamp} -> timestamp
       _ -> System.system_time(:millisecond)
     end
+  end
+
+  # Implement required callbacks from Arbor.Contracts.Cluster.Coordinator
+
+  @impl true
+  def start_service(_config) do
+    # This coordinator is started by the application supervisor
+    # Return the current process as the "service"
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # Graceful shutdown is handled by the GenServer terminate callback
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Return status of the Horde coordination service
+    status = %{
+      module: __MODULE__,
+      type: :horde_coordinator,
+      operational: true,
+      node: node(),
+      timestamp: System.system_time(:millisecond)
+    }
+
+    {:ok, status}
   end
 end

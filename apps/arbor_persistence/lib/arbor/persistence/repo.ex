@@ -17,4 +17,13 @@ defmodule Arbor.Persistence.Repo do
   def init(_, opts) do
     {:ok, Keyword.put(opts, :url, System.get_env("DATABASE_URL"))}
   end
+
+  @doc """
+  Dynamically sets repository configuration for testing.
+  Used primarily with Testcontainers to configure database connection.
+  """
+  @spec put_dynamic_repo(keyword()) :: :ok
+  def put_dynamic_repo(config) do
+    Application.put_env(:arbor_persistence, __MODULE__, config)
+  end
 end

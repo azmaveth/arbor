@@ -21,14 +21,33 @@ defmodule Arbor.Core.HordeRegistry do
 
   require Logger
 
-  alias Arbor.Contracts.Cluster.Registry, as: RegistryContract
-
   # Registry name - must match what's started in supervisor
   @registry_name Arbor.Core.HordeAgentRegistry
 
+  # Service lifecycle callbacks
+
+  @impl true
+  def start_service(_config) do
+    # HordeRegistry is started as part of the supervision tree
+    # This callback is for compatibility with the contract
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # HordeRegistry is stopped as part of the supervision tree
+    # This callback is for compatibility with the contract
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Return the status of the registry
+    {:ok, %{status: :healthy, registry: @registry_name}}
+  end
+
   # Registry Contract Implementation
 
-  @impl RegistryContract
   def register_name(name, pid, metadata, _state \\ nil) when is_pid(pid) do
     agent_id = extract_agent_id(name)
 
@@ -47,7 +66,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def lookup_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
@@ -73,7 +91,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def unregister_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
@@ -86,7 +103,6 @@ defmodule Arbor.Core.HordeRegistry do
     :ok
   end
 
-  @impl RegistryContract
   def register_with_ttl(_name, _pid, _ttl, _metadata, _state) do
     # TTL functionality temporarily disabled
     # Needs distributed timer solution (e.g., using Process.send_after with node tracking)
@@ -101,7 +117,6 @@ defmodule Arbor.Core.HordeRegistry do
     {:error, :ttl_not_implemented}
   end
 
-  @impl RegistryContract
   def update_metadata(name, new_metadata, _state \\ nil) do
     case lookup_name(name) do
       {:ok, {pid, old_metadata}} ->
@@ -114,7 +129,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def register_group(group_name, pid, metadata, _state \\ nil) do
     # TODO: Group registrations store a PID and can become stale if an agent is
     # restarted. A robust solution would involve storing group membership in the
@@ -136,7 +150,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def unregister_group(group_name, pid, _state) do
     case find_agent_by_pid(pid) do
       {:ok, agent_id} ->
@@ -149,7 +162,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def lookup_group(group_name, _state \\ nil) do
     group_id = extract_group_id(group_name)
 
@@ -179,7 +191,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def match(pattern, _state \\ nil) do
     # TODO (SCALABILITY): This performs a full registry scan and will not scale.
     # To optimize, consider using a more specific `Horde.Registry.select` pattern if
@@ -207,7 +218,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def count(_state) do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # To optimize, consider maintaining a distributed counter (e.g., using Horde.Counter)
@@ -224,7 +234,6 @@ defmodule Arbor.Core.HordeRegistry do
     {:ok, agent_count}
   end
 
-  @impl RegistryContract
   def monitor(name, _state) do
     case lookup_name(name) do
       {:ok, {pid, _metadata}} ->
@@ -236,7 +245,6 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @impl RegistryContract
   def health_check(_state \\ nil) do
     members = Horde.Cluster.members(@registry_name)
     {:ok, agent_count} = count(nil)
@@ -257,25 +265,21 @@ defmodule Arbor.Core.HordeRegistry do
      }}
   end
 
-  @impl true
   def handle_node_up(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
-  @impl true
   def handle_node_down(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
-  @impl RegistryContract
   def start_registry(_opts) do
     # Registry should be started by supervisor, not by this module
     {:ok, nil}
   end
 
-  @impl RegistryContract
   def stop_registry(_reason, _state) do
     :ok
   end
@@ -501,6 +505,16 @@ defmodule Arbor.Core.HordeRegistry do
     |> Enum.each(&Horde.Registry.unregister(@registry_name, &1))
   end
 
+  @doc """
+  List agent registrations matching a pattern (single-arity version).
+
+  This version provides compatibility with the mock registry interface.
+  """
+  @spec list_by_pattern(String.t()) :: [{String.t(), pid(), map()}]
+  def list_by_pattern(pattern) do
+    list_by_pattern(pattern, nil)
+  end
+
   # Cluster management functions for ClusterManager
 
   @doc """
@@ -530,8 +544,7 @@ defmodule Arbor.Core.HordeRegistry do
   def list_by_pattern(pattern, _state) do
     # Convert pattern to regex for flexible matching
     regex_pattern =
-      ("^" <> String.replace(pattern, "*", ".*") <> "$")
-      |> Regex.compile!()
+      Regex.compile!("^" <> String.replace(pattern, "*", ".*") <> "$")
 
     @registry_name
     |> Horde.Registry.select([{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])

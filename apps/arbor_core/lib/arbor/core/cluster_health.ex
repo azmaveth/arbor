@@ -122,4 +122,31 @@ defmodule Arbor.Core.ClusterHealth do
       end)
     )
   end
+
+  # Implement required callbacks from Arbor.Contracts.Cluster.Health
+
+  @impl true
+  def start_service(_config) do
+    # This is a utility module that provides health calculation functions
+    # No actual service to start
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # This is a utility module, nothing to stop
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Return status of the health calculation service
+    status = %{
+      module: __MODULE__,
+      operational: true,
+      timestamp: System.system_time(:millisecond)
+    }
+
+    {:ok, status}
+  end
 end

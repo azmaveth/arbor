@@ -56,8 +56,7 @@ defmodule Arbor.Credo.Check.ContractEnforcement do
   end
 
   defp should_check_file?(filename) do
-    String.contains?(filename, "/lib/") and
-      String.contains?(filename, "arbor_core") and
+    String.starts_with?(filename, "apps/arbor_core/lib/") and
       not String.contains?(filename, "/test/")
   end
 

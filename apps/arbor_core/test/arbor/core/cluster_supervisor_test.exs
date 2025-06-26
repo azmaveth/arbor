@@ -1,23 +1,25 @@
 defmodule Arbor.Core.ClusterSupervisorTest do
   @moduledoc """
-  Unit tests for distributed agent supervision logic using local mocks.
+  Integration tests for distributed agent supervision logic using local mocks.
 
-  These tests use MOCK implementations to test supervision logic without
+  These tests use LOCAL MOCK implementations to test supervision logic without
   requiring actual distributed clustering. The real Horde-based
-  implementation will be tested in integration tests.
+  implementation will be tested in separate integration tests.
   """
 
   use ExUnit.Case, async: false
 
   alias Arbor.Core.ClusterSupervisor
-  alias Arbor.Test.Mocks.LocalSupervisor
 
   @moduletag :integration
 
   setup do
-    # MOCK: Use local implementations for unit testing
-    Application.put_env(:arbor_core, :registry_impl, :mock)
-    Application.put_env(:arbor_core, :supervisor_impl, :mock)
+    # Use local implementations for integration testing
+    Application.put_env(:arbor_core, :registry_impl, Arbor.Test.Mocks.LocalClusterRegistry)
+    Application.put_env(:arbor_core, :supervisor_impl, Arbor.Test.Mocks.LocalSupervisor)
+
+    # Disable agent retry to prevent registration attempts
+    Application.put_env(:arbor_core, :agent_retry, retries: 0)
 
     # Start the mock registry and supervisor (handle already started)
     case Arbor.Test.Mocks.LocalClusterRegistry.start_link() do
@@ -38,14 +40,14 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       # Reset configuration
       Application.put_env(:arbor_core, :registry_impl, :auto)
       Application.put_env(:arbor_core, :supervisor_impl, :auto)
+      Application.delete_env(:arbor_core, :agent_retry)
     end)
 
-    {:ok, state} = Arbor.Test.Mocks.LocalSupervisor.init([])
-    %{supervisor_state: state}
+    :ok
   end
 
   describe "agent lifecycle" do
-    test "starts agent with valid spec", %{supervisor_state: state} do
+    test "starts agent with valid spec" do
       agent_spec = %{
         id: "test-agent-123",
         module: Arbor.Test.Mocks.TestAgent,
@@ -66,7 +68,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert agent_info.metadata == agent_spec.metadata
     end
 
-    test "prevents duplicate agent registration", %{supervisor_state: state} do
+    test "prevents duplicate agent registration" do
       agent_spec = %{
         id: "duplicate-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -82,7 +84,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
                ClusterSupervisor.start_agent(agent_spec)
     end
 
-    test "stops agent gracefully", %{supervisor_state: state} do
+    test "stops agent gracefully" do
       agent_spec = %{
         id: "stop-test-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -104,13 +106,13 @@ defmodule Arbor.Core.ClusterSupervisorTest do
                ClusterSupervisor.get_agent_info(agent_spec.id)
     end
 
-    test "handles stop of non-existent agent", %{supervisor_state: state} do
+    test "handles stop of non-existent agent" do
       # MOCK: Use local supervisor for unit testing
       assert {:error, :agent_not_found} =
                ClusterSupervisor.stop_agent("non-existent", 5000)
     end
 
-    test "restarts agent with same specification", %{supervisor_state: state} do
+    test "restarts agent with same specification" do
       agent_spec = %{
         id: "restart-test-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -133,7 +135,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert agent_info.restart_count >= 1
     end
 
-    test "handles restart of non-existent agent", %{supervisor_state: state} do
+    test "handles restart of non-existent agent" do
       # MOCK: Use local supervisor for unit testing
       assert {:error, :agent_not_found} =
                ClusterSupervisor.restart_agent("non-existent")
@@ -141,7 +143,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   end
 
   describe "agent listing and information" do
-    test "lists all supervised agents", %{supervisor_state: state} do
+    test "lists all supervised agents" do
       # Start multiple agents
       agents = [
         %{
@@ -180,12 +182,12 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert "agent-3" in agent_ids
     end
 
-    test "returns empty list when no agents", %{supervisor_state: state} do
+    test "returns empty list when no agents" do
       # MOCK: Use local supervisor for unit testing
       assert {:ok, []} = ClusterSupervisor.list_agents()
     end
 
-    test "gets detailed agent information", %{supervisor_state: state} do
+    test "gets detailed agent information" do
       agent_spec = %{
         id: "info-test-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -214,7 +216,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert is_list(info.restart_history)
     end
 
-    test "handles info request for non-existent agent", %{supervisor_state: state} do
+    test "handles info request for non-existent agent" do
       # MOCK: Use local supervisor for unit testing
       assert {:error, :agent_not_found} =
                ClusterSupervisor.get_agent_info("non-existent")
@@ -226,7 +228,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   # automatically via Horde
 
   describe "supervision strategy updates" do
-    test "updates agent supervision strategy", %{supervisor_state: state} do
+    test "updates agent supervision strategy" do
       agent_spec = %{
         id: "update-test-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -254,7 +256,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert info.spec.max_seconds == 60
     end
 
-    test "handles spec update for non-existent agent", %{supervisor_state: state} do
+    test "handles spec update for non-existent agent" do
       updates = %{restart_strategy: :permanent}
 
       # MOCK: Use local supervisor for unit testing
@@ -264,7 +266,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   end
 
   describe "health and monitoring" do
-    test "reports supervision health metrics", %{supervisor_state: state} do
+    test "reports supervision health metrics" do
       # Start agents with different configurations
       agents = [
         %{
@@ -304,7 +306,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
       assert is_integer(health.memory_usage)
     end
 
-    test "tracks restart intensity", %{supervisor_state: state} do
+    test "tracks restart intensity" do
       agent_spec = %{
         id: "restart-intensity-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -325,7 +327,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   end
 
   describe "event handling" do
-    test "registers event handlers for lifecycle events", %{supervisor_state: state} do
+    test "registers event handlers for lifecycle events" do
       # Set up event handler
       test_pid = self()
 
@@ -359,7 +361,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
   end
 
   describe "agent handoff" do
-    test "handles agent state handoff for migration", %{supervisor_state: state} do
+    test "handles agent state handoff for migration" do
       agent_spec = %{
         id: "handoff-test-agent",
         module: Arbor.Test.Mocks.TestAgent,
@@ -384,7 +386,7 @@ defmodule Arbor.Core.ClusterSupervisorTest do
                )
     end
 
-    test "handles handoff for non-existent agent", %{supervisor_state: state} do
+    test "handles handoff for non-existent agent" do
       # MOCK: Use local supervisor for unit testing
       assert {:error, :agent_not_found} = ClusterSupervisor.extract_agent_state("non-existent")
     end

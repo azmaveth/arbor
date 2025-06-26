@@ -47,11 +47,37 @@ defmodule Arbor.Core.Sessions.Session do
 
   use GenServer
 
-  require Logger
-
   alias Arbor.Contracts.Core.{Capability, Message}
+
+  # =====================================================
+  # Session.Session Behaviour Callbacks
+  # =====================================================
+
+  @impl Arbor.Contracts.Session.Session
+  @spec create_session(params :: map()) :: {:ok, session_id :: binary()} | {:error, term()}
+  def create_session(_params) do
+    # This should be called on the Manager, not individual sessions
+    {:error, :use_session_manager}
+  end
+
+  @impl Arbor.Contracts.Session.Session
+  @spec get_session(session_id :: binary()) :: {:ok, map()} | {:error, term()}
+  def get_session(session_id) do
+    # Delegate to Manager for session lookup
+    Arbor.Core.Sessions.Manager.get_session(session_id)
+  end
+
+  @impl Arbor.Contracts.Session.Session
+  @spec terminate_session(session_id :: binary()) :: :ok | {:error, term()}
+  def terminate_session(session_id) do
+    # Delegate to Manager for session termination
+    Arbor.Core.Sessions.Manager.terminate_session(session_id)
+  end
+
   alias Arbor.Identifiers
   alias Arbor.Types
+
+  require Logger
 
   @typedoc "Session state"
   @type state :: %{
@@ -80,7 +106,6 @@ defmodule Arbor.Core.Sessions.Session do
   - `:timeout` - Session timeout in milliseconds
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
 

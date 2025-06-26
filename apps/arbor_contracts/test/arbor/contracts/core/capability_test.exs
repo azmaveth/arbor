@@ -1,4 +1,11 @@
 defmodule Arbor.Contracts.Core.CapabilityTest do
+  @moduledoc """
+  Unit tests for the Capability contract module.
+
+  Tests the creation, validation, and behavior of security capabilities
+  including expiration, revocation, and constraint validation.
+  """
+
   use ExUnit.Case, async: true
 
   alias Arbor.Contracts.Core.Capability

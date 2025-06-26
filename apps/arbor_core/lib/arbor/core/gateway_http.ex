@@ -21,6 +21,33 @@ defmodule Arbor.Core.GatewayHTTP do
 
   plug(:dispatch)
 
+  # =====================================================
+  # GatewayHTTP Behaviour Callbacks
+  # =====================================================
+
+  @impl Arbor.Contracts.Gateway.GatewayHTTP
+  @spec handle_request(request :: any(), context :: map()) ::
+          {:ok, response :: any()} | {:error, reason :: term()}
+  def handle_request(request, context) do
+    # Convert HTTP request to Gateway request format
+    gateway_request = %{
+      type: :command,
+      payload: request
+    }
+
+    Arbor.Core.Gateway.handle_request(gateway_request, context)
+  end
+
+  @impl Arbor.Contracts.Gateway.GatewayHTTP
+  @spec validate_request(request :: any()) :: :ok | {:error, term()}
+  def validate_request(request) do
+    # Basic HTTP request validation
+    case request do
+      %Plug.Conn{} -> :ok
+      _ -> {:error, :invalid_http_request}
+    end
+  end
+
   # Session Management
 
   post "/sessions" do

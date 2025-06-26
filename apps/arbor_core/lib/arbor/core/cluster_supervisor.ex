@@ -45,6 +45,31 @@ defmodule Arbor.Core.ClusterSupervisor do
   @type agent_spec :: SupervisorContract.agent_spec()
   @type supervisor_error :: SupervisorContract.supervisor_error()
 
+  # Service lifecycle callbacks
+
+  @impl true
+  @spec start_service(map()) :: {:ok, pid()} | {:error, term()}
+  def start_service(_config) do
+    # The cluster supervisor is started as part of the supervision tree
+    # This callback is for compatibility with the contract
+    {:ok, self()}
+  end
+
+  @impl true
+  @spec stop_service(term()) :: :ok
+  def stop_service(_reason) do
+    # The cluster supervisor is stopped as part of the supervision tree
+    # This callback is for compatibility with the contract
+    :ok
+  end
+
+  @impl true
+  @spec get_status() :: {:ok, map()}
+  def get_status() do
+    # Return the status of the cluster supervisor
+    {:ok, %{status: :healthy, supervisor_impl: get_supervisor_impl()}}
+  end
+
   # High-level agent supervision API
 
   @doc """
@@ -72,6 +97,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:error, :agent_already_started}` - Agent ID already exists
   - `{:error, reason}` - Start failed
   """
+  @impl true
   @spec start_agent(agent_spec()) :: {:ok, pid()} | {:error, supervisor_error()}
   def start_agent(agent_spec) do
     supervisor_impl = get_supervisor_impl()
@@ -101,6 +127,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:error, :agent_not_found}` - Agent doesn't exist
   - `{:error, :timeout}` - Graceful shutdown timed out
   """
+  @impl true
   @spec stop_agent(Types.agent_id(), timeout()) :: :ok | {:error, supervisor_error()}
   def stop_agent(agent_id, timeout \\ 5000) do
     supervisor_impl = get_supervisor_impl()
@@ -119,6 +146,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:ok, new_pid}` - Agent restarted successfully
   - `{:error, :agent_not_found}` - Agent doesn't exist
   """
+  @impl true
   @spec restart_agent(Types.agent_id()) :: {:ok, pid()} | {:error, supervisor_error()}
   def restart_agent(agent_id) do
     supervisor_impl = get_supervisor_impl()
@@ -147,6 +175,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `:memory` - Current memory usage in bytes
   - `:message_queue_len` - Current message queue length
   """
+  @impl true
   @spec get_agent_info(Types.agent_id()) :: {:ok, map()} | {:error, supervisor_error()}
   def get_agent_info(agent_id) do
     supervisor_impl = get_supervisor_impl()
@@ -164,6 +193,7 @@ defmodule Arbor.Core.ClusterSupervisor do
 
   List of agent info maps containing basic fields from get_agent_info/1.
   """
+  @impl true
   @spec list_agents() :: {:ok, [map()]} | {:error, supervisor_error()}
   def list_agents() do
     supervisor_impl = get_supervisor_impl()
@@ -194,6 +224,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:error, :no_spec}` - No agent specification found
   - `{:error, reason}` - Restoration failed
   """
+  @impl true
   @spec restore_agent(Types.agent_id()) :: {:ok, {pid(), atom()}} | {:error, supervisor_error()}
   def restore_agent(agent_id) do
     supervisor_impl = get_supervisor_impl()
@@ -218,6 +249,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `:ok` - Strategy updated successfully
   - `{:error, :agent_not_found}` - Agent doesn't exist
   """
+  @impl true
   @spec update_agent_spec(Types.agent_id(), map()) :: :ok | {:error, supervisor_error()}
   def update_agent_spec(agent_id, updates) do
     supervisor_impl = get_supervisor_impl()
@@ -242,6 +274,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `:restart_intensity` - Recent restart frequency
   - `:memory_usage` - Total memory used by agents
   """
+  @impl true
   @spec health_metrics() :: {:ok, map()} | {:error, supervisor_error()}
   def health_metrics() do
     supervisor_impl = get_supervisor_impl()
@@ -272,6 +305,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `:ok` - Event handler registered
   - `{:error, reason}` - Registration failed
   """
+  @impl true
   @spec set_event_handler(atom(), function()) :: :ok | {:error, term()}
   def set_event_handler(event_type, callback) do
     supervisor_impl = get_supervisor_impl()
@@ -290,6 +324,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:ok, agent_state}` - State extracted successfully
   - `{:error, :agent_not_found}` - Agent doesn't exist
   """
+  @impl true
   @spec extract_agent_state(Types.agent_id()) :: {:ok, any()} | {:error, term()}
   def extract_agent_state(agent_id) do
     supervisor_impl = get_supervisor_impl()
@@ -308,6 +343,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   - `{:ok, restored_state}` - State restored successfully
   - `{:error, reason}` - Restoration failed
   """
+  @impl true
   @spec restore_agent_state(Types.agent_id(), any()) :: {:ok, any()} | {:error, term()}
   def restore_agent_state(agent_id, agent_state) do
     supervisor_impl = get_supervisor_impl()

@@ -16,11 +16,13 @@ Arbor is a distributed AI agent orchestration system built on Elixir/OTP, design
 # Start development server
 ./scripts/dev.sh
 
-# Run tests (various options)
-./scripts/test.sh              # Full test suite
-./scripts/test.sh --fast        # Skip dialyzer for quick feedback
-./scripts/test.sh --coverage    # Generate coverage report
-mix test test/path/to/test.exs  # Run specific test file
+# Run tests (intelligent test system)
+mix test                       # Smart environment-aware testing (recommended)
+mix test --help               # Show detailed test options
+mix test.pre_commit           # Quick pre-commit validation
+mix test.fast                 # Fast unit tests only
+mix test.ci                   # CI-appropriate test suite
+mix test test/path/to/test.exs # Run specific test file
 
 # Connect to running node
 ./scripts/console.sh
@@ -44,8 +46,11 @@ mix docs                        # Generate API documentation
 
 ### Mix Aliases
 - `mix setup` - Initial setup (deps.get, deps.compile, compile)
-- `mix test.all` - Full test suite with coverage, credo, and dialyzer
-- `mix test.ci` - CI-specific test suite
+- `mix test` - Smart test dispatcher with environment detection
+- `mix test.pre_commit` - Format check + Credo + Fast tests
+- `mix test.fast` - Fast unit tests (< 2 min)
+- `mix test.ci` - CI-appropriate test suite (< 10 min)
+- `mix test.all` - Full test suite including expensive tests (< 30 min)
 - `mix quality` - Code quality checks (format, credo, dialyzer)
 
 ## Architecture Overview
@@ -97,35 +102,58 @@ The project has Git pre-commit hooks that automatically run:
 1. Code formatting check (`mix format --check-formatted`)
 2. Static analysis (`mix credo --strict`) 
 3. Type checking (`mix dialyzer`)
-4. Unit tests (`mix test`)
+4. Fast unit tests (`mix test` - automatically detects pre-commit environment)
 
 To run these checks manually before committing:
 ```bash
+mix test.pre_commit            # Recommended: all pre-commit checks in one command
+# OR run individually:
 mix format
 mix credo --strict
 mix dialyzer
-mix test
+mix test.fast
 ```
 
 ### Testing Patterns
-- Unit tests with mocks for isolated testing
-- Integration tests marked with `@tag :integration`
-- Property-based tests using ExUnitProperties
+
+**Intelligent Test System**: Arbor uses an environment-aware test dispatcher that automatically selects the appropriate test suite based on context. See [TEST.md](./TEST.md) for comprehensive documentation.
+
+**Test Tiers by Speed and Scope**:
+- **Fast** (`:fast`, < 2 min): Unit tests with Mox-based mocking
+- **Contract** (`:contract`, ~3 min): Interface boundary and behavior tests  
+- **Integration** (`:integration`, ~8 min): Single-node end-to-end workflows
+- **Distributed** (`:distributed`, ~15 min): Multi-node cluster coordination
+- **Chaos** (`:chaos`, ~30 min): Fault injection and recovery testing
+
+**Development Best Practices**:
+- Use Mox for contract-based mocking in unit tests
+- Tag tests appropriately for the intelligent dispatcher
+- Property-based tests using ExUnitProperties for complex domains
 - Test coverage target: ≥80%
 
 ### Common Development Tasks
 
-#### Running a single test
+#### Running specific tests
 ```bash
+# Smart dispatcher automatically detects file/directory overrides
 mix test test/arbor/core/agent_test.exs
 mix test test/arbor/core/agent_test.exs:42  # Run test at specific line
+mix test apps/arbor_core/test/             # Run tests in directory
 ```
 
-#### Running tests by tag
+#### Running tests by environment
 ```bash
-mix test --only integration
-mix test --only property
-mix test --exclude slow
+mix test                    # Local dev: fast tests only
+CI=true mix test           # CI environment: comprehensive suite  
+DISTRIBUTED=true mix test  # Full distributed test suite
+```
+
+#### Running tests by tag (manual override)
+```bash
+mix test --only fast       # Fast unit tests only
+mix test --only contract   # Contract boundary tests  
+mix test --only integration # Integration tests
+mix test --exclude distributed,chaos  # Exclude expensive tests
 ```
 
 #### Connecting to distributed node

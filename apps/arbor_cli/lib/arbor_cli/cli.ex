@@ -220,7 +220,6 @@ defmodule ArborCli.CLI do
     }[type]
   end
 
-  defp format_specific_error({:invalid_args, message, _args}), do: "Invalid arguments: #{message}"
   defp format_specific_error({:unknown_subcommand, subcommand}), do: "Unknown subcommand: #{subcommand}"
   defp format_specific_error({:unknown_command, command}), do: "Unknown command: #{command}"
   defp format_specific_error(other), do: "Error: #{format_error(other)}"

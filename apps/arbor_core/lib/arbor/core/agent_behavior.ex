@@ -54,25 +54,156 @@ defmodule Arbor.Core.AgentBehavior do
 
   @behaviour Arbor.Contracts.Agent.Behavior
 
+  # Define the callbacks for modules that use this behavior
+  @callback extract_state(state :: any()) :: {:ok, any()} | {:error, any()}
+  @callback restore_state(agent_spec :: map(), restored_state :: any()) ::
+              {:ok, any()} | {:error, any()}
+  @callback get_agent_metadata(state :: any()) :: map()
+  @callback handle_registration_result(state :: any(), result :: {:ok, any()} | {:error, any()}) ::
+              any()
+
+  @optional_callbacks extract_state: 1,
+                      restore_state: 2,
+                      get_agent_metadata: 1,
+                      handle_registration_result: 2
+
   # Implement Arbor.Contracts.Agent.Behavior callbacks by delegating to the module's callbacks
+  @doc """
+  Extracts the serializable state of an agent for persistence.
+
+  This callback is called when the agent's state needs to be checkpointed,
+  for example, before a graceful shutdown or during periodic state saving.
+
+  ## Parameters
+  - `state` - The current state of the agent.
+
+  ## Returns
+  - `{:ok, serializable_state}` - On success, where `serializable_state` is a
+    term that can be serialized.
+  - `{:error, reason}` - If state extraction fails.
+
+  ## Default Implementation
+  The default implementation returns `{:ok, state}`, assuming the entire agent
+  state is serializable. Modules using `AgentBehavior` should override this
+  callback if they need to select a subset of the state or transform it into a
+  serializable format.
+
+  ## Example
+      @impl Arbor.Core.AgentBehavior
+      def extract_state(state) do
+        # Only persist the :data field
+        {:ok, Map.get(state, :data)}
+      end
+  """
+  @spec extract_state(state :: map()) :: {:ok, term()} | {:error, any()}
   @impl Arbor.Contracts.Agent.Behavior
   def extract_state(state) do
     # This is a default implementation - modules using AgentBehavior will override
     {:ok, state}
   end
 
+  @doc """
+  Restores an agent's state from a previously extracted state.
+
+  This callback is called when an agent is being restored from a checkpoint.
+
+  ## Parameters
+  - `agent_spec` - The initial state or arguments of the agent when it was started.
+    This is the agent's state *before* restoration.
+  - `restored_state` - The `term()` that was previously extracted by `extract_state/1`.
+
+  ## Returns
+  - `{:ok, new_state}` - On success, where `new_state` is the fully restored
+    agent state.
+  - `{:error, reason}` - If restoration fails.
+
+  ## Default Implementation
+  The default implementation returns `{:ok, restored_state}`, assuming the
+  restored term can be used directly as the new agent state. Modules using
+  `AgentBehavior` should override this callback to merge the restored state with
+  the initial agent spec or perform transformations to reconstruct the full agent state.
+
+  ## Example
+      @impl Arbor.Core.AgentBehavior
+      def restore_state(current_state, restored_data) do
+        new_state = Map.put(current_state, :data, restored_data)
+        {:ok, new_state}
+      end
+  """
+  @spec restore_state(agent_spec :: map(), restored_state :: term()) ::
+          {:ok, map()} | {:error, any()}
   @impl Arbor.Contracts.Agent.Behavior
   def restore_state(_agent_spec, restored_state) do
     # This is a default implementation - modules using AgentBehavior will override
     {:ok, restored_state}
   end
 
+  @doc """
+  Provides metadata about the agent for registration with the supervisor.
+
+  This callback is called during the agent registration process, after `init/1`,
+  to gather information about the agent's capabilities and type.
+
+  ## Parameters
+  - `state` - The current state of the agent.
+
+  ## Returns
+  - A `map()` containing agent metadata (e.g., `%{type: :my_agent, capabilities: [:read, :write]}`).
+
+  ## Default Implementation
+  The default implementation returns an empty map (`%{}`), providing no metadata.
+  Modules using `AgentBehavior` must override this callback to provide meaningful
+  metadata for agent discovery and interaction.
+
+  ## Example
+      @impl Arbor.Core.AgentBehavior
+      def get_agent_metadata(state) do
+        %{
+          type: :file_processor,
+          supported_formats: [".txt", ".csv"],
+          working_dir: state.working_dir
+        }
+      end
+  """
+  @spec get_agent_metadata(state :: map()) :: map()
   @impl Arbor.Contracts.Agent.Behavior
   def get_agent_metadata(_state) do
     # This is a default implementation - modules using AgentBehavior will override
     %{}
   end
 
+  @doc """
+  Handles the outcome of the agent registration process.
+
+  This callback is called after the registration attempt with the supervisor
+  completes, either successfully or after all retries have failed.
+
+  ## Parameters
+  - `state` - The current state of the agent.
+  - `result` - The registration result, which is `{:ok, pid}` on success or
+    `{:error, reason}` on failure.
+
+  ## Returns
+  - A `new_state` which will become the agent's new state.
+
+  ## Default Implementation
+  The default implementation returns the original `state` unchanged, effectively
+  ignoring the registration result. Modules using `AgentBehavior` can override
+  this to update the agent's state based on the registration outcome.
+
+  ## Example
+      @impl Arbor.Core.AgentBehavior
+      def handle_registration_result(state, {:ok, _pid}) do
+        Map.put(state, :status, :registered)
+      end
+
+      def handle_registration_result(state, {:error, reason}) do
+        Logger.error("Failed to register: \#{inspect(reason)}")
+        Map.put(state, :status, :registration_failed)
+      end
+  """
+  @spec handle_registration_result(state :: map(), result :: {:ok, pid()} | {:error, any()}) ::
+          new_state :: map()
   @impl true
   def handle_registration_result(state, _result) do
     # This is a default implementation - modules using AgentBehavior will override
@@ -116,13 +247,10 @@ defmodule Arbor.Core.AgentBehavior do
         # Note: Default implementation always returns {:ok, term()}, but custom
         # implementations may return {:error, reason}, so we handle both cases.
         result = restore_state(state, restored_state)
-
-        # Use dynamic pattern matching to avoid unreachable clause warnings
         handle_restore_result(result, state)
       end
 
-      # Helper function to handle restore_state results dynamically
-      @compile {:nowarn_unused_function, [handle_restore_result: 2]}
+      # Helper function to handle restore_state results
       defp handle_restore_result({:ok, new_state}, _state) do
         {:reply, :ok, new_state}
       end
@@ -183,7 +311,9 @@ defmodule Arbor.Core.AgentBehavior do
           retries_left: retries_left
         )
 
-        case HordeSupervisor.register_agent(self(), agent_id, metadata) do
+        supervisor_impl = get_supervisor_impl()
+
+        case supervisor_impl.register_agent(self(), agent_id, metadata) do
           {:ok, pid} ->
             Logger.debug("AgentBehavior: Agent successfully registered with supervisor")
             Logger.debug("Agent successfully registered with supervisor", agent_id: agent_id)
@@ -221,6 +351,28 @@ defmodule Arbor.Core.AgentBehavior do
               new_state = handle_registration_result(state, {:error, final_reason})
               {:stop, {:registration_failed, final_reason}, new_state}
             end
+        end
+      end
+
+      # Helper function to get supervisor implementation
+      defp get_supervisor_impl() do
+        case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
+          :mock ->
+            Arbor.Test.Mocks.LocalSupervisor
+
+          :horde ->
+            Arbor.Core.HordeSupervisor
+
+          :auto ->
+            if Application.get_env(:arbor_core, :env) == :test do
+              Arbor.Test.Mocks.LocalSupervisor
+            else
+              Arbor.Core.HordeSupervisor
+            end
+
+          module when is_atom(module) ->
+            # Direct module specification (for custom implementations)
+            module
         end
       end
 

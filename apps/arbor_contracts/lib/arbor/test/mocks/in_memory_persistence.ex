@@ -1,9 +1,10 @@
 defmodule Arbor.Test.Mocks.InMemoryPersistence do
   @moduledoc """
-  TEST MOCK - DO NOT USE IN PRODUCTION
+  PRODUCTION BACKEND - In-memory persistence implementation for dev/test environments.
 
-  In-memory implementation of the persistence store for testing.
-  All data is stored in ETS tables and is lost when the process terminates.
+  This is a legitimate backend implementation used by production code when configured
+  with `backend: :in_memory`. It implements the same contract as PostgreSQLPersistence
+  but stores data in ETS tables for fast, isolated testing and development.
 
   This mock is designed to:
   - Provide fast, deterministic tests
@@ -81,7 +82,6 @@ defmodule Arbor.Test.Mocks.InMemoryPersistence do
     end
   end
 
-  @impl true
   defp handle_append_with_version_check(stream_id, events, expected_version, state) do
     case check_version(stream_id, expected_version, state) do
       :ok ->

@@ -1,4 +1,12 @@
 defmodule Arbor.Contracts.Gateway.ValidationSchemasTest do
+  @moduledoc """
+  Tests for Gateway validation schemas.
+
+  Verifies that Norm-based validation schemas correctly validate
+  Gateway commands, contexts, and options according to the contract
+  specifications.
+  """
+
   use ExUnit.Case
 
   alias Arbor.Contracts.Gateway.ValidationSchemas

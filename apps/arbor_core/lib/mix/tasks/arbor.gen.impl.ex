@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Arbor.Gen.Impl do
+  @shortdoc "Generates an implementation for a contract"
+
   @moduledoc """
   Generates a boilerplate implementation for an Arbor contract (behaviour).
 
@@ -17,7 +19,6 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   directory based on its name (e.g., `Arbor.Core.*` modules are placed
   in the `arbor_core` app).
   """
-  @shortdoc "Generates an implementation for a contract"
 
   use Mix.Task
 

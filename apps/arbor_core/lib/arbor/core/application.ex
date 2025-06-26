@@ -174,4 +174,20 @@ defmodule Arbor.Core.Application do
       metadata: metadata
     )
   end
+
+  # Implement required callbacks from Arbor.Contracts.Core.Application
+
+  @impl true
+  def process(input) do
+    # This is the main application module, not a processing module
+    # Return a generic response
+    {:ok, input}
+  end
+
+  @impl true
+  def configure(_options) do
+    # Configuration is handled through the Application environment
+    # This callback can be used for runtime configuration updates
+    :ok
+  end
 end

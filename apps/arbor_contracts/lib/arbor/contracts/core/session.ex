@@ -234,6 +234,7 @@ defmodule Arbor.Contracts.Core.Session do
     {:error, :session_not_active}
   end
 
+  @spec add_agent(t(), Types.agent_id(), map()) :: {:ok, t()} | {:error, term()}
   def add_agent(%__MODULE__{agent_count: count, max_agents: max} = session, agent_id, agent_info) do
     if count >= max do
       {:error, :max_agents_reached}
@@ -314,6 +315,7 @@ defmodule Arbor.Contracts.Core.Session do
     DateTime.diff(DateTime.utc_now(), created)
   end
 
+  @spec duration(t()) :: non_neg_integer()
   def duration(%__MODULE__{created_at: created, terminated_at: terminated}) do
     DateTime.diff(terminated, created)
   end

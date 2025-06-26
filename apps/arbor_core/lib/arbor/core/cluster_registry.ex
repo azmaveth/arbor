@@ -394,9 +394,49 @@ defmodule Arbor.Core.ClusterRegistry do
   @spec list_by_pattern(String.t()) :: {:ok, [{Types.agent_id(), pid(), agent_metadata()}]}
   def list_by_pattern(pattern) do
     registry_impl = get_registry_impl()
-    state = get_registry_state()
 
-    registry_impl.list_by_pattern(pattern, state)
+    case registry_impl do
+      Arbor.Test.Mocks.LocalClusterRegistry ->
+        # Mock registry only accepts 1 argument
+        registry_impl.list_by_pattern(pattern)
+
+      _ ->
+        # Production registry accepts just pattern (single arity)
+        registry_impl.list_by_pattern(pattern)
+    end
+  end
+
+  # Service lifecycle callbacks (required by Arbor.Contracts.Cluster.Registry)
+
+  @impl true
+  def start_service(_config) do
+    # ClusterRegistry is a module, not a GenServer
+    # The actual registry implementation (HordeRegistry or mock) is started separately
+    {:ok, self()}
+  end
+
+  @impl true
+  def stop_service(_reason) do
+    # ClusterRegistry is a module, not a GenServer
+    # The actual registry implementation is stopped separately
+    :ok
+  end
+
+  @impl true
+  def get_status() do
+    # Delegate to the underlying registry implementation
+    registry_impl = get_registry_impl()
+    _state = get_registry_state()
+
+    case registry_impl do
+      Arbor.Test.Mocks.LocalClusterRegistry ->
+        # Mock implementation
+        {:ok, %{status: :healthy, implementation: :mock}}
+
+      _ ->
+        # Production implementation - delegate to HordeRegistry
+        registry_impl.get_status()
+    end
   end
 
   # Implementation selection

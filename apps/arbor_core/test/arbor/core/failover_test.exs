@@ -10,9 +10,9 @@ defmodule Arbor.Core.FailoverTest do
 
   use Arbor.Test.Support.IntegrationCase
 
-  @moduletag :slow
-
   alias Arbor.Core.{AgentReconciler, ClusterManager, HordeRegistry, HordeSupervisor}
+
+  @moduletag :slow
 
   # Test agent that tracks state changes
   defmodule StatefulTestAgent do

@@ -26,6 +26,8 @@ defmodule Arbor.Contracts.Agents.Coordinator do
         @behaviour Arbor.Contracts.Agents.Coordinator
 
         @impl true
+        @spec delegate_task(map(), map(), keyword(), term()) :: 
+                {:ok, reference(), pid()} | {:error, term()}
         def delegate_task(task, requirements, opts, state) do
           with {:ok, agent} <- find_capable_agent(requirements, state),
                {:ok, ref} <- send_task_request(agent, task, opts) do

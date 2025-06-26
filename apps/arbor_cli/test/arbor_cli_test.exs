@@ -1,4 +1,11 @@
 defmodule ArborCliTest do
+  @moduledoc """
+  Tests for the ArborCli module.
+
+  Verifies configuration, version information, and default settings
+  for the CLI application.
+  """
+
   use ExUnit.Case, async: true
   @moduletag :fast
 

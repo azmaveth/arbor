@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Agent.Behavior do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @callback extract_state(state :: any()) :: {:ok, any()} | {:error, any()}
   @callback restore_state(agent_spec :: map(), restored_state :: any()) ::
               {:ok, any()} | {:error, any()}

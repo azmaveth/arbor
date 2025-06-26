@@ -76,20 +76,71 @@ defmodule Arbor.Core.AgentCheckpoint do
   @type checkpoint_data :: any()
   @type agent_state :: any()
 
-  @doc """
-  Extract essential state data for checkpointing.
-
-  This callback should return only the minimal data needed to restore
-  the agent's critical state. Avoid including temporary data, cached
-  values, or large datasets.
-  """
+  # Implement the required callbacks from the contract
 
   @doc """
-  Restore agent state from checkpoint data.
+  Extracts essential data from the agent's state for checkpointing.
 
-  This callback receives the previously saved checkpoint data and the
-  current initial state, and should return the restored state.
+  This is the default implementation of the `Arbor.Contracts.Agent.Checkpoint`
+  contract callback. Agents implementing the checkpoint behavior should override
+  this to return only the critical state data needed for recovery. This helps
+  minimize checkpoint size and avoid storing transient or runtime-specific data.
+
+  ## Parameters
+  - `agent_state` - The full current state of the agent.
+
+  ## Returns
+  - A map or term containing only the essential state data to be checkpointed.
+
+  ## Example
+      @impl Arbor.Core.AgentCheckpoint
+      def extract_checkpoint_data(state) do
+        %{
+          important_data: state.important_data,
+          last_processed: state.last_processed
+        }
+      end
   """
+  @spec extract_checkpoint_data(agent_state()) :: checkpoint_data()
+  @impl true
+  def extract_checkpoint_data(agent_state) do
+    # Default implementation just returns the state as-is
+    # Agents should override this to extract only essential data
+    agent_state
+  end
+
+  @doc """
+  Restores an agent's state from checkpoint data.
+
+  This is the default implementation of the `Arbor.Contracts.Agent.Checkpoint`
+  contract callback. Agents implementing the checkpoint behavior should override
+  this to properly reconstruct their state from the provided checkpoint data.
+  This function is called during agent recovery.
+
+  ## Parameters
+  - `checkpoint_data` - The data previously returned by `extract_checkpoint_data/1`.
+  - `_current_state` - The initial state of the agent before recovery (often unused).
+
+  ## Returns
+  - The fully reconstructed agent state.
+
+  ## Example
+      @impl Arbor.Core.AgentCheckpoint
+      def restore_from_checkpoint(checkpoint_data, _current_state) do
+        %{
+          important_data: checkpoint_data.important_data,
+          last_processed: checkpoint_data.last_processed,
+          restored_at: System.system_time(:millisecond)
+        }
+      end
+  """
+  @spec restore_from_checkpoint(checkpoint_data(), agent_state()) :: agent_state()
+  @impl true
+  def restore_from_checkpoint(checkpoint_data, _current_state) do
+    # Default implementation just returns the checkpoint data
+    # Agents should override this to properly merge checkpoint with current state
+    checkpoint_data
+  end
 
   @doc """
   Save agent state to a persistent checkpoint.
@@ -105,7 +156,7 @@ defmodule Arbor.Core.AgentCheckpoint do
       state: state,
       timestamp: timestamp,
       node: node(),
-      version: 1
+      snapshot_version: "1.0.0"
     }
 
     checkpoint_key = {:agent_checkpoint, agent_id}
@@ -310,7 +361,7 @@ defmodule Arbor.Core.AgentCheckpoint do
   Returns metadata about the checkpoint without loading the full state.
   """
   @spec get_checkpoint_info(Types.agent_id()) ::
-          {:ok, %{timestamp: integer(), node: node(), version: integer()}}
+          {:ok, %{timestamp: integer(), node: node(), snapshot_version: String.t()}}
           | {:error, :not_found}
   def get_checkpoint_info(agent_id) when is_binary(agent_id) do
     checkpoint_key = {:agent_checkpoint, agent_id}
@@ -325,7 +376,7 @@ defmodule Arbor.Core.AgentCheckpoint do
         info = %{
           timestamp: checkpoint_data.timestamp,
           node: checkpoint_data.node,
-          version: checkpoint_data.version,
+          snapshot_version: checkpoint_data.snapshot_version,
           age_ms: System.system_time(:millisecond) - checkpoint_data.timestamp
         }
 
@@ -355,10 +406,8 @@ defmodule Arbor.Core.AgentCheckpoint do
   # Private helpers
 
   defp estimate_size(data) do
-    try do
-      data |> :erlang.term_to_binary() |> byte_size()
-    rescue
-      _ -> 0
-    end
+    data |> :erlang.term_to_binary() |> byte_size()
+  rescue
+    _ -> 0
   end
 end

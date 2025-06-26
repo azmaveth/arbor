@@ -37,6 +37,7 @@ defmodule Arbor.Persistence.Store do
         }
 
   @impl true
+  @spec init(keyword()) :: {:ok, store_state()} | {:error, term()}
   def init(opts) do
     backend = Keyword.get(opts, :backend, :in_memory)
 
@@ -66,6 +67,8 @@ defmodule Arbor.Persistence.Store do
   end
 
   @impl true
+  @spec append_events(String.t(), [ContractEvent.t()], integer(), store_state()) ::
+          {:ok, integer()} | {:error, term()}
   def append_events(stream_id, events, expected_version, %{backend: :in_memory} = state) do
     # MOCK: Delegate to in-memory implementation
     with {:ok, contract_events} <- validate_and_convert_events(events) do

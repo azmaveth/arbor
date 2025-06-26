@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Session.Manager do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @callback create_session(params :: map()) :: {:ok, session_id :: binary()} | {:error, term()}
 
   @callback get_session(session_id :: binary()) :: {:ok, map()} | {:error, term()}

@@ -47,17 +47,49 @@ defmodule Arbor.Core.Sessions.Manager do
   @behaviour Arbor.Contracts.Session.Manager
 
   use GenServer
-  require Logger
+
+  # =====================================================
+  # Session.Manager Behaviour Callbacks (single arity)
+  # =====================================================
+
+  @impl Arbor.Contracts.Session.Manager
+  @spec create_session(params :: map()) :: {:ok, session_id :: binary()} | {:error, term()}
+  def create_session(params) do
+    # Delegate to the two-arity version with the default manager
+    create_session(params, __MODULE__)
+  end
+
+  @impl Arbor.Contracts.Session.Manager
+  @spec terminate_session(session_id :: binary()) :: :ok | {:error, term()}
+  def terminate_session(session_id) do
+    # Delegate to the three-arity version with default reason
+    terminate_session(session_id, :normal, __MODULE__)
+  end
 
   alias Arbor.Core.{ClusterSupervisor, SessionRegistry}
   alias Arbor.Core.Sessions.Session
   alias Arbor.Types
 
+  require Logger
+
   # Removed @table - using Horde.Registry instead
 
   # Contract-compliant API (Adapter Pattern)
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Creates a new session via the specified session manager.
+
+  This function is part of the `Arbor.Contracts.Session.Manager` contract.
+
+  ## Parameters
+  - `session_params` - A map of parameters for creating the session, such as `:user_id`, `:purpose`, and `:timeout`.
+  - `manager` - The PID or registered name of the session manager process.
+
+  ## Returns
+  - `{:ok, session_struct}` - If the session is created successfully, returns the session struct.
+  - `{:error, reason}` - If session creation fails.
+  """
+  @spec create_session(map(), pid() | atom() | module()) :: {:ok, struct()} | {:error, any()}
   def create_session(session_params, manager) do
     manager_pid =
       case manager do
@@ -75,7 +107,22 @@ defmodule Arbor.Core.Sessions.Manager do
     end
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Retrieves a session by its ID from the specified session manager.
+
+  This function is part of the `Arbor.Contracts.Session.Manager` contract.
+
+  ## Parameters
+  - `session_id` - The unique identifier of the session.
+  - `manager` - The PID or registered name of the session manager process.
+
+  ## Returns
+  - `{:ok, session_struct}` - If the session is found, returns the session struct.
+  - `{:error, :not_found}` - If the session does not exist.
+  - `{:error, reason}` - For other errors.
+  """
+  @spec get_session(Types.session_id(), pid() | atom() | module()) ::
+          {:ok, struct()} | {:error, any()}
   def get_session(session_id, manager) do
     manager_pid =
       case manager do
@@ -93,7 +140,22 @@ defmodule Arbor.Core.Sessions.Manager do
     end
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Terminates a session via the specified session manager.
+
+  This function is part of the `Arbor.Contracts.Session.Manager` contract.
+
+  ## Parameters
+  - `session_id` - The unique identifier of the session to terminate.
+  - `reason` - The reason for terminating the session.
+  - `manager` - The PID or registered name of the session manager process.
+
+  ## Returns
+  - `:ok` - If the session is terminated successfully.
+  - `{:error, reason}` - If termination fails.
+  """
+  @spec terminate_session(Types.session_id(), any(), pid() | atom() | module()) ::
+          :ok | {:error, any()}
   def terminate_session(session_id, reason, manager) do
     manager_pid =
       case manager do
@@ -108,7 +170,20 @@ defmodule Arbor.Core.Sessions.Manager do
     end
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Lists all active sessions, optionally applying filters.
+
+  This function is part of the `Arbor.Contracts.Session.Manager` contract.
+
+  ## Parameters
+  - `filters` - A map of filters to apply to the session list.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:ok, session_structs}` - A list of session structs that match the filters.
+  - `{:error, reason}` - If listing sessions fails.
+  """
+  @spec list_sessions(map(), pid()) :: {:ok, [struct()]} | {:error, any()}
   def list_sessions(filters, manager_pid) when is_pid(manager_pid) do
     # Extended timeout
     case GenServer.call(manager_pid, {:list_sessions, filters}, 10_000) do
@@ -121,54 +196,181 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   # Placeholder implementations for remaining callbacks
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Spawns a new agent within a session's context.
+
+  Note: This is a placeholder implementation and is not yet functional.
+
+  ## Parameters
+  - `_session_id` - The ID of the session to spawn the agent in.
+  - `_agent_type` - The type of agent to spawn.
+  - `_agent_config` - The configuration for the new agent.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:error, :not_implemented}` - This function is not yet implemented.
+  """
+  @spec spawn_agent(Types.session_id(), atom(), map(), pid()) :: {:error, :not_implemented}
   def spawn_agent(_session_id, _agent_type, _agent_config, manager_pid)
       when is_pid(manager_pid) do
     {:error, :not_implemented}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Lists all agents running within a specific session.
+
+  Note: This is a placeholder implementation and currently returns an empty list.
+
+  ## Parameters
+  - `_session_id` - The ID of the session.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:ok, []}` - An empty list, as this is a placeholder.
+  """
+  @spec list_agents(Types.session_id(), pid()) :: {:ok, list()}
   def list_agents(_session_id, manager_pid) when is_pid(manager_pid) do
     {:ok, []}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Grants a capability to a session.
+
+  Note: This is a placeholder implementation and has no effect.
+
+  ## Parameters
+  - `_session_id` - The ID of the session.
+  - `_capability` - The capability to grant.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `:ok` - Always returns `:ok`.
+  """
+  @spec grant_session_capability(Types.session_id(), any(), pid()) :: :ok
   def grant_session_capability(_session_id, _capability, manager_pid) when is_pid(manager_pid) do
     :ok
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Updates a key-value pair in the session's context.
+
+  Note: This is a placeholder implementation and has no effect.
+
+  ## Parameters
+  - `_session_id` - The ID of the session.
+  - `_key` - The context key to update.
+  - `_value` - The new value for the key.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `:ok` - Always returns `:ok`.
+  """
+  @spec update_session_context(Types.session_id(), any(), any(), pid()) :: :ok
   def update_session_context(_session_id, _key, _value, manager_pid) when is_pid(manager_pid) do
     :ok
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Retrieves the context map for a session.
+
+  Note: This is a placeholder implementation and currently returns an empty map.
+
+  ## Parameters
+  - `_session_id` - The ID of the session.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:ok, %{}}` - An empty map, as this is a placeholder.
+  """
+  @spec get_session_context(Types.session_id(), pid()) :: {:ok, map()}
   def get_session_context(_session_id, manager_pid) when is_pid(manager_pid) do
     {:ok, %{}}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Updates session properties.
+
+  Note: This is a placeholder implementation and is not yet functional.
+
+  ## Parameters
+  - `_session_id` - The ID of the session to update.
+  - `_updates` - A map of properties to update.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:error, :not_implemented}` - This function is not yet implemented.
+  """
+  @spec update_session(Types.session_id(), map(), pid()) :: {:error, :not_implemented}
   def update_session(_session_id, _updates, manager_pid) when is_pid(manager_pid) do
     {:error, :not_implemented}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Performs a health check on a specific session.
+
+  Note: This is a placeholder implementation and always returns a healthy status.
+
+  ## Parameters
+  - `_session_id` - The ID of the session to check.
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:ok, %{status: :healthy}}` - A map indicating a healthy status.
+  """
+  @spec health_check(Types.session_id(), pid()) :: {:ok, map()}
   def health_check(_session_id, manager_pid) when is_pid(manager_pid) do
     {:ok, %{status: :healthy}}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Handles the cleanup of expired sessions.
+
+  Note: This is a placeholder implementation and does not perform any cleanup.
+
+  ## Parameters
+  - `manager_pid` - The PID of the session manager process.
+
+  ## Returns
+  - `{:ok, 0}` - Indicates zero sessions were cleaned up.
+  """
+  @spec handle_expired_sessions(pid()) :: {:ok, integer()}
   def handle_expired_sessions(manager_pid) when is_pid(manager_pid) do
     {:ok, 0}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Initializes the session manager state.
+
+  Note: In this implementation, the core initialization is handled by the
+  `GenServer.start_link/3` callback. This function is part of the contract
+  and returns a default state.
+
+  ## Parameters
+  - `_opts` - A keyword list of options for initialization.
+
+  ## Returns
+  - `{:ok, %{}}` - An empty map representing the initial state.
+  """
+  @spec initialize_manager(keyword()) :: {:ok, map()}
   def initialize_manager(_opts) do
     # Session Manager initialization is handled by GenServer.start_link/3
     {:ok, %{}}
   end
 
-  @impl Arbor.Contracts.Session.Manager
+  @doc """
+  Handles the shutdown of the session manager.
+
+  Note: In this implementation, shutdown logic is handled by the GenServer's
+  `terminate/2` callback. This function is part of the contract.
+
+  ## Parameters
+  - `_reason` - The reason for the shutdown.
+  - `_state` - The current state of the manager.
+
+  ## Returns
+  - `:ok` - Always returns `:ok`.
+  """
+  @spec shutdown_manager(any(), map()) :: :ok
   def shutdown_manager(_reason, _state) do
     # Session Manager shutdown is handled by GenServer termination
     :ok
@@ -184,7 +386,6 @@ defmodule Arbor.Core.Sessions.Manager do
   - `:name` - Process name (defaults to module name)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -213,7 +414,8 @@ defmodule Arbor.Core.Sessions.Manager do
           IO.puts("Session not found")
       end
   """
-  @spec get_session(Types.session_id()) :: {:ok, pid(), map()} | {:error, :not_found}
+  @spec get_session(Types.session_id()) :: {:ok, map()} | {:error, term()}
+  @impl Arbor.Contracts.Session.Manager
   def get_session(session_id) do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->
@@ -221,7 +423,8 @@ defmodule Arbor.Core.Sessions.Manager do
         case Registry.lookup(Arbor.Core.MockSessionRegistry, session_id) do
           [{pid, metadata}] when is_pid(pid) ->
             if Process.alive?(pid) do
-              {:ok, pid, metadata}
+              # Return a map containing session info to match the contract
+              {:ok, Map.merge(metadata, %{id: session_id, pid: pid})}
             else
               {:error, :not_found}
             end
@@ -233,8 +436,12 @@ defmodule Arbor.Core.Sessions.Manager do
       _ ->
         # For production, use distributed SessionRegistry
         case SessionRegistry.lookup_session(session_id) do
-          {:ok, {pid, metadata}} -> {:ok, pid, metadata}
-          {:error, :not_found} -> {:error, :not_found}
+          {:ok, {pid, metadata}} ->
+            # Return a map containing session info to match the contract
+            {:ok, Map.merge(metadata, %{id: session_id, pid: pid})}
+
+          {:error, :not_found} ->
+            {:error, :not_found}
         end
     end
   end
@@ -332,7 +539,10 @@ defmodule Arbor.Core.Sessions.Manager do
   @spec get_session_info(Types.session_id()) :: {:ok, map()} | {:error, :not_found}
   def get_session_info(session_id) do
     case get_session(session_id) do
-      {:ok, pid, metadata} ->
+      {:ok, session_data} ->
+        pid = session_data.pid
+        metadata = Map.drop(session_data, [:id, :pid])
+
         # Get additional info from the session process
         case Arbor.Core.Sessions.Session.get_state(pid) do
           {:ok, session_state} ->
@@ -472,7 +682,7 @@ defmodule Arbor.Core.Sessions.Manager do
   @impl true
   def handle_call({:end_session, session_id}, _from, state) do
     case get_session(session_id) do
-      {:ok, _pid, _metadata} ->
+      {:ok, _session_data} ->
         # Gracefully stop the session using cluster supervisor
         ClusterSupervisor.stop_agent(session_id)
 

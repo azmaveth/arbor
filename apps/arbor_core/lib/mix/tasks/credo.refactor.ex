@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Credo.Refactor do
+  @shortdoc "Analyzes and helps refactor Credo architectural issues"
+
   @moduledoc """
   Provides tools to analyze and refactor common Credo architectural issues in Arbor.
 
@@ -14,9 +16,8 @@ defmodule Mix.Tasks.Credo.Refactor do
   """
 
   use Mix.Task
-  require Logger
 
-  @shortdoc "Analyzes and helps refactor Credo architectural issues"
+  require Logger
 
   # Define constants for our target checks
   @impl_true_check "Arbor.Credo.Check.ImplTrueEnforcement"
@@ -78,7 +79,10 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   defp execute_credo do
     # We run credo and pipe stderr to stdout to capture all output.
-    case System.cmd("mix", ["credo", "--format=json", "--all-priorities"], stderr_to_stdout: true) do
+    case System.cmd("mix", ["credo", "--format=json", "--all-priorities"],
+           env: [],
+           stderr_to_stdout: true
+         ) do
       {output, _exit_code} ->
         # We ignore the exit code. Credo returns non-zero when issues are found.
         # Our success condition is whether we can find a JSON object in the output.
@@ -271,10 +275,9 @@ defmodule Mix.Tasks.Credo.Refactor do
       # Show a diff-like preview instead of full file
       changes_summary =
         file_issues
-        |> Enum.map(fn issue ->
+        |> Enum.map_join("\n", fn issue ->
           "  Line #{issue["line_no"]}: Add @impl true before #{issue["trigger"]}"
         end)
-        |> Enum.join("\n")
 
       Mix.shell().info(changes_summary)
     else
@@ -287,7 +290,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         Mix.shell().info(IO.ANSI.green() <> "Fixed: " <> IO.ANSI.reset() <> filename)
 
         # Run mix format on the file to ensure proper formatting
-        System.cmd("mix", ["format", filename], stderr_to_stdout: true)
+        System.cmd("mix", ["format", filename], env: [], stderr_to_stdout: true)
       else
         Mix.shell().info("No changes needed for: #{filename}")
       end
@@ -724,8 +727,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         generate_placeholder_callbacks(domain, original_module)
       else
         callbacks
-        |> Enum.map(fn cb -> "  @callback #{cb.signature}" end)
-        |> Enum.join("\n")
+        |> Enum.map_join("\n", fn cb -> "  @callback #{cb.signature}" end)
       end
 
     # Use the domain-specific template
@@ -1077,19 +1079,19 @@ defmodule Mix.Tasks.Credo.Refactor do
 
     case parts do
       ["Arbor", "Core" | rest] ->
-        filename = rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/core/#{filename}.ex"
 
       ["Arbor", "Agents" | rest] ->
-        filename = rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/agents/#{filename}.ex"
 
       ["Arbor", "CodeGen" | rest] ->
-        filename = rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/codegen/#{filename}.ex"
 
       ["Mix", "Tasks" | rest] ->
-        filename = rest |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
         "apps/arbor_core/lib/mix/tasks/#{filename}.ex"
 
       ["Arbor"] ->
@@ -1097,7 +1099,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
       _ ->
         # Fallback - try to guess based on module structure
-        filename = parts |> Enum.drop(1) |> Enum.map(&Macro.underscore/1) |> Enum.join("/")
+        filename = parts |> Enum.drop(1) |> Enum.map_join("/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/#{filename}.ex"
     end
   end
@@ -1132,7 +1134,7 @@ defmodule Mix.Tasks.Credo.Refactor do
             case File.write(file_path, updated_content) do
               :ok ->
                 # Run mix format on the file
-                System.cmd("mix", ["format", file_path], stderr_to_stdout: true)
+                System.cmd("mix", ["format", file_path], env: [], stderr_to_stdout: true)
                 {:added, "Added @behaviour #{contract_info.contract_module}"}
 
               {:error, reason} ->
@@ -1255,7 +1257,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         case File.write(file_path, updated_content) do
           :ok ->
             # Run mix format on the file
-            System.cmd("mix", ["format", file_path], stderr_to_stdout: true)
+            System.cmd("mix", ["format", file_path], env: [], stderr_to_stdout: true)
             {:removed, "Removed #{length(callbacks)} @callback definitions"}
 
           {:error, reason} ->
@@ -1273,8 +1275,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     lines
     |> Enum.with_index(1)
     |> Enum.reject(fn {_line, line_num} -> line_num in callback_line_numbers end)
-    |> Enum.map(fn {line, _} -> line end)
-    |> Enum.join("\n")
+    |> Enum.map_join("\n", fn {line, _} -> line end)
   end
 
   # Generate migration report
@@ -1398,7 +1399,9 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   defp find_files_with_misplaced_behaviours do
     # Use grep to find files with @behaviour inside @moduledoc
-    case System.cmd("grep", ["-r", "-l", "@behaviour.*Arbor.Contracts", "apps/arbor_core/lib/"]) do
+    case System.cmd("grep", ["-r", "-l", "@behaviour.*Arbor.Contracts", "apps/arbor_core/lib/"],
+           env: []
+         ) do
       {output, 0} ->
         output
         |> String.trim()

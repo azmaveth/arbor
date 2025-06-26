@@ -50,22 +50,20 @@ defmodule Arbor.Contracts.Validation do
   end
 
   defp validate_with_norm(data, schema) do
-    try do
-      case Norm.conform(data, schema) do
-        {:ok, conformed_data} ->
-          {:ok, conformed_data}
+    case Norm.conform(data, schema) do
+      {:ok, conformed_data} ->
+        {:ok, conformed_data}
 
-        {:error, errors} ->
-          reason = format_validation_errors(errors)
-          log_validation_failure(data, schema, reason)
-          {:error, reason}
-      end
-    rescue
-      exception ->
-        reason = "Validation error: #{Exception.message(exception)}"
+      {:error, errors} ->
+        reason = format_validation_errors(errors)
         log_validation_failure(data, schema, reason)
         {:error, reason}
     end
+  rescue
+    exception ->
+      reason = "Validation error: #{Exception.message(exception)}"
+      log_validation_failure(data, schema, reason)
+      {:error, reason}
   end
 
   @doc """

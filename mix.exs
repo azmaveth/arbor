@@ -22,6 +22,8 @@ defmodule Arbor.MixProject do
         "coveralls.json": :test,
 
         # Test execution tiers
+        test: :test,
+        "test.pre_commit": :test,
         "test.fast": :test,
         "test.contract": :test,
         "test.integration": :test,
@@ -79,45 +81,50 @@ defmodule Arbor.MixProject do
   # Mix aliases for common tasks
   defp aliases do
     [
+      # Smart test dispatcher and pre-commit hook
+      "test.do": ["test"],
+      test: &dispatch_test/1,
+      "test.pre_commit": ["format --check-formatted", "credo --strict", "test.fast"],
+
       # Project setup
       setup: ["deps.get", "deps.compile", "compile"],
 
       # Test execution tiers (by speed and scope)
       # <2 min - unit tests with mocks
-      "test.fast": ["test --only fast"],
+      "test.fast": ["test.do --only fast"],
       # ~3 min - interface boundary tests
-      "test.contract": ["test --only contract"],
+      "test.contract": ["test.do --only contract"],
       # ~8 min - single-node e2e tests
-      "test.integration": ["test --only integration"],
+      "test.integration": ["test.do --only integration"],
       # ~15 min - multi-node cluster tests
-      "test.distributed": ["test --only distributed"],
+      "test.distributed": ["test.do --only distributed"],
       # ~30 min - fault injection tests
-      "test.chaos": ["test --only chaos"],
+      "test.chaos": ["test.do --only chaos"],
 
       # Combined test suites
       # fast + contract
-      "test.unit": ["test --exclude integration,distributed,chaos"],
+      "test.unit": ["test.do --exclude integration,distributed,chaos"],
       # everything except expensive tests
-      "test.ci": ["test --exclude distributed,chaos"],
+      "test.ci": ["test.do --exclude distributed,chaos"],
       # everything (use with caution)
-      "test.all": ["test"],
+      "test.all": ["test.do"],
 
       # Development workflow
       # watch mode for development
-      "test.watch": ["test --only fast --listen-on-stdin"],
+      "test.watch": ["test.do --only fast --listen-on-stdin"],
 
       # Quality and coverage
       # coverage without slow tests
-      "test.cover": ["test --cover --exclude distributed,chaos"],
+      "test.cover": ["test.do --cover --exclude distributed,chaos"],
       # full coverage including slow tests
-      "test.coverage.full": ["test --cover"],
+      "test.coverage.full": ["test.do --cover"],
 
       # CI/CD specific
-      "test.ci.fast": ["test --exclude integration,distributed,chaos", "credo --strict"],
-      "test.ci.full": ["test --cover --export-coverage default", "credo --strict", "dialyzer"],
+      "test.ci.fast": ["test.do --exclude integration,distributed,chaos", "credo --strict"],
+      "test.ci.full": ["test.do --cover --export-coverage default", "credo --strict", "dialyzer"],
 
       # Distributed testing (requires special setup)
-      "test.dist": ["test --cover --export-coverage distributed --only distributed"],
+      "test.dist": ["test.do --cover --export-coverage distributed --only distributed"],
 
       # Performance and security (placeholders for future implementation)
       "test.perf": ["run -e \"IO.puts('Performance tests not implemented yet')\""],
@@ -127,6 +134,44 @@ defmodule Arbor.MixProject do
       docs: ["docs"],
       quality: ["format", "credo --strict", "dialyzer"]
     ]
+  end
+
+  # Smart test dispatcher function
+  defp dispatch_test(args) do
+    # Handle help requests by delegating to Mix.Tasks.Help
+    case args do
+      ["--help"] ->
+        Mix.Tasks.Help.run(["test"])
+
+      ["-h"] ->
+        Mix.Tasks.Help.run(["test"])
+
+      _ ->
+        # Apply smart routing logic
+        has_overrides? =
+          Enum.any?(args, &(&1 in ["--only", "--exclude", "--include"])) or
+            Enum.any?(args, &String.starts_with?(&1, "test/"))
+
+        {suite_name, test_args} =
+          cond do
+            has_overrides? ->
+              {"User-defined suite", args}
+
+            System.get_env("DISTRIBUTED") == "true" ->
+              {"Full suite (DISTRIBUTED=true)", args}
+
+            System.get_env("CI") == "true" ->
+              {"CI suite", ["--exclude", "distributed,chaos" | args]}
+
+            true ->
+              # Default for local development: run only the fastest tests.
+              {"Fast suite (local default)", ["--only", "fast" | args]}
+          end
+
+        IO.puts(IO.ANSI.green() <> "==> Running #{suite_name}" <> IO.ANSI.reset())
+        # We call "test.do" to avoid a recursive loop on the "test" alias itself.
+        Mix.Task.run("test.do", test_args)
+    end
   end
 
   # Release configuration

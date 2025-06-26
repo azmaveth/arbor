@@ -10,10 +10,15 @@ defmodule Arbor.Persistence.MixProject do
       deps_path: "../../deps",
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
+
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
@@ -29,7 +34,8 @@ defmodule Arbor.Persistence.MixProject do
       {:arbor_contracts, in_umbrella: true},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
-      {:jason, "~> 1.4"}
+      {:jason, "~> 1.4"},
+      {:testcontainers, "~> 1.7.0", only: :test}
     ]
   end
 end

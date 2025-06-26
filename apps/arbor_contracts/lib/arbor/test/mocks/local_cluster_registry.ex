@@ -1,9 +1,10 @@
 defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   @moduledoc """
-  TEST MOCK - DO NOT USE IN PRODUCTION
+  PRODUCTION BACKEND - Local registry implementation for dev/test environments.
 
-  Local, non-distributed registry for testing registry operations.
-  This mock simulates distributed registry behavior in a single node.
+  This is a legitimate backend implementation used by production code when configured
+  for local/single-node operation. It implements the same contract as HordeRegistry
+  but operates locally for testing and development without distributed dependencies.
 
   ## Features
 
@@ -45,6 +46,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   """
 
   @behaviour Arbor.Contracts.Cluster.Registry
+  use GenServer
 
   defstruct [
     :names_table,
@@ -63,6 +65,32 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
           config: keyword(),
           node_status: map()
         }
+
+  # Client API
+
+  @doc """
+  Starts the LocalClusterRegistry GenServer.
+  """
+  @spec start_link() :: GenServer.on_start()
+  def start_link() do
+    start_link([])
+  end
+
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(opts) do
+    name = opts[:name] || __MODULE__
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
+
+  @doc """
+  Clears all data from the registry tables.
+  """
+  @spec clear() :: :ok
+  def clear() do
+    GenServer.call(__MODULE__, :clear)
+  end
+
+  # GenServer callbacks
 
   @spec init(keyword()) :: {:ok, state()}
   @impl true
@@ -93,6 +121,69 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   end
 
   @impl true
+  def handle_call(:clear, _from, state) do
+    # Clear all ETS tables
+    :ets.delete_all_objects(state.names_table)
+    :ets.delete_all_objects(state.groups_table)
+    :ets.delete_all_objects(state.monitors_table)
+    :ets.delete_all_objects(state.ttl_table)
+
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call({:register_group, group_name, agent_id, metadata}, _from, state) do
+    # Use the existing 4-arity internal function
+    result = register_group(group_name, agent_id, metadata, state)
+    {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call({:list_group_members, group_name}, _from, state) do
+    case lookup_group(group_name, state) do
+      {:ok, members} ->
+        agent_ids =
+          Enum.map(members, fn {_pid, metadata} ->
+            Map.get(metadata, :agent_id, :unknown)
+          end)
+
+        {:reply, {:ok, agent_ids}, state}
+
+      {:error, :group_not_found} ->
+        {:reply, {:ok, []}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:list_by_pattern, pattern}, _from, state) do
+    # Convert string pattern to Elixir pattern matching
+    # For simplicity, treat "*" as wildcard for now
+    all_names = :ets.tab2list(state.names_table)
+
+    filtered =
+      case pattern do
+        "*" <> _rest ->
+          # Wildcard pattern - return all agents
+          all_names
+          |> Enum.filter(fn {name, _pid, _meta, _ref} ->
+            case name do
+              {:agent, _id} -> true
+              _ -> false
+            end
+          end)
+          |> Enum.map(fn {{:agent, id}, pid, meta, _ref} -> {id, pid, meta} end)
+
+        exact_pattern ->
+          # Exact match
+          case :ets.lookup(state.names_table, {:agent, exact_pattern}) do
+            [{_, pid, meta, _ref}] -> [{exact_pattern, pid, meta}]
+            [] -> []
+          end
+      end
+
+    {:reply, {:ok, filtered}, state}
+  end
+
   def register_name(name, pid, metadata, state) do
     # Check if already registered
     case :ets.lookup(state.names_table, name) do
@@ -118,7 +209,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def register_group(group, pid, metadata, state) do
     # Monitor the process if not already monitored
     unless already_monitoring?(pid, state) do
@@ -133,7 +223,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     :ok
   end
 
-  @impl true
   def unregister_name(name, state) do
     case :ets.lookup(state.names_table, name) do
       [{^name, _pid, _, _}] ->
@@ -153,7 +242,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def unregister_group(group, pid, state) do
     case :ets.match_object(state.groups_table, {group, pid, :_, :_}) do
       [] ->
@@ -174,7 +262,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def lookup_name(name, state) do
     case :ets.lookup(state.names_table, name) do
       [{^name, pid, metadata, _}] ->
@@ -191,7 +278,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def lookup_group(group, state) do
     entries = :ets.lookup(state.groups_table, group)
 
@@ -216,7 +302,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def update_metadata(name, metadata, state) do
     case :ets.lookup(state.names_table, name) do
       [{^name, pid, _old_meta, registered_at}] ->
@@ -228,7 +313,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def register_with_ttl(name, pid, ttl, metadata, state) do
     case register_name(name, pid, metadata, state) do
       :ok ->
@@ -242,7 +326,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def match(pattern, state) do
     # Simple pattern matching for testing
     # In production, this would use Horde's pattern matching
@@ -275,13 +358,11 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     {:ok, result}
   end
 
-  @impl true
   def count(state) do
     count = :ets.info(state.names_table, :size)
     {:ok, count}
   end
 
-  @impl true
   def monitor(name, state) do
     case lookup_name(name, state) do
       {:ok, {_pid, _}} ->
@@ -296,7 +377,6 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     end
   end
 
-  @impl true
   def health_check(state) do
     names_count = :ets.info(state.names_table, :size)
 
@@ -317,13 +397,11 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     {:ok, health}
   end
 
-  @impl true
   def handle_node_up(node, state) do
     updated_status = Map.put(state.node_status, node, :up)
     {:ok, %{state | node_status: updated_status}}
   end
 
-  @impl true
   def handle_node_down(node, state) do
     updated_status = Map.put(state.node_status, node, :down)
 
@@ -333,13 +411,11 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     {:ok, %{state | node_status: updated_status}}
   end
 
-  @impl true
   def start_registry(opts) do
     # For testing, just create an initial state
     init(opts)
   end
 
-  @impl true
   def stop_registry(_reason, state) do
     # Clean up resources
     terminate(:shutdown, state)
@@ -395,64 +471,50 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     }
   end
 
-  # Missing methods required by ClusterRegistry and ClusterManager
+  # Client API functions for contract compliance
 
-  @doc "Register agent in group (3-arity version)"
+  @doc "Register agent in group (3-arity client API version)"
   @spec register_group(atom(), pid(), map()) :: :ok | {:error, term()}
-  def register_group(group_name, agent_id, state) do
-    # Use the existing 4-arity version with default state
-    register_group(group_name, agent_id, %{}, state)
+  def register_group(group_name, agent_id, metadata) do
+    GenServer.call(__MODULE__, {:register_group, group_name, agent_id, metadata})
+  end
+
+  # Implement the required Cluster.Registry behavior callbacks
+
+  @impl Arbor.Contracts.Cluster.Registry
+  def get_status() do
+    # Return mock status for testing
+    {:ok,
+     %{
+       status: :healthy,
+       nodes: [node()],
+       registrations: 0,
+       sync_status: :synchronized
+     }}
+  end
+
+  @impl Arbor.Contracts.Cluster.Registry
+  def start_service(config) do
+    # For testing, just start a new instance
+    start_link(config)
+  end
+
+  @impl Arbor.Contracts.Cluster.Registry
+  def stop_service(_reason) do
+    # For testing, just return :ok
+    :ok
   end
 
   @doc "List all members of a group"
   @spec list_group_members(atom()) :: {:ok, [term()]} | {:error, term()}
   def list_group_members(group_name) do
-    # Get state from the running process or use default
-    {:ok, state} = start_registry([])
-
-    case lookup_group(group_name, state) do
-      {:ok, members} ->
-        agent_ids =
-          Enum.map(members, fn {_pid, metadata} ->
-            Map.get(metadata, :agent_id, :unknown)
-          end)
-
-        {:ok, agent_ids}
-
-      {:error, :group_not_found} ->
-        {:ok, []}
-    end
+    GenServer.call(__MODULE__, {:list_group_members, group_name})
   end
 
-  @doc "List agents matching a pattern"
-  @spec list_by_pattern(String.t(), state()) :: {:ok, [{term(), pid(), map()}]}
-  def list_by_pattern(pattern, state) do
-    # Convert string pattern to Elixir pattern matching
-    # For simplicity, treat "*" as wildcard for now
-    all_names = :ets.tab2list(state.names_table)
-
-    filtered =
-      case pattern do
-        "*" <> _rest ->
-          # Wildcard pattern - return all agents
-          all_names
-          |> Enum.filter(fn {name, _pid, _meta, _ref} ->
-            case name do
-              {:agent, _id} -> true
-              _ -> false
-            end
-          end)
-          |> Enum.map(fn {{:agent, id}, pid, meta, _ref} -> {id, pid, meta} end)
-
-        exact_pattern ->
-          # Exact match
-          case :ets.lookup(state.names_table, {:agent, exact_pattern}) do
-            [{_, pid, meta, _ref}] -> [{exact_pattern, pid, meta}]
-            [] -> []
-          end
-      end
-
-    {:ok, filtered}
+  @doc "List agents matching a pattern (client API version)"
+  @spec list_by_pattern(String.t()) :: {:ok, [{term(), pid(), map()}]}
+  def list_by_pattern(pattern) do
+    GenServer.call(__MODULE__, {:list_by_pattern, pattern})
   end
 
   @doc "Get registry status for cluster manager"

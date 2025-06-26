@@ -13,7 +13,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   Validates the structure and types of spawn_agent command data.
   """
-  @spec spawn_agent_command() :: Norm.schema()
+  @spec spawn_agent_command() :: any()
   def spawn_agent_command do
     selection(
       schema(%{
@@ -27,7 +27,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for spawn_agent parameters.
   """
-  @spec spawn_agent_params() :: Norm.schema()
+  @spec spawn_agent_params() :: any()
   def spawn_agent_params do
     selection(
       schema(%{
@@ -69,7 +69,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   Validates the execution context passed with commands.
   """
-  @spec command_context() :: Norm.schema()
+  @spec command_context() :: any()
   def command_context do
     selection(
       schema(%{
@@ -86,7 +86,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for command options.
   """
-  @spec command_options() :: Norm.schema()
+  @spec command_options() :: any()
   def command_options do
     schema(%{
       # Max 5 minutes
@@ -100,7 +100,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   This validates the entire command structure including command, context, and options.
   """
-  @spec gateway_command_execution() :: Norm.schema()
+  @spec gateway_command_execution() :: any()
   def gateway_command_execution do
     selection(
       schema(%{
@@ -119,7 +119,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   This allows dynamic schema selection based on command type.
   """
-  @spec get_schema(atom()) :: Norm.schema() | Norm.spec() | {:error, String.t()}
+  @spec get_schema(atom()) :: any() | {:error, String.t()}
   def get_schema(:spawn_agent), do: spawn_agent_command()
   def get_schema(:command_context), do: command_context()
   def get_schema(:command_options), do: command_options()

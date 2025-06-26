@@ -15,8 +15,6 @@ defmodule Arbor.Contracts.Codegen.CodeGen.ImplementationGenerator do
   @version "1.0.0"
   """
 
-  alias Arbor.Types
-
   @callback process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
 
   @callback configure(options :: keyword()) :: :ok | {:error, term()}
