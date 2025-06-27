@@ -83,9 +83,9 @@ defmodule Arbor.Credo.Check.ImplTrueEnforcement do
         impl_val = parse_impl_value(impl_value, strict)
         {node, {issues, impl_val, behaviors}}
       
-      # Check function definitions
+      # Check function definitions (only public functions need @impl)
       {def_type, meta, [{name, _, args} | _]} = node, {issues, current_impl, behaviors} 
-          when def_type in [:def, :defp] and is_list(args) ->
+          when def_type == :def and is_list(args) ->
         
         if not Enum.empty?(behaviors) and is_callback?(name, length(args)) and not valid_impl?(current_impl) do
           issue = {name, meta[:line] || 1, length(args)}

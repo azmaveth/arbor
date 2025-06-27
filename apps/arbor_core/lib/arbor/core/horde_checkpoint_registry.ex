@@ -19,7 +19,6 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   @doc """
   Starts the checkpoint registry anchor process.
   """
-  @impl true
   @spec start_link(opts :: keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: :checkpoint_registry_anchor)

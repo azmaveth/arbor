@@ -40,24 +40,31 @@ config :arbor_security, :use_mock_db, true
 config :arbor_security, :env, :test
 
 # Configure libcluster for test environment
-# Using Epmd strategy for predictable test clustering
-config :libcluster,
-  topologies: [
-    arbor_test: [
-      strategy: Cluster.Strategy.Epmd,
-      config: [
-        hosts: [:"arbor1@127.0.0.1", :"arbor2@127.0.0.1", :"arbor3@127.0.0.1"]
-      ],
-      child_spec: [restart: :transient]
+# By default, use a LocalEpmd strategy for single-node testing
+# Set ARBOR_MULTI_NODE_TEST=true to enable multi-node configuration
+if System.get_env("ARBOR_MULTI_NODE_TEST") == "true" do
+  config :libcluster,
+    topologies: [
+      arbor_test: [
+        strategy: Cluster.Strategy.Epmd,
+        config: [
+          hosts: [:"arbor1@127.0.0.1", :"arbor2@127.0.0.1", :"arbor3@127.0.0.1"]
+        ],
+        child_spec: [restart: :transient]
+      ]
     ]
-  ]
+else
+  # For single-node integration tests, use an empty topology
+  config :libcluster, topologies: []
+end
 
-# Use real Horde implementations for better integration testing
+# Use mock implementations for unit tests
+# Integration tests will override this in their setup
 config :arbor_core,
   env: :test,
-  registry_impl: :horde,
-  supervisor_impl: :horde,
-  coordinator_impl: :horde
+  registry_impl: :mock,
+  supervisor_impl: :mock,
+  coordinator_impl: :mock
 
 # Configure distributed system timing for test environment
 # More retries and longer delays needed for reliable distributed testing

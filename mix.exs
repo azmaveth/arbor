@@ -13,6 +13,7 @@ defmodule Arbor.MixProject do
       releases: releases(),
       test_coverage: [tool: ExCoveralls],
       docs: docs(),
+      dialyzer: dialyzer(),
       preferred_cli_env: [
         # Coverage tools
         coveralls: :test,
@@ -197,6 +198,16 @@ defmodule Arbor.MixProject do
       source_url: "https://github.com/azmaveth/arbor",
       main: "readme",
       extras: ["README.md"]
+    ]
+  end
+
+  # Dialyzer configuration
+  defp dialyzer do
+    [
+      ignore_warnings: ".dialyzer_ignore.exs",
+      list_unused_filters: true,
+      plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+      flags: [:error_handling, :underspecs]
     ]
   end
 end

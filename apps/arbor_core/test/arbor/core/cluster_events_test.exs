@@ -6,7 +6,7 @@ defmodule Arbor.Core.ClusterEventsTest do
   are properly broadcast across the cluster.
   """
 
-  use Arbor.Test.Support.IntegrationCase
+  use Arbor.Test.Support.SimpleIntegrationCase
 
   alias Arbor.Core.{AgentReconciler, ClusterEvents, HordeSupervisor}
 

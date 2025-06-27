@@ -89,7 +89,6 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to handle node join
   """
   @spec handle_node_join(node_info()) :: :ok | {:error, term()}
-  @impl true
   def handle_node_join(node_info) do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
@@ -114,7 +113,6 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to handle node leave
   """
   @spec handle_node_leave(node(), atom()) :: :ok | {:error, term()}
-  @impl true
   def handle_node_leave(node, reason) do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
@@ -139,7 +137,6 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to handle node failure
   """
   @spec handle_node_failure(node(), atom()) :: :ok | {:error, term()}
-  @impl true
   def handle_node_failure(node, reason) do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
@@ -322,7 +319,6 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to handle split-brain
   """
   @spec handle_split_brain(map()) :: :ok | {:error, term()}
-  @impl true
   def handle_split_brain(split_brain_event) do
     coordinator_impl = get_coordinator_impl()
     state = get_coordinator_state()
@@ -488,7 +484,6 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:error, reason}` - Failed to create recovery plan
   """
   @spec handle_node_failure_recovery(node(), atom()) :: {:ok, map()} | {:error, term()}
-  @impl true
   def handle_node_failure_recovery(failed_node, reason) do
     with :ok <- handle_node_failure(failed_node, reason),
          {:ok, redistribution_plan} <- get_redistribution_plan_for_node(failed_node) do

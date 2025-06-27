@@ -26,7 +26,6 @@ defmodule Arbor.Core.AgentReconciler do
   @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000)
 
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end

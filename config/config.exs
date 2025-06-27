@@ -120,7 +120,13 @@ config :logger, :console,
 
     # Additional metadata keys used in the codebase
     :spec_key,
-    :status
+    :status,
+
+    # Test-specific metadata
+    :test,
+    :test_module,
+    :test_pid,
+    :test_timestamp
   ]
 
 # Configure Arbor Persistence Ecto Repository

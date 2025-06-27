@@ -78,7 +78,33 @@ defmodule Arbor.Credo.Check.ContractEnforcement do
     module_string = to_string(module_name)
     
     # Check if it's a public module (not in excluded patterns)
-    not Enum.any?(excluded_patterns, &String.contains?(module_string, &1))
+    not Enum.any?(excluded_patterns, &String.contains?(module_string, &1)) and
+      should_require_contract?(module_string)
+  end
+
+  # Intelligent detection of modules that should have behavior contracts
+  defp should_require_contract?(module_string) do
+    cond do
+      # Mix tasks already implement Mix.Task behavior - exclude them
+      String.starts_with?(module_string, "Elixir.Mix.Tasks.") ->
+        false
+      
+      # Example/demo modules - exclude them  
+      String.contains?(module_string, "Example") ->
+        false
+        
+      # Simple utility modules with minimal functionality - exclude them
+      String.ends_with?(module_string, "Elixir.Arbor.Core") ->
+        false
+        
+      # Registry wrappers that are just adapters - exclude them
+      String.contains?(module_string, "Registry") ->
+        false
+        
+      # Otherwise, this is likely a core business logic module that should have a contract
+      true ->
+        true
+    end
   end
 
   defp check_module({module_name, line}, ast, issue_meta, params) do

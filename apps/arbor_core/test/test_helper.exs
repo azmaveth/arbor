@@ -39,11 +39,29 @@ async_mode = not (run_distributed_tests or :integration not in exclude_tags)
 
 # Load support files before ExUnit callbacks are registered.
 # Note: The path is relative to the file where `Code.require_file` is called.
+Code.require_file("support/test_cleanup.ex", __DIR__)
+Code.require_file("support/infrastructure_manager.ex", __DIR__)
+Code.require_file("support/test_coordinator.ex", __DIR__)
 Code.require_file("support/multi_node_test_helper.ex", __DIR__)
 Code.require_file("support/cluster_test_helper.ex", __DIR__)
 Code.require_file("support/horde_stub.ex", __DIR__)
 Code.require_file("support/async_helpers.ex", __DIR__)
 Code.require_file("support/integration_case.ex", __DIR__)
+Code.require_file("support/simple_integration_case.ex", __DIR__)
+Code.require_file("support/test_agent.ex", __DIR__)
+
+# Stop the arbor_core application if it's running to avoid conflicts
+Application.stop(:arbor_core)
+
+# Clean up any leftover infrastructure from previous test runs
+Arbor.Test.Support.TestCleanup.cleanup_all()
+
+# Start the infrastructure manager (singleton for all integration tests)
+# This must be started before ExUnit.start() to be available for setup_all callbacks
+{:ok, _} =
+  GenServer.start(Arbor.Test.Support.InfrastructureManager, :ok,
+    name: Arbor.Test.Support.InfrastructureManager
+  )
 
 # Start ExUnit, which configures the test run
 ExUnit.start(exclude: exclude_tags, async: async_mode)

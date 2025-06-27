@@ -26,7 +26,6 @@ defmodule Arbor.Core.GatewayHTTP do
   # =====================================================
 
   @impl Arbor.Contracts.Gateway.GatewayHTTP
-  @impl true
   @spec handle_request(request :: any(), context :: map()) ::
           {:ok, response :: any()} | {:error, reason :: term()}
   def handle_request(request, context) do

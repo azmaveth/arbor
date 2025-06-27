@@ -119,7 +119,19 @@ defmodule Arbor.Test.Support.MoxSetup do
   """
   def expect_supervisor_start(agent_spec, return_value) do
     Arbor.Core.MockSupervisor
-    |> expect(:start_agent, fn ^agent_spec -> return_value end)
+    |> expect(:start_agent, fn spec ->
+      # Match the spec while ignoring fields added by validate_and_normalize_spec
+      # We check the key fields match but allow additional fields
+      if spec.id == agent_spec.id &&
+           spec.module == agent_spec.module &&
+           spec.args == agent_spec.args &&
+           spec.restart_strategy == Map.get(agent_spec, :restart_strategy, :permanent) &&
+           (!Map.has_key?(agent_spec, :metadata) || spec.metadata == agent_spec.metadata) do
+        return_value
+      else
+        raise "Agent spec mismatch in test"
+      end
+    end)
   end
 
   @doc """

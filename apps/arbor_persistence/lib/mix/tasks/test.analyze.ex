@@ -200,7 +200,7 @@ defmodule Mix.Tasks.Test.Analyze do
   defp analyze_with_suite_analyzer(test_results) do
     module = Arbor.Test.Performance.TestSuiteAnalyzer
 
-    if Code.ensure_loaded?(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :analyze_test_run, 1) do
       module.analyze_test_run(test_results)
     else
       IO.puts("""
@@ -217,7 +217,7 @@ defmodule Mix.Tasks.Test.Analyze do
   defp generate_analysis_report(analysis) do
     module = Arbor.Test.Performance.TestSuiteAnalyzer
 
-    if Code.ensure_loaded?(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :generate_report, 1) do
       module.generate_report(analysis)
     else
       ""

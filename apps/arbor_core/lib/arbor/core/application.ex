@@ -167,7 +167,6 @@ defmodule Arbor.Core.Application do
     Logger.info("Telemetry setup completed", events_count: length(events))
   end
 
-  @impl true
   defp handle_telemetry_event(event_name, measurements, metadata, _config) do
     Logger.debug("Telemetry event",
       event: event_name,

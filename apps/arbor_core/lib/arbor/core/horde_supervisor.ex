@@ -80,7 +80,6 @@ defmodule Arbor.Core.HordeSupervisor do
   Starts the HordeSupervisor GenServer.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -326,7 +325,6 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @spec handle_agent_handoff(binary(), atom(), map()) :: {:ok, any()} | {:error, any()}
-  @impl true
   def handle_agent_handoff(agent_id, operation, state_data) do
     case operation do
       :handoff ->

@@ -2,18 +2,29 @@ defmodule Arbor.Test.Support.IntegrationCase do
   @moduledoc """
   Provides centralized infrastructure setup for integration tests.
 
-  This module eliminates race conditions by ensuring only one setup per test suite
+  This module uses a singleton InfrastructureManager to ensure infrastructure
+  is started exactly once for the entire test suite, eliminating race conditions
   and providing clean isolation between tests.
+
+  ## Architecture
+
+  - Infrastructure is started once and shared across all integration tests
+  - Each test module registers/unregisters its usage
+  - Individual tests clean up their own agents/state
+  - Infrastructure is torn down when last test module completes
   """
 
   use ExUnit.CaseTemplate
+  require Logger
+
+  alias Arbor.Test.Support.InfrastructureManager
 
   using do
     quote do
       use ExUnit.Case, async: false
 
       import Arbor.Test.Support.IntegrationCase
-      alias Arbor.Test.Support.AsyncHelpers
+      alias Arbor.Test.Support.{AsyncHelpers, TestCoordinator}
 
       # Common test configuration
       @moduletag :integration
@@ -22,190 +33,41 @@ defmodule Arbor.Test.Support.IntegrationCase do
       # Standard registry and supervisor names
       @registry_name Arbor.Core.HordeAgentRegistry
       @supervisor_name Arbor.Core.HordeAgentSupervisor
+
+      # Test-specific namespace for isolation
+      @test_namespace TestCoordinator.unique_test_id()
     end
   end
 
-  setup_all do
-    ensure_infrastructure()
+  setup_all context do
+    # Use the singleton infrastructure manager
+    :ok = InfrastructureManager.ensure_started()
 
-    on_exit(fn ->
-      cleanup_infrastructure()
-    end)
+    # Register this test module as a user
+    # Use the actual test module from context, not IntegrationCase module
+    test_module = context.module
+    cleanup_fn = InfrastructureManager.register_user(test_module)
+
+    on_exit(cleanup_fn)
 
     :ok
   end
 
-  setup do
+  setup context do
     # Clean state before each test
     cleanup_test_agents()
 
     # Wait for cleanup to stabilize
     wait_for_clean_state()
 
+    # Provide test metadata for better debugging
+    Logger.metadata(
+      test: context.test,
+      test_module: context.module,
+      test_pid: self()
+    )
+
     :ok
-  end
-
-  @doc """
-  Ensures all required infrastructure is running with proper coordination.
-  """
-  def ensure_infrastructure do
-    start_distributed_erlang()
-    start_pubsub()
-    start_horde_supervisor()
-    start_agent_reconciler()
-    setup_cluster_membership()
-    wait_for_infrastructure_ready()
-    :ok
-  end
-
-  defp start_distributed_erlang do
-    node_name = "arbor_integration_#{System.unique_integer([:positive])}@localhost"
-
-    case :net_kernel.start([String.to_atom(node_name), :shortnames]) do
-      {:ok, _} ->
-        :ok
-
-      {:error, {:already_started, _}} ->
-        :ok
-
-      {:error, reason} ->
-        IO.puts("Warning: Could not start distributed Erlang: #{inspect(reason)}")
-        :ok
-    end
-  end
-
-  defp start_pubsub do
-    case GenServer.whereis(Arbor.Core.PubSub) do
-      nil ->
-        {:ok, _} = start_supervised({Phoenix.PubSub, name: Arbor.Core.PubSub})
-        :ok
-
-      _pid ->
-        :ok
-    end
-  end
-
-  defp start_horde_supervisor do
-    if Process.whereis(Arbor.Core.HordeSupervisorSupervisor) == nil do
-      case Arbor.Core.HordeSupervisor.start_supervisor() do
-        {:ok, _} ->
-          :ok
-
-        {:error, {:already_started, _}} ->
-          :ok
-
-        {:error, reason} ->
-          raise "Failed to start Horde supervisor: #{inspect(reason)}"
-      end
-    end
-  end
-
-  defp start_agent_reconciler do
-    case GenServer.whereis(Arbor.Core.AgentReconciler) do
-      nil ->
-        {:ok, _} = start_supervised(Arbor.Core.AgentReconciler)
-        :ok
-
-      _pid ->
-        :ok
-    end
-  end
-
-  @doc """
-  Sets up cluster membership for single-node testing.
-  """
-  def setup_cluster_membership do
-    current_node = node()
-
-    # Set cluster members for registries and supervisor
-    Horde.Cluster.set_members(
-      Arbor.Core.HordeAgentRegistry,
-      [{Arbor.Core.HordeAgentRegistry, current_node}]
-    )
-
-    Horde.Cluster.set_members(
-      Arbor.Core.HordeCheckpointRegistry,
-      [{Arbor.Core.HordeCheckpointRegistry, current_node}]
-    )
-
-    Horde.Cluster.set_members(
-      Arbor.Core.HordeAgentSupervisor,
-      [{Arbor.Core.HordeAgentSupervisor, current_node}]
-    )
-  end
-
-  @doc """
-  Waits for infrastructure to be ready and stable.
-  """
-  def wait_for_infrastructure_ready do
-    # Wait for processes to be registered
-    Arbor.Test.Support.AsyncHelpers.wait_until(
-      fn ->
-        pubsub_ready = GenServer.whereis(Arbor.Core.PubSub) != nil
-        registry_ready = GenServer.whereis(Arbor.Core.HordeAgentRegistry) != nil
-        supervisor_ready = GenServer.whereis(Arbor.Core.HordeAgentSupervisor) != nil
-        reconciler_ready = GenServer.whereis(Arbor.Core.AgentReconciler) != nil
-
-        pubsub_ready and registry_ready and supervisor_ready and reconciler_ready
-      end,
-      timeout: 5000,
-      initial_delay: 50
-    )
-
-    # Wait for cluster membership to stabilize
-    wait_for_cluster_membership()
-
-    # Wait for ETS tables to be created
-    wait_for_ets_tables()
-  end
-
-  @doc """
-  Waits for Horde cluster membership to be ready.
-  """
-  def wait_for_cluster_membership do
-    current_node = node()
-
-    Arbor.Test.Support.AsyncHelpers.wait_until(
-      fn ->
-        registry_members = Horde.Cluster.members(Arbor.Core.HordeAgentRegistry)
-        supervisor_members = Horde.Cluster.members(Arbor.Core.HordeAgentSupervisor)
-
-        registry_ready =
-          Enum.any?(registry_members, fn
-            {Arbor.Core.HordeAgentRegistry, node} when node == current_node -> true
-            {node, node} when node == current_node -> true
-            member when is_atom(member) and member == current_node -> true
-            _ -> false
-          end)
-
-        supervisor_ready =
-          Enum.any?(supervisor_members, fn
-            {Arbor.Core.HordeAgentSupervisor, node} when node == current_node -> true
-            {node, node} when node == current_node -> true
-            member when is_atom(member) and member == current_node -> true
-            _ -> false
-          end)
-
-        registry_ready and supervisor_ready
-      end,
-      timeout: 5000,
-      initial_delay: 50
-    )
-  end
-
-  @doc """
-  Waits for Horde ETS tables to be created.
-  """
-  def wait_for_ets_tables do
-    keys_table = :"keys_Elixir.Arbor.Core.HordeAgentRegistry"
-
-    Arbor.Test.Support.AsyncHelpers.wait_until(
-      fn ->
-        :ets.info(keys_table) != :undefined
-      end,
-      timeout: 2000,
-      initial_delay: 50
-    )
   end
 
   @doc """
@@ -277,18 +139,6 @@ defmodule Arbor.Test.Support.IntegrationCase do
       timeout: 3000,
       initial_delay: 50
     )
-  end
-
-  @doc """
-  Cleans up infrastructure on test suite completion.
-  """
-  def cleanup_infrastructure do
-    # Stop distributed Erlang if we started it
-    try do
-      :net_kernel.stop()
-    catch
-      :exit, _ -> :ok
-    end
   end
 
   # Private helper to identify test agent IDs

@@ -88,7 +88,6 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:agent_id` - Unique identifier for this agent
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
-  @impl true
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)

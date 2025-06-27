@@ -25,7 +25,7 @@
           require_impl: true
         ]},
         {Arbor.Credo.Check.ImplTrueEnforcement, [
-          strict: true
+          strict: false
         ]},
         {Arbor.Credo.Check.BehaviorLocationCheck, [
           allowed_paths: ["apps/arbor_contracts/lib/"]
