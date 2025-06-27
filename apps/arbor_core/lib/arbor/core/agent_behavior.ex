@@ -210,15 +210,10 @@ defmodule Arbor.Core.AgentBehavior do
     state
   end
 
-  defmacro __using__(_opts) do
+  # Private helper functions to generate AST fragments
+
+  defp generate_default_callbacks_ast do
     quote do
-      use GenServer
-      @behaviour Arbor.Core.AgentBehavior
-      @compile {:nowarn_unused_function, [handle_restore_result: 2]}
-
-      require Logger
-      alias Arbor.Core.HordeSupervisor
-
       # Default implementations
 
       @impl Arbor.Core.AgentBehavior
@@ -232,7 +227,11 @@ defmodule Arbor.Core.AgentBehavior do
 
       @impl true
       def handle_registration_result(state, _result), do: state
+    end
+  end
 
+  defp generate_genserver_callbacks_ast do
+    quote do
       # GenServer callbacks for state management
 
       @impl true
@@ -250,21 +249,6 @@ defmodule Arbor.Core.AgentBehavior do
         handle_restore_result(result, state)
       end
 
-      # Helper function to handle restore_state results
-      defp handle_restore_result({:ok, new_state}, _state) do
-        {:reply, :ok, new_state}
-      end
-
-      defp handle_restore_result({:error, reason}, state) do
-        Logger.error("Failed to restore agent state.", reason: reason)
-        {:reply, {:error, reason}, state}
-      end
-
-      defp handle_restore_result(other, state) do
-        Logger.error("Invalid restore_state return value: #{inspect(other)}")
-        {:reply, {:error, :invalid_return}, state}
-      end
-
       @impl true
       def handle_call(:get_agent_metadata, _from, state) do
         {:reply, get_agent_metadata(state), state}
@@ -274,7 +258,11 @@ defmodule Arbor.Core.AgentBehavior do
       def handle_call(:get_state, _from, state) do
         {:reply, state, state}
       end
+    end
+  end
 
+  defp generate_registration_handlers_ast do
+    quote do
       # Centralized registration logic
       @impl true
       def handle_continue(:register_with_supervisor, state) do
@@ -353,34 +341,80 @@ defmodule Arbor.Core.AgentBehavior do
             end
         end
       end
+    end
+  end
 
+  defp generate_helper_functions_ast do
+    [
+      generate_restore_handlers_ast(),
+      generate_supervisor_helpers_ast()
+    ]
+  end
+
+  defp generate_restore_handlers_ast do
+    quote do
+      # Helper function to handle restore_state results
+      defp handle_restore_result({:ok, new_state}, _state) do
+        {:reply, :ok, new_state}
+      end
+
+      defp handle_restore_result({:error, reason}, state) do
+        Logger.error("Failed to restore agent state.", reason: reason)
+        {:reply, {:error, reason}, state}
+      end
+
+      defp handle_restore_result(other, state) do
+        Logger.error("Invalid restore_state return value: #{inspect(other)}")
+        {:reply, {:error, :invalid_return}, state}
+      end
+    end
+  end
+
+  defp generate_supervisor_helpers_ast do
+    quote do
       # Helper function to get supervisor implementation
-      defp get_supervisor_impl() do
-        case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
-          :mock ->
-            Arbor.Test.Mocks.LocalSupervisor
+      defp get_supervisor_impl do
+        supervisor_config = Application.get_env(:arbor_core, :supervisor_impl, :auto)
 
-          :horde ->
-            Arbor.Core.HordeSupervisor
-
-          :auto ->
-            if Application.get_env(:arbor_core, :env) == :test do
-              Arbor.Test.Mocks.LocalSupervisor
-            else
-              Arbor.Core.HordeSupervisor
-            end
-
-          module when is_atom(module) ->
-            # Direct module specification (for custom implementations)
-            module
+        case supervisor_config do
+          :mock -> Arbor.Test.Mocks.LocalSupervisor
+          :horde -> Arbor.Core.HordeSupervisor
+          :auto -> get_auto_supervisor()
+          module when is_atom(module) -> module
         end
       end
 
-      # Allow callbacks to be overridden
-      defoverridable extract_state: 1,
-                     restore_state: 2,
-                     get_agent_metadata: 1,
-                     handle_registration_result: 2
+      defp get_auto_supervisor do
+        if Application.get_env(:arbor_core, :env) == :test do
+          Arbor.Test.Mocks.LocalSupervisor
+        else
+          Arbor.Core.HordeSupervisor
+        end
+      end
     end
+  end
+
+  defmacro __using__(_opts) do
+    [
+      quote do
+        use GenServer
+        @behaviour Arbor.Core.AgentBehavior
+        @compile {:nowarn_unused_function, [handle_restore_result: 2]}
+
+        require Logger
+        alias Arbor.Core.HordeSupervisor
+      end,
+      generate_default_callbacks_ast(),
+      generate_genserver_callbacks_ast(),
+      generate_registration_handlers_ast(),
+      generate_helper_functions_ast(),
+      quote do
+        # Allow callbacks to be overridden
+        defoverridable extract_state: 1,
+                       restore_state: 2,
+                       get_agent_metadata: 1,
+                       handle_registration_result: 2
+      end
+    ]
   end
 end

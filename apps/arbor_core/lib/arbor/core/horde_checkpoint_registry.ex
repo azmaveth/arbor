@@ -19,6 +19,8 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   @doc """
   Starts the checkpoint registry anchor process.
   """
+  @impl true
+  @spec start_link(opts :: keyword()) :: GenServer.on_start()
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: :checkpoint_registry_anchor)
   end
@@ -37,7 +39,7 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Return the status of the checkpoint registry
     {:ok, %{status: :healthy, pid: Process.whereis(:checkpoint_registry_anchor)}}
   end
@@ -45,6 +47,8 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   @doc """
   Saves a checkpoint by registering it to the stable anchor process.
   """
+  @spec save_checkpoint(checkpoint_key :: term(), checkpoint_data :: term()) ::
+          :ok | {:error, term()}
   def save_checkpoint(checkpoint_key, checkpoint_data) do
     GenServer.call(
       :checkpoint_registry_anchor,

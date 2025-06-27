@@ -80,6 +80,7 @@ defmodule Arbor.Core.ClusterManager do
   - `:connect_timeout` - Timeout for initial cluster connection (default: 30_000)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -599,10 +600,12 @@ defmodule Arbor.Core.ClusterManager do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
         # Conditionally load test mock if available
-        with {:module, module} <- Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
-          module
-        else
-          _ -> HordeSupervisor
+        case Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
+          {:module, module} ->
+            module
+
+          _ ->
+            HordeSupervisor
         end
 
       :horde ->
@@ -611,10 +614,12 @@ defmodule Arbor.Core.ClusterManager do
       :auto ->
         if Application.get_env(:arbor_core, :env, :prod) == :test do
           # Conditionally load test mock if available
-          with {:module, module} <- Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
-            module
-          else
-            _ -> HordeSupervisor
+          case Code.ensure_loaded(Arbor.Test.Mocks.SupervisorMock) do
+            {:module, module} ->
+              module
+
+            _ ->
+              HordeSupervisor
           end
         else
           HordeSupervisor
@@ -763,7 +768,7 @@ defmodule Arbor.Core.ClusterManager do
           {:module, :cpu_sup} ->
             try do
               if function_exported?(:cpu_sup, :avg1, 0) do
-                case apply(:cpu_sup, :avg1, []) do
+                case :cpu_sup.avg1() do
                   # Convert to standard load average format
                   {:ok, load} -> load / 256
                   _ -> :unavailable
@@ -812,7 +817,7 @@ defmodule Arbor.Core.ClusterManager do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Get current cluster status using the public API
     status = cluster_status()
     {:ok, status}

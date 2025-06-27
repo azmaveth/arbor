@@ -35,7 +35,7 @@ defmodule ArborCli.Renderer do
   def render_error(error) do
     {primary_message, additional_info} = format_error_details(error)
     IO.puts(:stderr, "❌ #{primary_message}")
-    
+
     if additional_info do
       IO.puts(:stderr, "   #{additional_info}")
     end

@@ -41,13 +41,14 @@ defmodule Arbor.Core.HordeRegistry do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Return the status of the registry
     {:ok, %{status: :healthy, registry: @registry_name}}
   end
 
   # Registry Contract Implementation
 
+  @spec register_name(term(), pid(), map(), any()) :: :ok | {:error, term()}
   def register_name(name, pid, metadata, _state \\ nil) when is_pid(pid) do
     agent_id = extract_agent_id(name)
 
@@ -66,6 +67,8 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec lookup_name(name :: term(), state :: term() | nil) ::
+          {:ok, {pid(), map()}} | {:error, :not_registered}
   def lookup_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
@@ -91,6 +94,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec unregister_name(name :: term(), state :: term() | nil) :: :ok
   def unregister_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
@@ -117,6 +121,7 @@ defmodule Arbor.Core.HordeRegistry do
     {:error, :ttl_not_implemented}
   end
 
+  @spec update_metadata(term(), map(), any()) :: :ok | {:error, term()}
   def update_metadata(name, new_metadata, _state \\ nil) do
     case lookup_name(name) do
       {:ok, {pid, old_metadata}} ->
@@ -129,6 +134,13 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec register_group(
+          group_name :: term(),
+          pid :: pid(),
+          metadata :: map(),
+          state :: term() | nil
+        ) ::
+          :ok | {:error, atom()}
   def register_group(group_name, pid, metadata, _state \\ nil) do
     # TODO: Group registrations store a PID and can become stale if an agent is
     # restarted. A robust solution would involve storing group membership in the
@@ -150,6 +162,8 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec unregister_group(group_name :: term(), pid :: pid(), state :: term()) ::
+          :ok | {:error, atom()}
   def unregister_group(group_name, pid, _state) do
     case find_agent_by_pid(pid) do
       {:ok, agent_id} ->
@@ -162,6 +176,8 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec lookup_group(group_name :: term(), state :: term() | nil) ::
+          {:ok, [{pid(), map()}]} | {:error, atom()}
   def lookup_group(group_name, _state \\ nil) do
     group_id = extract_group_id(group_name)
 
@@ -191,6 +207,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec match(pattern :: term(), state :: term() | nil) :: {:ok, list()}
   def match(pattern, _state \\ nil) do
     # TODO (SCALABILITY): This performs a full registry scan and will not scale.
     # To optimize, consider using a more specific `Horde.Registry.select` pattern if
@@ -218,6 +235,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec count(state :: term()) :: {:ok, non_neg_integer()}
   def count(_state) do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # To optimize, consider maintaining a distributed counter (e.g., using Horde.Counter)
@@ -234,6 +252,7 @@ defmodule Arbor.Core.HordeRegistry do
     {:ok, agent_count}
   end
 
+  @spec monitor(name :: term(), state :: term()) :: {:ok, reference()} | {:error, atom()}
   def monitor(name, _state) do
     case lookup_name(name) do
       {:ok, {pid, _metadata}} ->
@@ -245,6 +264,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
+  @spec health_check(state :: term() | nil) :: {:ok, map()}
   def health_check(_state \\ nil) do
     members = Horde.Cluster.members(@registry_name)
     {:ok, agent_count} = count(nil)
@@ -265,21 +285,25 @@ defmodule Arbor.Core.HordeRegistry do
      }}
   end
 
+  @spec handle_node_up(node :: node(), state :: term()) :: {:ok, term()}
   def handle_node_up(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
+  @spec handle_node_down(node :: node(), state :: term()) :: {:ok, term()}
   def handle_node_down(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
+  @spec start_registry(opts :: keyword()) :: {:ok, nil}
   def start_registry(_opts) do
     # Registry should be started by supervisor, not by this module
     {:ok, nil}
   end
 
+  @spec stop_registry(reason :: term(), state :: term()) :: :ok
   def stop_registry(_reason, _state) do
     :ok
   end
@@ -322,7 +346,7 @@ defmodule Arbor.Core.HordeRegistry do
   end
 
   @spec list_names() :: [{String.t(), pid(), map()}]
-  def list_names() do
+  def list_names do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # This function should be used with caution in production. For scalable listing,
     # consider building and maintaining a separate index of agent names.

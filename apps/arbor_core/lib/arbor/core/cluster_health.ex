@@ -139,7 +139,7 @@ defmodule Arbor.Core.ClusterHealth do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Return status of the health calculation service
     status = %{
       module: __MODULE__,

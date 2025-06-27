@@ -41,7 +41,7 @@ defmodule Arbor.Contracts.Validation do
   """
   @spec validate(any(), any()) :: {:ok, any()} | {:error, any()}
   def validate(data, schema) do
-    if is_enabled?() do
+    if enabled?() do
       validate_with_norm(data, schema)
     else
       # Validation disabled - pass through without checking
@@ -82,8 +82,8 @@ defmodule Arbor.Contracts.Validation do
   @doc """
   Returns true if runtime validation is enabled.
   """
-  @spec is_enabled?() :: boolean()
-  def is_enabled? do
+  @spec enabled?() :: boolean()
+  def enabled? do
     Application.get_env(:arbor_contracts, :enable_validation, false)
   end
 
@@ -118,7 +118,7 @@ defmodule Arbor.Contracts.Validation do
       data: inspect(data, limit: 100),
       schema: inspect(schema, limit: 50),
       reason: reason,
-      validation_enabled: is_enabled?()
+      validation_enabled: enabled?()
     )
 
     # Emit telemetry event for monitoring (only if telemetry is available)

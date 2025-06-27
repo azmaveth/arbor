@@ -26,6 +26,7 @@ defmodule Arbor.Core.AgentReconciler do
   @reconcile_interval Application.compile_env(:arbor_core, :reconciler_interval, 30_000)
 
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
@@ -47,7 +48,7 @@ defmodule Arbor.Core.AgentReconciler do
 
   @impl Arbor.Contracts.Agent.Reconciler
   @spec get_state() :: {:ok, state :: any()} | {:error, term()}
-  def get_state() do
+  def get_state do
     GenServer.call(__MODULE__, :get_state)
   end
 
@@ -219,6 +220,7 @@ defmodule Arbor.Core.AgentReconciler do
   # Arbor.Contracts.Agent.Reconciler callbacks
   #
 
+  @spec reconcile_agents() :: :ok | {:error, term()}
   def reconcile_agents do
     do_reconcile_agents()
     :ok
@@ -226,6 +228,7 @@ defmodule Arbor.Core.AgentReconciler do
     error -> {:error, {error, __STACKTRACE__}}
   end
 
+  @spec find_missing_agents() :: [{binary(), map()}]
   def find_missing_agents do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
@@ -247,6 +250,7 @@ defmodule Arbor.Core.AgentReconciler do
     end)
   end
 
+  @spec cleanup_orphaned_processes() :: :ok
   def cleanup_orphaned_processes do
     agent_specs = get_all_agent_specs()
     running_children = get_running_children()
@@ -278,6 +282,7 @@ defmodule Arbor.Core.AgentReconciler do
     :ok
   end
 
+  @spec restart_agent(agent_spec :: map(), reason :: term()) :: {:ok, pid()} | {:error, term()}
   def restart_agent(agent_spec, reason) do
     Logger.info("Restarting agent via contract",
       agent_id: agent_spec.id,

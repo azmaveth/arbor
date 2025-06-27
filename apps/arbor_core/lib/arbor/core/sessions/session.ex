@@ -48,6 +48,10 @@ defmodule Arbor.Core.Sessions.Session do
   use GenServer
 
   alias Arbor.Contracts.Core.{Capability, Message}
+  alias Arbor.Identifiers
+  alias Arbor.Types
+
+  require Logger
 
   # =====================================================
   # Session.Session Behaviour Callbacks
@@ -73,11 +77,6 @@ defmodule Arbor.Core.Sessions.Session do
     # Delegate to Manager for session termination
     Arbor.Core.Sessions.Manager.terminate_session(session_id)
   end
-
-  alias Arbor.Identifiers
-  alias Arbor.Types
-
-  require Logger
 
   @typedoc "Session state"
   @type state :: %{

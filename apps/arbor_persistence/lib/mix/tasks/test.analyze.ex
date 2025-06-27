@@ -201,7 +201,7 @@ defmodule Mix.Tasks.Test.Analyze do
     module = Arbor.Test.Performance.TestSuiteAnalyzer
 
     if Code.ensure_loaded?(module) do
-      apply(module, :analyze_test_run, [test_results])
+      module.analyze_test_run(test_results)
     else
       IO.puts("""
       ⚠️  TestSuiteAnalyzer not available.
@@ -218,7 +218,7 @@ defmodule Mix.Tasks.Test.Analyze do
     module = Arbor.Test.Performance.TestSuiteAnalyzer
 
     if Code.ensure_loaded?(module) do
-      apply(module, :generate_report, [analysis])
+      module.generate_report(analysis)
     else
       ""
     end

@@ -48,6 +48,12 @@ defmodule Arbor.Core.Sessions.Manager do
 
   use GenServer
 
+  alias Arbor.Core.{ClusterSupervisor, SessionRegistry}
+  alias Arbor.Core.Sessions.Session
+  alias Arbor.Types
+
+  require Logger
+
   # =====================================================
   # Session.Manager Behaviour Callbacks (single arity)
   # =====================================================
@@ -65,12 +71,6 @@ defmodule Arbor.Core.Sessions.Manager do
     # Delegate to the three-arity version with default reason
     terminate_session(session_id, :normal, __MODULE__)
   end
-
-  alias Arbor.Core.{ClusterSupervisor, SessionRegistry}
-  alias Arbor.Core.Sessions.Session
-  alias Arbor.Types
-
-  require Logger
 
   # Removed @table - using Horde.Registry instead
 
@@ -852,46 +852,44 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   defp list_sessions_with_structs(filters, _state) do
-    try do
-      # Get all session PIDs from registry
-      session_pids =
-        case Application.get_env(:arbor_core, :registry_impl, :auto) do
-          :mock ->
-            Enum.map(
-              Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}]),
-              fn {_session_id, {pid, _metadata}} -> pid end
-            )
+    # Get all session PIDs from registry
+    session_pids =
+      case Application.get_env(:arbor_core, :registry_impl, :auto) do
+        :mock ->
+          Enum.map(
+            Registry.select(Arbor.Core.MockSessionRegistry, [{{:_, :_}, [], [:_]}]),
+            fn {_session_id, {pid, _metadata}} -> pid end
+          )
 
-          _ ->
-            case SessionRegistry.list_all_sessions() do
-              {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
-              {:error, _} -> []
-            end
-        end
+        _ ->
+          case SessionRegistry.list_all_sessions() do
+            {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
+            {:error, _} -> []
+          end
+      end
 
-      # Convert to structs in parallel with timeout
-      session_structs =
-        session_pids
-        |> Task.async_stream(
-          fn pid -> Session.to_struct(pid) end,
-          timeout: 2000,
-          on_timeout: :kill_task
-        )
-        |> Enum.reduce([], fn
-          {:ok, {:ok, session_struct}}, acc -> [session_struct | acc]
-          # Skip failed/timeout results
-          _, acc -> acc
-        end)
+    # Convert to structs in parallel with timeout
+    session_structs =
+      session_pids
+      |> Task.async_stream(
+        fn pid -> Session.to_struct(pid) end,
+        timeout: 2000,
+        on_timeout: :kill_task
+      )
+      |> Enum.reduce([], fn
+        {:ok, {:ok, session_struct}}, acc -> [session_struct | acc]
+        # Skip failed/timeout results
+        _, acc -> acc
+      end)
 
-      # Apply filters (basic implementation)
-      filtered_sessions = apply_session_filters(session_structs, filters)
+    # Apply filters (basic implementation)
+    filtered_sessions = apply_session_filters(session_structs, filters)
 
-      {:ok, filtered_sessions}
-    rescue
-      e ->
-        Logger.error("Failed to list sessions", error: Exception.message(e))
-        {:error, :list_failed}
-    end
+    {:ok, filtered_sessions}
+  rescue
+    e ->
+      Logger.error("Failed to list sessions", error: Exception.message(e))
+      {:error, :list_failed}
   end
 
   defp apply_session_filters(sessions, filters) when map_size(filters) == 0, do: sessions
@@ -919,15 +917,13 @@ defmodule Arbor.Core.Sessions.Manager do
   end
 
   defp cleanup_failed_session(session_id, pid) do
-    try do
-      if Process.alive?(pid) do
-        Process.exit(pid, :kill)
-      end
-
-      ClusterSupervisor.stop_agent(session_id)
-    rescue
-      # Best effort cleanup
-      _ -> :ok
+    if Process.alive?(pid) do
+      Process.exit(pid, :kill)
     end
+
+    ClusterSupervisor.stop_agent(session_id)
+  rescue
+    # Best effort cleanup
+    _ -> :ok
   end
 end

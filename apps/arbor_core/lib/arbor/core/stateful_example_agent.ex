@@ -211,6 +211,7 @@ defmodule Arbor.Core.StatefulExampleAgent do
   end
 
   # Legacy checkpoint functions for backward compatibility
+  @spec extract_checkpoint_data(state :: map()) :: map()
   def extract_checkpoint_data(state) do
     case extract_state(state) do
       {:ok, data} -> data
@@ -218,6 +219,7 @@ defmodule Arbor.Core.StatefulExampleAgent do
     end
   end
 
+  @spec restore_from_checkpoint(checkpoint_data :: map(), current_state :: map()) :: map()
   def restore_from_checkpoint(checkpoint_data, current_state) do
     case restore_state(current_state, checkpoint_data) do
       {:ok, state} -> state

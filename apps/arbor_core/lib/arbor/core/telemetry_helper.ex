@@ -25,12 +25,10 @@ defmodule Arbor.Core.TelemetryHelper do
   @impl true
   @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
   def process({:timed_operation, event_prefix, operation_name, func, metadata}) do
-    try do
-      result = timed_operation(event_prefix, operation_name, func, metadata)
-      {:ok, result}
-    rescue
-      error -> {:error, error}
-    end
+    result = timed_operation(event_prefix, operation_name, func, metadata)
+    {:ok, result}
+  rescue
+    error -> {:error, error}
   end
 
   def process(_input) do

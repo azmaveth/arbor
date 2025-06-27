@@ -657,7 +657,8 @@ defmodule Arbor.Core.Gateway do
         command: command_type,
         params: params,
         task: task,
-        started_at: DateTime.utc_now()
+        started_at: DateTime.utc_now(),
+        waiters: []
       })
 
     # Update stats
@@ -700,7 +701,8 @@ defmodule Arbor.Core.Gateway do
         command: command,
         params: params,
         task: task,
-        started_at: DateTime.utc_now()
+        started_at: DateTime.utc_now(),
+        waiters: []
       })
 
     # Update stats
@@ -812,13 +814,20 @@ defmodule Arbor.Core.Gateway do
   end
 
   @impl true
-  def handle_call({:wait_for_completion, execution_ref}, _from, state) do
+  def handle_call({:wait_for_completion, execution_ref}, from, state) do
     case Map.get(state.active_executions, execution_ref) do
       nil ->
         handle_completed_execution_lookup(execution_ref, state)
 
       exec_info ->
-        handle_active_execution_wait(execution_ref, exec_info, state)
+        # Execution is active. Add caller to waiters list and don't reply yet.
+        new_exec_info =
+          Map.update(exec_info, :waiters, [from], fn existing_waiters ->
+            [from | existing_waiters]
+          end)
+
+        new_active_executions = Map.put(state.active_executions, execution_ref, new_exec_info)
+        {:noreply, %{state | active_executions: new_active_executions}}
     end
   end
 
@@ -1322,9 +1331,28 @@ defmodule Arbor.Core.Gateway do
       result: result
     )
 
+    # Reply to any waiting processes
+    data = unwrap_result_data(result)
+
+    completion_result = %{
+      execution_id: execution_id,
+      status: :completed,
+      result: %{
+        data: data,
+        message: "Command completed successfully"
+      }
+    }
+
+    for from <- Map.get(exec_info, :waiters, []) do
+      GenServer.reply(from, {:ok, completion_result})
+    end
+
     # Move to completed executions instead of deleting
-    completed_info = Map.put(exec_info, :result, result)
-    completed_info = Map.put(completed_info, :completed_at, DateTime.utc_now())
+    completed_info =
+      exec_info
+      |> Map.put(:result, result)
+      |> Map.put(:completed_at, DateTime.utc_now())
+      |> Map.delete(:waiters)
 
     # Remove from active and add to completed
     new_active = Map.delete(state.active_executions, execution_id)
@@ -1352,6 +1380,11 @@ defmodule Arbor.Core.Gateway do
       reason: reason
     )
 
+    # Reply to any waiting processes
+    for from <- Map.get(exec_info, :waiters, []) do
+      GenServer.reply(from, {:error, reason})
+    end
+
     # Broadcast failure event
     broadcast_execution_event(
       execution_id,
@@ -1364,8 +1397,11 @@ defmodule Arbor.Core.Gateway do
     )
 
     # Move to completed executions with error instead of deleting
-    completed_info = Map.put(exec_info, :error, reason)
-    completed_info = Map.put(completed_info, :completed_at, DateTime.utc_now())
+    completed_info =
+      exec_info
+      |> Map.put(:error, reason)
+      |> Map.put(:completed_at, DateTime.utc_now())
+      |> Map.delete(:waiters)
 
     # Remove from active and add to completed
     new_active = Map.delete(state.active_executions, execution_id)
@@ -1520,14 +1556,11 @@ defmodule Arbor.Core.Gateway do
   end
 
   defp execute_command_on_agent(agent_id, command, args) do
-    try do
-      result = CodeAnalyzer.exec(agent_id, command, args)
-      {:ok, result}
-    rescue
-      e -> {:error, {:agent_command_failed, Exception.message(e)}}
-    catch
-      :exit, reason -> {:error, {:agent_command_failed, reason}}
-    end
+    CodeAnalyzer.exec(agent_id, command, args)
+  rescue
+    e -> {:error, {:agent_command_failed, Exception.message(e)}}
+  catch
+    :exit, reason -> {:error, {:agent_command_failed, reason}}
   end
 
   defp format_agent_command_response(agent_id, command, args, result) do
@@ -1573,39 +1606,6 @@ defmodule Arbor.Core.Gateway do
         # Remove from completed executions after retrieval
         new_completed = Map.delete(state.completed_executions, execution_ref)
         {:reply, {:ok, completion_result}, %{state | completed_executions: new_completed}}
-    end
-  end
-
-  defp handle_active_execution_wait(execution_ref, exec_info, state) do
-    try do
-      result = Task.await(exec_info.task, 30_000)
-
-      # Remove from active executions
-      new_executions = Map.delete(state.active_executions, execution_ref)
-
-      # Unwrap :ok tuples
-      data = unwrap_result_data(result)
-
-      # Format result for CLI compatibility
-      completion_result = %{
-        execution_id: execution_ref,
-        status: :completed,
-        result: %{
-          data: data,
-          message: "Command completed successfully"
-        }
-      }
-
-      Logger.info("Execution completed", execution_id: execution_ref)
-      {:reply, {:ok, completion_result}, %{state | active_executions: new_executions}}
-    catch
-      :exit, {:timeout, _} ->
-        Logger.error("Execution timeout", execution_id: execution_ref)
-        {:reply, {:error, :timeout}, state}
-
-      :exit, reason ->
-        Logger.error("Execution failed", execution_id: execution_ref, reason: reason)
-        {:reply, {:error, reason}, state}
     end
   end
 

@@ -365,52 +365,32 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Domain mapping based on module names and existing contract patterns
   defp get_contract_domain(module_name) do
-    cond do
-      String.contains?(module_name, "Gateway") ->
-        "gateway"
+    domain_patterns()
+    |> Enum.find_value("core", fn {pattern, domain} ->
+      if String.contains?(module_name, pattern) do
+        domain
+      end
+    end)
+  end
 
-      String.contains?(module_name, "Cluster") ->
-        "cluster"
-
-      String.contains?(module_name, "Session") ->
-        "session"
-
-      String.contains?(module_name, "Agent") and not String.contains?(module_name, "Arbor.Agents") ->
-        "agent"
-
-      String.contains?(module_name, "Arbor.Agents") ->
-        "agents"
-
-      String.contains?(module_name, "Horde") ->
-        "cluster"
-
-      String.contains?(module_name, "Reconciler") ->
-        "agent"
-
-      String.contains?(module_name, "Registry") ->
-        "cluster"
-
-      String.contains?(module_name, "Supervisor") ->
-        "cluster"
-
-      String.contains?(module_name, "CodeGen") ->
-        "codegen"
-
-      String.contains?(module_name, "Mix.Tasks") ->
-        "tasks"
-
-      String.contains?(module_name, "TelemetryHelper") ->
-        "telemetry"
-
-      String.contains?(module_name, "Application") ->
-        "core"
-
-      String.contains?(module_name, "Checkpoint") ->
-        "agent"
-
-      true ->
-        "core"
-    end
+  # Ordered list of domain patterns - more specific patterns first
+  defp domain_patterns do
+    [
+      {"Arbor.Agents", "agents"},
+      {"Agent", "agent"},
+      {"Gateway", "gateway"},
+      {"Cluster", "cluster"},
+      {"Session", "session"},
+      {"Horde", "cluster"},
+      {"Reconciler", "agent"},
+      {"Registry", "cluster"},
+      {"Supervisor", "cluster"},
+      {"CodeGen", "codegen"},
+      {"Mix.Tasks", "tasks"},
+      {"TelemetryHelper", "telemetry"},
+      {"Application", "core"},
+      {"Checkpoint", "agent"}
+    ]
   end
 
   # Extract callbacks from modules that need contracts
@@ -786,7 +766,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     end
   end
 
-  # Gateway-specific contract template  
+  # Gateway-specific contract template
   defp generate_gateway_contract_template(
          contract_module,
          contract_name,
@@ -1202,37 +1182,55 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Find the end of @moduledoc block
   defp find_moduledoc_end(lines) do
-    find_moduledoc_end(lines, 0, false, false)
+    find_moduledoc_end(lines, 0, :searching)
   end
 
-  defp find_moduledoc_end([], _index, _in_doc, _found_doc), do: nil
+  # Base case: no more lines
+  defp find_moduledoc_end([], _index, _state), do: nil
 
-  defp find_moduledoc_end([line | rest], index, in_doc, found_doc) do
-    cond do
-      !found_doc && String.match?(line, ~r/^\s*@moduledoc/) ->
-        if String.contains?(line, "\"\"\"") && String.match?(line, ~r/"""\s*$/) do
-          # Single line @moduledoc
-          index
-        else
-          # Multi-line @moduledoc starts
-          find_moduledoc_end(rest, index + 1, true, true)
-        end
+  # State: searching for @moduledoc
+  defp find_moduledoc_end([line | rest], index, :searching) do
+    if is_moduledoc_start?(line) do
+      handle_moduledoc_start(line, rest, index)
+    else
+      find_moduledoc_end(rest, index + 1, :searching)
+    end
+  end
 
-      in_doc && String.match?(line, ~r/^\s*"""/) ->
-        # End of multi-line @moduledoc
-        index
+  # State: inside multi-line @moduledoc
+  defp find_moduledoc_end([line | rest], index, :inside_doc) do
+    if is_doc_end?(line) do
+      # Found the end
+      index
+    else
+      find_moduledoc_end(rest, index + 1, :inside_doc)
+    end
+  end
 
-      in_doc ->
-        # Inside @moduledoc, continue
-        find_moduledoc_end(rest, index + 1, true, true)
+  # State: after @moduledoc block
+  defp find_moduledoc_end(_lines, index, :after_doc) do
+    # Return insertion point
+    index - 1
+  end
 
-      found_doc ->
-        # @moduledoc block ended, this is insertion point
-        index - 1
+  # Helper: Check if line starts @moduledoc
+  defp is_moduledoc_start?(line) do
+    String.match?(line, ~r/^\s*@moduledoc/)
+  end
 
-      true ->
-        # Continue looking
-        find_moduledoc_end(rest, index + 1, false, false)
+  # Helper: Check if line ends a doc block
+  defp is_doc_end?(line) do
+    String.match?(line, ~r/^\s*"""/)
+  end
+
+  # Helper: Handle @moduledoc start
+  defp handle_moduledoc_start(line, rest, index) do
+    if String.contains?(line, "\"\"\"") && String.match?(line, ~r/"""\s*$/) do
+      # Single line @moduledoc
+      index
+    else
+      # Multi-line @moduledoc starts
+      find_moduledoc_end(rest, index + 1, :inside_doc)
     end
   end
 
@@ -1287,15 +1285,36 @@ defmodule Mix.Tasks.Credo.Refactor do
          dry_run?
        ) do
     mode_info = if dry_run?, do: "[DRY RUN] ", else: ""
+    stats = calculate_migration_stats(behaviour_results, callback_results)
 
-    # Count successes
-    behaviour_success = Enum.count(behaviour_results, &match?(%{result: {:added, _}}, &1))
+    print_migration_header(mode_info, target_modules, files_with_callbacks, stats)
+    print_behaviour_results(behaviour_results)
+    print_callback_results(callback_results)
+    print_next_steps_if_needed(dry_run?, stats)
 
-    behaviour_already_present =
-      Enum.count(behaviour_results, &match?(%{result: {:already_present, _}}, &1))
+    save_migration_report(
+      behaviour_results,
+      callback_results,
+      target_modules,
+      files_with_callbacks,
+      dry_run?
+    )
+  end
 
-    callback_success = Enum.count(callback_results, &match?(%{result: {:removed, _}}, &1))
+  # Calculate migration statistics
+  defp calculate_migration_stats(behaviour_results, callback_results) do
+    %{
+      behaviour_success: Enum.count(behaviour_results, &match?(%{result: {:added, _}}, &1)),
+      behaviour_already_present:
+        Enum.count(behaviour_results, &match?(%{result: {:already_present, _}}, &1)),
+      callback_success: Enum.count(callback_results, &match?(%{result: {:removed, _}}, &1)),
+      total_behaviour_results: length(behaviour_results),
+      total_callback_results: length(callback_results)
+    }
+  end
 
+  # Print migration report header with summary statistics
+  defp print_migration_header(mode_info, target_modules, files_with_callbacks, stats) do
     Mix.shell().info("\n#{mode_info}Implementation Migration Report")
     Mix.shell().info("=" <> String.duplicate("=", 50))
 
@@ -1303,17 +1322,20 @@ defmodule Mix.Tasks.Credo.Refactor do
     Mix.shell().info("Files with Callbacks: #{length(files_with_callbacks)}")
 
     Mix.shell().info("\n@behaviour Declarations:")
-    Mix.shell().info("  Added: #{behaviour_success}")
-    Mix.shell().info("  Already Present: #{behaviour_already_present}")
+    Mix.shell().info("  Added: #{stats.behaviour_success}")
+    Mix.shell().info("  Already Present: #{stats.behaviour_already_present}")
 
     Mix.shell().info(
-      "  Failed: #{length(behaviour_results) - behaviour_success - behaviour_already_present}"
+      "  Failed: #{stats.total_behaviour_results - stats.behaviour_success - stats.behaviour_already_present}"
     )
 
     Mix.shell().info("\n@callback Removals:")
-    Mix.shell().info("  Files Processed: #{callback_success}")
-    Mix.shell().info("  Failed: #{length(callback_results) - callback_success}")
+    Mix.shell().info("  Files Processed: #{stats.callback_success}")
+    Mix.shell().info("  Failed: #{stats.total_callback_results - stats.callback_success}")
+  end
 
+  # Print detailed behaviour declaration results
+  defp print_behaviour_results(behaviour_results) do
     Mix.shell().info("\nBehaviour Declaration Results:")
 
     Enum.each(behaviour_results, fn result ->
@@ -1331,7 +1353,10 @@ defmodule Mix.Tasks.Credo.Refactor do
           Mix.shell().info("  ✗ #{result.module} - #{reason}")
       end
     end)
+  end
 
+  # Print detailed callback removal results
+  defp print_callback_results(callback_results) do
     Mix.shell().info("\nCallback Removal Results:")
 
     Enum.each(callback_results, fn result ->
@@ -1353,9 +1378,12 @@ defmodule Mix.Tasks.Credo.Refactor do
           Mix.shell().info("  ✗ #{Path.basename(result.file)} - #{reason}")
       end
     end)
+  end
 
-    if !dry_run? do
-      total_changes = behaviour_success + callback_success
+  # Print next steps guidance if changes were made
+  defp print_next_steps_if_needed(dry_run?, stats) do
+    unless dry_run? do
+      total_changes = stats.behaviour_success + stats.callback_success
 
       if total_changes > 0 do
         Mix.shell().info("\nNext Steps:")
@@ -1364,15 +1392,6 @@ defmodule Mix.Tasks.Credo.Refactor do
         Mix.shell().info("3. Run tests to ensure functionality is preserved")
       end
     end
-
-    # Save migration report
-    save_migration_report(
-      behaviour_results,
-      callback_results,
-      target_modules,
-      files_with_callbacks,
-      dry_run?
-    )
   end
 
   # Fix misplaced @behaviour declarations in @moduledoc strings

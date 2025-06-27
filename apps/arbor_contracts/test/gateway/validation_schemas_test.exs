@@ -136,7 +136,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemasTest do
   describe "validation when disabled" do
     test "passes through without validation when disabled" do
       # Validation should be disabled by default in test environment
-      refute Validation.is_enabled?()
+      refute Validation.enabled?()
 
       # This completely invalid data should pass through
       invalid_data = %{completely: "invalid", data: 123}

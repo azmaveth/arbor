@@ -191,104 +191,135 @@ defmodule Arbor.Contracts.Telemetry.AgentEvent do
               timestamp: nil
   end
 
+  # Map of event types to their validation functions
+  @validation_dispatch %{
+    __MODULE__.Start => {:validate_event_with_agent_metadata, :invalid_start_event},
+    __MODULE__.Stop => {:validate_event_with_agent_metadata, :invalid_stop_event},
+    __MODULE__.Restart => {:validate_event_with_agent_metadata, :invalid_restart_event},
+    __MODULE__.RestartAttempt => {:validate_restart_attempt_event, nil},
+    __MODULE__.Restarted => {:validate_restart_duration_event, :invalid_restarted_event},
+    __MODULE__.RestartFailed => {:validate_restart_failed_event, nil},
+    __MODULE__.CleanupAttempt => {:validate_cleanup_event, :invalid_cleanup_attempt_event},
+    __MODULE__.CleanedUp => {:validate_cleanup_event, :invalid_cleaned_up_event},
+    __MODULE__.CleanupFailed => {:validate_cleanup_failed_event, nil}
+  }
+
   @doc """
   Validates a given agent event against its contract.
   """
   @impl Event
   @spec validate(Event.t()) :: :ok | {:error, term()}
   def validate(event) do
-    case event do
-      %__MODULE__.Start{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_start_event}
-        end
+    event_type = event.__struct__
 
-      %__MODULE__.Stop{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_stop_event}
-        end
+    case Map.get(@validation_dispatch, event_type) do
+      {validation_fn, error_type} ->
+        apply_validation(validation_fn, event, error_type)
 
-      %__MODULE__.Restart{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_restart_event}
-        end
-
-      %__MODULE__.RestartAttempt{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.measurements, :start_time),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_restart_attempt_event}
-        end
-
-      %__MODULE__.Restarted{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.measurements, :restart_duration_ms),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_restarted_event}
-        end
-
-      %__MODULE__.RestartFailed{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.measurements, :restart_duration_ms),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :reason),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_restart_failed_event}
-        end
-
-      %__MODULE__.CleanupAttempt{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :pid),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_cleanup_attempt_event}
-        end
-
-      %__MODULE__.CleanedUp{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :pid),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_cleaned_up_event}
-        end
-
-      %__MODULE__.CleanupFailed{} ->
-        with :ok <- validate_base_fields(event),
-             true <- Map.has_key?(event.metadata, :agent_id),
-             true <- Map.has_key?(event.metadata, :pid),
-             true <- Map.has_key?(event.metadata, :reason),
-             true <- Map.has_key?(event.metadata, :node) do
-          :ok
-        else
-          _ -> {:error, :invalid_cleanup_failed_event}
-        end
-
-      _ ->
+      nil ->
         {:error, :unknown_agent_event_type}
+    end
+  end
+
+  # Apply the appropriate validation function
+  defp apply_validation(:validate_event_with_agent_metadata, event, error_type) do
+    validate_event_with_agent_metadata(event, error_type)
+  end
+
+  defp apply_validation(:validate_restart_attempt_event, event, _error_type) do
+    validate_restart_attempt_event(event)
+  end
+
+  defp apply_validation(:validate_restart_duration_event, event, error_type) do
+    validate_restart_duration_event(event, error_type)
+  end
+
+  defp apply_validation(:validate_restart_failed_event, event, _error_type) do
+    validate_restart_failed_event(event)
+  end
+
+  defp apply_validation(:validate_cleanup_event, event, error_type) do
+    validate_cleanup_event(event, error_type)
+  end
+
+  defp apply_validation(:validate_cleanup_failed_event, event, _error_type) do
+    validate_cleanup_failed_event(event)
+  end
+
+  # Validates events that only need basic agent metadata (agent_id, node)
+  defp validate_event_with_agent_metadata(event, error_type) do
+    with :ok <- validate_base_fields(event),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, error_type}
+    end
+  end
+
+  # Validates restart attempt events with start_time measurement
+  defp validate_restart_attempt_event(event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.measurements, :start_time),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, :invalid_restart_attempt_event}
+    end
+  end
+
+  # Validates events with restart duration measurement
+  defp validate_restart_duration_event(event, error_type) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.measurements, :restart_duration_ms),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, error_type}
+    end
+  end
+
+  # Validates restart failed events with duration and reason
+  defp validate_restart_failed_event(event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.measurements, :restart_duration_ms),
+         true <- Map.has_key?(event.metadata, :reason),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, :invalid_restart_failed_event}
+    end
+  end
+
+  # Validates cleanup events with pid metadata
+  defp validate_cleanup_event(event, error_type) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :pid),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, error_type}
+    end
+  end
+
+  # Validates cleanup failed events with pid and reason
+  defp validate_cleanup_failed_event(event) do
+    with :ok <- validate_base_fields(event),
+         true <- Map.has_key?(event.metadata, :pid),
+         true <- Map.has_key?(event.metadata, :reason),
+         :ok <- validate_agent_metadata(event) do
+      :ok
+    else
+      _ -> {:error, :invalid_cleanup_failed_event}
+    end
+  end
+
+  # Validates common agent metadata fields (agent_id, node)
+  defp validate_agent_metadata(event) do
+    with true <- Map.has_key?(event.metadata, :agent_id),
+         true <- Map.has_key?(event.metadata, :node) do
+      :ok
+    else
+      _ -> {:error, :missing_agent_metadata}
     end
   end
 

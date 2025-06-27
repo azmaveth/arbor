@@ -423,7 +423,7 @@ defmodule Arbor.Core.ClusterRegistry do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Delegate to the underlying registry implementation
     registry_impl = get_registry_impl()
     _state = get_registry_state()
@@ -441,7 +441,7 @@ defmodule Arbor.Core.ClusterRegistry do
 
   # Implementation selection
 
-  defp get_registry_impl() do
+  defp get_registry_impl do
     # Use configuration to select implementation
     # MOCK: For testing, use local registry
     # For production, use Horde registry
@@ -461,7 +461,7 @@ defmodule Arbor.Core.ClusterRegistry do
     end
   end
 
-  defp get_registry_state() do
+  defp get_registry_state do
     # For mock implementation, create a fresh state
     # For Horde, this would be the actual registry GenServer state
     impl = get_registry_impl()

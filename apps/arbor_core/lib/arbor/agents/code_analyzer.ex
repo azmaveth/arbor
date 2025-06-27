@@ -88,6 +88,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:agent_id` - Unique identifier for this agent
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
+  @impl true
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
@@ -468,14 +469,16 @@ defmodule Arbor.Agents.CodeAnalyzer do
   defp execute_analyze_command(args, state) do
     case args do
       [path] ->
-        with {:ok, safe_path} <- validate_path(path, state.working_dir) do
-          if File.dir?(safe_path) do
-            perform_directory_analysis(safe_path)
-          else
-            perform_file_analysis(safe_path)
-          end
-        else
-          error -> error
+        case validate_path(path, state.working_dir) do
+          {:ok, safe_path} ->
+            if File.dir?(safe_path) do
+              perform_directory_analysis(safe_path)
+            else
+              perform_file_analysis(safe_path)
+            end
+
+          error ->
+            error
         end
 
       _ ->
@@ -489,10 +492,12 @@ defmodule Arbor.Agents.CodeAnalyzer do
         list_directory_files(state.working_dir)
 
       [path] ->
-        with {:ok, safe_path} <- validate_path(path, state.working_dir) do
-          list_directory_files(safe_path)
-        else
-          error -> error
+        case validate_path(path, state.working_dir) do
+          {:ok, safe_path} ->
+            list_directory_files(safe_path)
+
+          error ->
+            error
         end
 
       _ ->

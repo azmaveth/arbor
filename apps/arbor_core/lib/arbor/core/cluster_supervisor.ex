@@ -65,7 +65,7 @@ defmodule Arbor.Core.ClusterSupervisor do
 
   @impl true
   @spec get_status() :: {:ok, map()}
-  def get_status() do
+  def get_status do
     # Return the status of the cluster supervisor
     {:ok, %{status: :healthy, supervisor_impl: get_supervisor_impl()}}
   end
@@ -195,7 +195,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   """
   @impl true
   @spec list_agents() :: {:ok, [map()]} | {:error, supervisor_error()}
-  def list_agents() do
+  def list_agents do
     supervisor_impl = get_supervisor_impl()
 
     supervisor_impl.list_agents()
@@ -276,7 +276,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   """
   @impl true
   @spec health_metrics() :: {:ok, map()} | {:error, supervisor_error()}
-  def health_metrics() do
+  def health_metrics do
     supervisor_impl = get_supervisor_impl()
 
     supervisor_impl.health_metrics()
@@ -399,7 +399,7 @@ defmodule Arbor.Core.ClusterSupervisor do
 
   # Implementation selection
 
-  defp get_supervisor_impl() do
+  defp get_supervisor_impl do
     # Use configuration to select implementation
     # MOCK: For testing, use local supervisor
     # For production, use Horde supervisor

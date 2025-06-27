@@ -73,7 +73,7 @@ defmodule Arbor.Core.ClusterEvents do
   end
 
   @impl true
-  def get_status() do
+  def get_status do
     # Return the status of the cluster events service
     {:ok, %{status: :healthy, pubsub: @pubsub_name}}
   end

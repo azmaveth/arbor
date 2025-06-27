@@ -26,6 +26,7 @@ defmodule Arbor.Core.GatewayHTTP do
   # =====================================================
 
   @impl Arbor.Contracts.Gateway.GatewayHTTP
+  @impl true
   @spec handle_request(request :: any(), context :: map()) ::
           {:ok, response :: any()} | {:error, reason :: term()}
   def handle_request(request, context) do
@@ -105,7 +106,7 @@ defmodule Arbor.Core.GatewayHTTP do
   # Command Execution
 
   post "/commands" do
-    session_id = get_req_header(conn, "x-session-id") |> List.first()
+    session_id = List.first(get_req_header(conn, "x-session-id"))
 
     if is_nil(session_id) do
       conn
