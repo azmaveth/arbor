@@ -122,6 +122,15 @@ defmodule Arbor.Persistence.IntegrationCase do
               end
             rescue
               error -> {:docker_unavailable, "testcontainers exception: #{inspect(error)}"}
+            catch
+              # Handle CaseClauseError from Testcontainers when Docker socket not found
+              :error,
+              %CaseClauseError{term: {:error, [docker_socket_path: :docker_socket_not_found]}} ->
+                {:docker_unavailable, "docker socket not found"}
+
+              # Handle other thrown errors
+              kind, reason ->
+                {:docker_unavailable, "testcontainers #{kind}: #{inspect(reason)}"}
             end
 
           {error, _} ->
@@ -145,6 +154,15 @@ defmodule Arbor.Persistence.IntegrationCase do
               end
             rescue
               error -> {:docker_unavailable, "testcontainers exception: #{inspect(error)}"}
+            catch
+              # Handle CaseClauseError from Testcontainers when Docker socket not found
+              :error,
+              %CaseClauseError{term: {:error, [docker_socket_path: :docker_socket_not_found]}} ->
+                {:docker_unavailable, "docker socket not found"}
+
+              # Handle other thrown errors
+              kind, reason ->
+                {:docker_unavailable, "testcontainers #{kind}: #{inspect(reason)}"}
             end
 
           {error, _} ->
@@ -157,7 +175,23 @@ defmodule Arbor.Persistence.IntegrationCase do
 
   def start_containers do
     # Start Testcontainers GenServer
-    {:ok, _} = Testcontainers.start_link()
+    {:ok, _} =
+      try do
+        case Testcontainers.start_link() do
+          {:ok, pid} -> {:ok, pid}
+          {:error, reason} -> raise "Failed to start Testcontainers: #{inspect(reason)}"
+        end
+      rescue
+        error -> reraise "Failed to start Testcontainers: #{inspect(error)}", __STACKTRACE__
+      catch
+        # Handle CaseClauseError from Testcontainers when Docker socket not found
+        :error, %CaseClauseError{term: {:error, [docker_socket_path: :docker_socket_not_found]}} ->
+          raise "Docker socket not found - ensure Docker is running"
+
+        # Handle other thrown errors
+        kind, reason ->
+          raise "Testcontainers #{kind}: #{inspect(reason)}"
+      end
 
     # Define and start the PostgreSQL container
     container_config =

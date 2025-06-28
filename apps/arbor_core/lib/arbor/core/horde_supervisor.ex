@@ -72,6 +72,10 @@ defmodule Arbor.Core.HordeSupervisor do
   @registry_name Arbor.Core.HordeAgentRegistry
   @checkpoint_registry_name Arbor.Core.HordeCheckpointRegistry
 
+  # Timeout configuration - can be overridden via application config
+  @default_agent_termination_timeout 5_000
+  @default_agent_extraction_timeout 5_000
+
   # ================================
   # GenServer API
   # ================================
@@ -516,7 +520,7 @@ defmodule Arbor.Core.HordeSupervisor do
       {:ok, pid, _metadata} ->
         # Try to extract state from agent
         try do
-          GenServer.call(pid, :extract_state, 5000)
+          GenServer.call(pid, :extract_state, agent_extraction_timeout())
         catch
           _, _ -> {:ok, %{}}
         end
@@ -784,7 +788,7 @@ defmodule Arbor.Core.HordeSupervisor do
     case HordeRegistry.lookup_agent_name(agent_id) do
       {:ok, pid, _metadata} ->
         try do
-          GenServer.call(pid, :prepare_checkpoint, 5000)
+          GenServer.call(pid, :prepare_checkpoint, agent_extraction_timeout())
         rescue
           # Agent may not support this call, which is fine.
           _ -> nil
@@ -811,13 +815,15 @@ defmodule Arbor.Core.HordeSupervisor do
     HordeRegistry.unregister_agent_name(agent_id)
     Horde.DynamicSupervisor.terminate_child(@supervisor_name, pid)
 
+    timeout = agent_termination_timeout()
+
     receive do
       {:DOWN, ^ref, :process, _pid, _reason} ->
         :ok
     after
-      5000 ->
+      timeout ->
         Logger.warning(
-          "Timeout waiting for agent #{agent_id} (PID: #{inspect(pid)}) to terminate during restore. Aborting restore."
+          "Timeout waiting for agent #{agent_id} (PID: #{inspect(pid)}) to terminate during restore after #{timeout}ms. Aborting restore."
         )
 
         Process.demonitor(ref, [:flush])
@@ -895,7 +901,7 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   defp restore_agent_state_safely(pid, state_data) do
-    GenServer.call(pid, {:restore_state, state_data}, 5000)
+    GenServer.call(pid, {:restore_state, state_data}, agent_extraction_timeout())
   catch
     _, _ -> :ok
   end
@@ -1129,5 +1135,21 @@ defmodule Arbor.Core.HordeSupervisor do
     Horde.Cluster.set_members(@registry_name, new_registry_members)
     Horde.Cluster.set_members(@checkpoint_registry_name, new_checkpoint_registry_members)
     :ok
+  end
+
+  # ================================
+  # Configuration Helpers
+  # ================================
+
+  defp agent_termination_timeout do
+    Application.get_env(
+      :arbor_core,
+      :agent_termination_timeout,
+      @default_agent_termination_timeout
+    )
+  end
+
+  defp agent_extraction_timeout do
+    Application.get_env(:arbor_core, :agent_extraction_timeout, @default_agent_extraction_timeout)
   end
 end

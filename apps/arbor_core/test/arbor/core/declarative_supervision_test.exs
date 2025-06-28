@@ -1108,15 +1108,21 @@ defmodule TestSelfRegisterAgent do
 
       IO.puts("Specific agent entries for #{state.agent_id}: #{inspect(specific_lookup)}")
 
-      # Also try manual lookup with our exact key
+      # Also try manual lookup with correct Horde.Registry select API
       manual_lookup =
         try do
-          GenServer.call(Arbor.Core.HordeAgentRegistry, {:lookup, state.agent_id})
+          case Horde.Registry.select(Arbor.Core.HordeAgentRegistry, [
+                 {{state.agent_id, :"$1", :"$2"}, [], [{{:"$1", :"$2"}}]}
+               ]) do
+            [] -> {:error, :not_found}
+            [result] -> {:ok, result}
+            results -> {:ok, results}
+          end
         rescue
           e -> {:error, e}
         end
 
-      IO.puts("Manual GenServer lookup: #{inspect(manual_lookup)}")
+      IO.puts("Manual Horde.Registry select lookup: #{inspect(manual_lookup)}")
 
       case result do
         {:ok, _} ->

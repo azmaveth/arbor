@@ -394,11 +394,15 @@ defmodule Arbor.Test.Support.InfrastructureManager do
         if checkpoint_registry_pid, do: Process.exit(checkpoint_registry_pid, :shutdown)
         # Give more time for cleanup
         Process.sleep(200)
+        # Clean up any orphaned ETS tables before starting fresh
+        cleanup_horde_ets_tables()
         start_fresh_horde_supervisor()
 
       # Nothing running - start fresh
       true ->
         Logger.info("InfrastructureManager: Starting fresh Horde components")
+        # Clean up any orphaned ETS tables from previous test runs
+        cleanup_horde_ets_tables()
         start_fresh_horde_supervisor()
     end
   end
@@ -667,6 +671,58 @@ defmodule Arbor.Test.Support.InfrastructureManager do
           Process.sleep(50)
         catch
           :exit, _ -> :ok
+        end
+      end
+    end
+
+    # Clean up orphaned ETS tables that might persist after Horde shutdown
+    cleanup_horde_ets_tables()
+  end
+
+  defp cleanup_horde_ets_tables do
+    # Get all ETS tables and filter for Horde-related ones
+    all_tables = :ets.all()
+
+    # Pattern match for Horde registry ETS table names
+    horde_table_patterns = [
+      :"keys_Elixir.Arbor.Core.HordeAgentRegistry",
+      :"keys_Elixir.Arbor.Core.HordeCheckpointRegistry",
+      :"keys_Elixir.Arbor.Core.HordeCoordinationRegistry"
+    ]
+
+    for table <- all_tables do
+      if table in horde_table_patterns do
+        try do
+          Logger.debug("InfrastructureManager: Cleaning up orphaned ETS table: #{inspect(table)}")
+          :ets.delete(table)
+        catch
+          # Table might already be deleted or not owned by us
+          :error, :badarg -> :ok
+          :exit, _ -> :ok
+        end
+      end
+    end
+
+    # Also clean up any pattern-matched tables that might exist
+    pattern_prefixes = [
+      "keys_Elixir.Arbor.Core.Horde",
+      "pids_Elixir.Arbor.Core.Horde",
+      "crdt_Elixir.Arbor.Core.Horde"
+    ]
+
+    for table <- all_tables do
+      # Only process if table is an atom (ETS table names should be atoms)
+      if is_atom(table) do
+        table_name = Atom.to_string(table)
+
+        if Enum.any?(pattern_prefixes, &String.starts_with?(table_name, &1)) do
+          try do
+            Logger.debug("InfrastructureManager: Cleaning up Horde ETS table: #{inspect(table)}")
+            :ets.delete(table)
+          catch
+            :error, :badarg -> :ok
+            :exit, _ -> :ok
+          end
         end
       end
     end

@@ -96,12 +96,14 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   @impl true
   def init(opts) do
     name = opts[:name] || :mock_registry
+    # Add unique suffix to prevent ETS table name conflicts in tests
+    unique_suffix = :erlang.unique_integer([:positive])
 
     state = %__MODULE__{
-      names_table: :"#{name}_names",
-      groups_table: :"#{name}_groups",
-      monitors_table: :"#{name}_monitors",
-      ttl_table: :"#{name}_ttl",
+      names_table: :"#{name}_names_#{unique_suffix}",
+      groups_table: :"#{name}_groups_#{unique_suffix}",
+      monitors_table: :"#{name}_monitors_#{unique_suffix}",
+      ttl_table: :"#{name}_ttl_#{unique_suffix}",
       config: opts,
       node_status: %{node() => :up}
     }
@@ -122,11 +124,17 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
 
   @impl true
   def handle_call(:clear, _from, state) do
-    # Clear all ETS tables
-    :ets.delete_all_objects(state.names_table)
-    :ets.delete_all_objects(state.groups_table)
-    :ets.delete_all_objects(state.monitors_table)
-    :ets.delete_all_objects(state.ttl_table)
+    # Clear all ETS tables - use delete_all_objects to preserve table structure
+    # This is safer than deleting the table entirely as other processes might hold references
+    try do
+      :ets.delete_all_objects(state.names_table)
+      :ets.delete_all_objects(state.groups_table)
+      :ets.delete_all_objects(state.monitors_table)
+      :ets.delete_all_objects(state.ttl_table)
+    catch
+      # Handle case where tables might have been deleted by another process
+      :error, :badarg -> :ok
+    end
 
     {:reply, :ok, state}
   end
@@ -424,11 +432,18 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   @spec terminate(any(), state()) :: :ok
   @impl true
   def terminate(_reason, state) do
-    # Clean up ETS tables
-    :ets.delete(state.names_table)
-    :ets.delete(state.groups_table)
-    :ets.delete(state.monitors_table)
-    :ets.delete(state.ttl_table)
+    # Clean up ETS tables - handle case where tables might already be deleted
+    tables = [state.names_table, state.groups_table, state.monitors_table, state.ttl_table]
+
+    Enum.each(tables, fn table ->
+      try do
+        :ets.delete(table)
+      catch
+        # Table already deleted
+        :error, :badarg -> :ok
+      end
+    end)
+
     :ok
   end
 

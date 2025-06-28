@@ -90,7 +90,8 @@ defmodule Arbor.Core.Sessions.Session do
           active_agents: MapSet.t(),
           subscriptions: MapSet.t(),
           timeout: non_neg_integer(),
-          last_activity: DateTime.t()
+          last_activity: DateTime.t(),
+          timeout_ref: reference() | nil
         }
 
   # Client API
@@ -260,17 +261,20 @@ defmodule Arbor.Core.Sessions.Session do
     # Subscribe to session-specific events
     Phoenix.PubSub.subscribe(Arbor.Core.PubSub, "session:#{session_id}")
 
-    # Set timeout for session cleanup
-    if timeout > 0 do
-      Process.send_after(self(), :timeout_check, timeout)
-    end
-
     # Emit telemetry
     :telemetry.execute(
       [:arbor, :session, :start],
       %{count: 1},
       %{session_id: session_id}
     )
+
+    # Set timeout for session cleanup
+    timeout_ref =
+      if timeout > 0 do
+        Process.send_after(self(), :timeout_check, timeout)
+      else
+        nil
+      end
 
     state = %{
       session_id: session_id,
@@ -286,7 +290,8 @@ defmodule Arbor.Core.Sessions.Session do
       active_agents: MapSet.new(),
       subscriptions: MapSet.new(),
       timeout: timeout,
-      last_activity: DateTime.utc_now()
+      last_activity: DateTime.utc_now(),
+      timeout_ref: timeout_ref
     }
 
     # Register in the distributed session registry with metadata
@@ -497,10 +502,14 @@ defmodule Arbor.Core.Sessions.Session do
     now = DateTime.utc_now()
     idle_seconds = DateTime.diff(now, state.last_activity)
 
+    # Clear timeout reference since this message was delivered
+    state = %{state | timeout_ref: nil}
+
     if idle_seconds * 1000 >= state.timeout do
       Logger.info("Session timed out due to inactivity",
         session_id: state.session_id,
-        idle_seconds: idle_seconds
+        idle_seconds: idle_seconds,
+        timeout_ms: state.timeout
       )
 
       # Broadcast timeout event
@@ -508,10 +517,13 @@ defmodule Arbor.Core.Sessions.Session do
 
       {:stop, :timeout, state}
     else
-      # Schedule next timeout check
+      # Schedule next timeout check with better precision
       remaining_timeout = state.timeout - idle_seconds * 1000
-      Process.send_after(self(), :timeout_check, max(remaining_timeout, 60_000))
-      {:noreply, state}
+      # Use a minimum of 10 seconds instead of 60 seconds for better responsiveness
+      next_check = max(remaining_timeout, 10_000)
+
+      timeout_ref = Process.send_after(self(), :timeout_check, next_check)
+      {:noreply, %{state | timeout_ref: timeout_ref}}
     end
   end
 
@@ -589,7 +601,20 @@ defmodule Arbor.Core.Sessions.Session do
   # Private functions
 
   defp update_activity(state) do
-    %{state | last_activity: DateTime.utc_now()}
+    # Cancel existing timeout if there is one
+    if state.timeout_ref do
+      Process.cancel_timer(state.timeout_ref)
+    end
+
+    # Schedule new timeout if configured
+    timeout_ref =
+      if state.timeout > 0 do
+        Process.send_after(self(), :timeout_check, state.timeout)
+      else
+        nil
+      end
+
+    %{state | last_activity: DateTime.utc_now(), timeout_ref: timeout_ref}
   end
 
   defp validate_capability_grant(capability, _state) do
