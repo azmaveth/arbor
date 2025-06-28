@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Test.Analyze do
-  use Mix.Task
-
   @shortdoc "Analyzes test suite performance"
+
+  use Mix.Task
 
   @moduledoc """
   Analyzes test suite performance and provides optimization recommendations.

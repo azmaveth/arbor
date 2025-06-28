@@ -1,7 +1,9 @@
 defmodule Mix.Tasks.Arbor.Gen.Impl do
+  @shortdoc "Generates an implementation for a contract"
+
   use Mix.Task
 
-  @shortdoc "Generates an implementation for a contract"
+  alias Mix.Project
 
   @moduledoc """
   Generates a boilerplate implementation for an Arbor contract (behaviour).
@@ -32,8 +34,8 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   @impl Mix.Task
   def run(args) do
     # Ensure we are in an umbrella project root
-    if function_exported?(Mix.Project, :umbrella?, 0) do
-      unless Mix.Project.umbrella?() do
+    if function_exported?(Project, :umbrella?, 0) do
+      unless Project.umbrella?() do
         if function_exported?(Mix, :raise, 1) do
           Mix.raise("This task must be run from the root of the Arbor umbrella project.")
         else

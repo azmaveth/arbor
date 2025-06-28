@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Credo.Refactor do
-  use Mix.Task
-
   @shortdoc "Analyzes and helps refactor Credo architectural issues"
+
+  use Mix.Task
 
   @moduledoc """
   Provides tools to analyze and refactor common Credo architectural issues in Arbor.

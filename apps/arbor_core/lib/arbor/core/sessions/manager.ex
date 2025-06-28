@@ -386,6 +386,7 @@ defmodule Arbor.Core.Sessions.Manager do
   - `:name` - Process name (defaults to module name)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end

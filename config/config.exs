@@ -35,6 +35,7 @@ config :logger, :console,
     # Metrics
     :idle_seconds,
     :timeout,
+    :timeout_ms,
     :uptime_seconds,
     :duration_seconds,
     :events_count,

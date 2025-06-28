@@ -54,19 +54,6 @@ defmodule Arbor.Core.AgentBehavior do
 
   @behaviour Arbor.Contracts.Agent.Behavior
 
-  # Define the callbacks for modules that use this behavior
-  @callback extract_state(state :: any()) :: {:ok, any()} | {:error, any()}
-  @callback restore_state(agent_spec :: map(), restored_state :: any()) ::
-              {:ok, any()} | {:error, any()}
-  @callback get_agent_metadata(state :: any()) :: map()
-  @callback handle_registration_result(state :: any(), result :: {:ok, any()} | {:error, any()}) ::
-              any()
-
-  @optional_callbacks extract_state: 1,
-                      restore_state: 2,
-                      get_agent_metadata: 1,
-                      handle_registration_result: 2
-
   # Implement Arbor.Contracts.Agent.Behavior callbacks by delegating to the module's callbacks
   @doc """
   Extracts the serializable state of an agent for persistence.

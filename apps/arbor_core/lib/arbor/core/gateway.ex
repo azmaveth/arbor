@@ -387,6 +387,7 @@ defmodule Arbor.Core.Gateway do
   - `:name` - Process name (defaults to module name)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -973,7 +974,7 @@ defmodule Arbor.Core.Gateway do
 
   # Private functions
 
-  defp get_supervisor_impl() do
+  defp get_supervisor_impl do
     case Application.get_env(:arbor_core, :supervisor_impl, :auto) do
       :mock ->
         Arbor.Test.Mocks.SupervisorMock

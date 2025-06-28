@@ -294,12 +294,14 @@ defmodule Arbor.Core.HordeRegistry do
   end
 
   @spec handle_node_up(node :: node(), state :: term()) :: {:ok, term()}
+  @impl true
   def handle_node_up(_node, state) do
     # Horde handles this automatically
     {:ok, state}
   end
 
   @spec handle_node_down(node :: node(), state :: term()) :: {:ok, term()}
+  @impl true
   def handle_node_down(_node, state) do
     # Horde handles this automatically
     {:ok, state}

@@ -109,6 +109,7 @@ defmodule Arbor.Core.HordeCoordinator do
   Start the distributed coordinator.
   """
   @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
+  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -155,16 +156,19 @@ defmodule Arbor.Core.HordeCoordinator do
   # Node lifecycle management
 
   @spec handle_node_join(map(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_join(node_info, _state) do
     GenServer.call(__MODULE__, {:handle_node_join, node_info})
   end
 
   @spec handle_node_leave(node(), any(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_leave(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_leave, node, reason})
   end
 
   @spec handle_node_failure(node(), any(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_node_failure(node, reason, _state) do
     GenServer.call(__MODULE__, {:handle_node_failure, node, reason})
   end
@@ -214,6 +218,7 @@ defmodule Arbor.Core.HordeCoordinator do
   end
 
   @spec handle_split_brain(map(), any()) :: {:ok, any()} | {:error, any()}
+  @impl true
   def handle_split_brain(split_brain_event, _state) do
     GenServer.call(__MODULE__, {:handle_split_brain, split_brain_event})
   end

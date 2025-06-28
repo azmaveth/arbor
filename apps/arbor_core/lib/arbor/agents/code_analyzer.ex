@@ -92,6 +92,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
+  @impl true
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
     GenServer.start_link(__MODULE__, args, name: via_name(agent_id))
