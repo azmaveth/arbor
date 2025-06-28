@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Credo.Refactor do
+  use Mix.Task
+
   @shortdoc "Analyzes and helps refactor Credo architectural issues"
 
   @moduledoc """

@@ -360,7 +360,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   to ensure high availability.
   """
   @spec start_coordinator_agent(Types.agent_id(), module(), keyword(), map()) ::
-          {:ok, pid()} | {:error, supervisor_error()}
+          {:ok, pid()} | {:error, SupervisorContract.supervisor_error()}
   def start_coordinator_agent(agent_id, module, args, metadata \\ %{}) do
     agent_spec = %{
       id: agent_id,
@@ -382,7 +382,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   based on workload requirements.
   """
   @spec start_worker_agent(Types.agent_id(), module(), keyword(), map()) ::
-          {:ok, pid()} | {:error, supervisor_error()}
+          {:ok, pid()} | {:error, SupervisorContract.supervisor_error()}
   def start_worker_agent(agent_id, module, args, metadata \\ %{}) do
     agent_spec = %{
       id: agent_id,

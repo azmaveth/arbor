@@ -97,6 +97,7 @@ defmodule Arbor.Core.AgentBehavior do
   """
   @spec extract_state(state :: map()) :: {:ok, term()} | {:error, any()}
   @impl Arbor.Contracts.Agent.Behavior
+  @dialyzer {:nowarn_function, extract_state: 1}
   def extract_state(state) do
     # This is a default implementation - modules using AgentBehavior will override
     {:ok, state}
@@ -133,6 +134,7 @@ defmodule Arbor.Core.AgentBehavior do
   @spec restore_state(agent_spec :: map(), restored_state :: term()) ::
           {:ok, map()} | {:error, any()}
   @impl Arbor.Contracts.Agent.Behavior
+  @dialyzer {:nowarn_function, restore_state: 2}
   def restore_state(_agent_spec, restored_state) do
     # This is a default implementation - modules using AgentBehavior will override
     {:ok, restored_state}

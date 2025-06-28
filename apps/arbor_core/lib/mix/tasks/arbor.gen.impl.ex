@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Arbor.Gen.Impl do
+  use Mix.Task
+
   @shortdoc "Generates an implementation for a contract"
 
   @moduledoc """

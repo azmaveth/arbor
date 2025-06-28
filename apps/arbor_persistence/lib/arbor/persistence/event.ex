@@ -69,7 +69,7 @@ defmodule Arbor.Persistence.Event do
   @doc """
   Convert internal persistence event back to contract format.
   """
-  @spec to_contract(t()) :: {:ok, ContractEvent.t()} | {:error, term()}
+  @spec to_contract(t()) :: {:ok, ContractEvent.t()}
   def to_contract(%__MODULE__{} = persistence_event) do
     contract_event = %ContractEvent{
       id: persistence_event.id,

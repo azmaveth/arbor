@@ -15,6 +15,23 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   @version "1.0.0"
   """
 
+  # Type definitions
+  @type agent_spec :: %{
+          required(:id) => binary(),
+          required(:module) => module(),
+          optional(:args) => list(),
+          optional(:restart_strategy) => :permanent | :temporary | :transient,
+          optional(:metadata) => map()
+        }
+
+  @type supervisor_error ::
+          :not_found
+          | :already_started
+          | :max_restarts_reached
+          | :invalid_spec
+          | {:shutdown, term()}
+          | term()
+
   # Service lifecycle
   @callback start_service(config :: map()) :: {:ok, pid()} | {:error, term()}
   @callback stop_service(reason :: term()) :: :ok

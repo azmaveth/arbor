@@ -43,7 +43,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for valid agent types.
   """
-  @spec agent_type() :: Norm.spec()
+  @spec agent_type() :: any()
   def agent_type do
     spec(
       is_atom() and
