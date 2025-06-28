@@ -135,7 +135,7 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
-  @spec init(any()) :: {:ok, state()}
+  @impl true
   def init(_opts) do
     state = %__MODULE__{
       nodes: %{},

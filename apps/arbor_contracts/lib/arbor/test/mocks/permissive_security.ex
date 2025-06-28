@@ -319,7 +319,7 @@ defmodule Arbor.Test.Mocks.PermissiveSecurity do
   @doc """
   Clear a denial configuration.
   """
-  @spec clear_denial(any(), map()) :: :ok | true
+  @spec clear_denial(any(), map()) :: true
   def clear_denial(denial_spec, state) do
     :ets.delete(state.denials, denial_spec)
   end

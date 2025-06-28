@@ -273,11 +273,7 @@ defmodule Arbor.Core.TelemetryHelper do
   If validation fails, an error is logged and `{:error, reason}` is returned.
   """
   @spec emit_typed_performance_event(PerformanceEvent.Metric.t()) ::
-          :ok
-          | {:error,
-             :invalid_performance_metric_event
-             | :unknown_performance_event_type
-             | :invalid_base_event_structure}
+          :ok | {:error, term()}
   def emit_typed_performance_event(event) do
     case PerformanceEvent.validate(event) do
       :ok ->

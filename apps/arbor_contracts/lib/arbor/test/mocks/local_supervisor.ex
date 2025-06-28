@@ -450,8 +450,10 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
   # Implement the Arbor.Contracts.Cluster.Supervisor behaviour
 
   @impl Arbor.Contracts.Cluster.Supervisor
-  def start_service(config) do
-    start_link(config)
+  def start_service(config) when is_map(config) do
+    # Convert map to keyword list for start_link
+    opts = Map.to_list(config)
+    start_link(opts)
   end
 
   @impl Arbor.Contracts.Cluster.Supervisor

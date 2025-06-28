@@ -494,9 +494,11 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   end
 
   @impl Arbor.Contracts.Cluster.Registry
-  def start_service(config) do
+  def start_service(config) when is_map(config) do
     # For testing, just start a new instance
-    start_link(config)
+    # Convert map to keyword list for start_link
+    opts = Map.to_list(config)
+    start_link(opts)
   end
 
   @impl Arbor.Contracts.Cluster.Registry
@@ -537,14 +539,14 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   end
 
   @doc "Join registry cluster (mock - no-op for single node)"
-  @spec join_registry(node()) :: :ok | {:error, term()}
+  @spec join_registry(node()) :: :ok
   def join_registry(_node) do
     # Mock implementation - always succeeds
     :ok
   end
 
   @doc "Leave registry cluster (mock - no-op for single node)"
-  @spec leave_registry(node()) :: :ok | {:error, term()}
+  @spec leave_registry(node()) :: :ok
   def leave_registry(_node) do
     # Mock implementation - always succeeds
     :ok
