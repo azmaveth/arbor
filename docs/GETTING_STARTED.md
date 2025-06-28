@@ -34,6 +34,8 @@ In a new terminal:
 ./scripts/console.sh
 ```
 
+**Note**: If the console connection fails with "Could not connect to arbor@localhost", this is a known issue with remote shell connections. Instead, you can use the IEx session directly in the terminal where you started `./scripts/dev.sh`.
+
 ### Basic Operations
 
 #### 1. Create a Session
@@ -67,6 +69,21 @@ session_id = session.id
 # Note: Gateway commands are asynchronous and return execution IDs
 # You can use the execution_id to track the command's progress
 IO.puts("Agent spawn started: #{execution_id}")
+
+# Alternative: Use the lower-level Gateway API directly
+{:ok, session_struct} = GenServer.call(
+  Arbor.Core.Gateway,
+  {:create_session, [created_by: "user", metadata: %{purpose: "testing"}]}
+)
+
+{:async, execution_id} = GenServer.call(
+  Arbor.Core.Gateway,
+  {:execute, session_struct.session_id, "spawn_agent", %{
+    "type" => "code_analyzer",
+    "id" => "my_analyzer",
+    "working_dir" => "/tmp"
+  }}
+)
 ```
 
 #### 3. Query Agents
@@ -87,8 +104,50 @@ IO.puts("Agent query started: #{execution_id}")
 
 #### 4. Execute Agent Commands
 
+First, you need to get the agent ID from a spawned agent. You can either capture it during spawning or query existing agents:
+
 ```elixir
-# Send a command to the agent (replace agent_id with actual agent ID)
+# Option 1: Capture agent ID when spawning with explicit ID
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
+  %{
+    type: :spawn_agent,
+    params: %{
+      type: :code_analyzer,
+      id: "my_analyzer",  # Specify an explicit ID
+      working_dir: "/tmp"
+    }
+  },
+  %{session_id: session_id},
+  %{}
+)
+
+# Use the ID you specified
+agent_id = "my_analyzer"
+
+# Option 2: Query existing agents to get their IDs
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
+  %{
+    type: :query_agents,
+    params: %{}
+  },
+  %{session_id: session_id},
+  %{}
+)
+
+# Alternative: Use the lower-level API to get agent info directly
+case Arbor.Core.HordeSupervisor.list_agents() do
+  {:ok, agents} ->
+    # Get the first agent's ID
+    agent_id = case agents do
+      [agent | _] -> agent.agent_id
+      [] -> nil
+    end
+    IO.puts("Found agent: #{agent_id}")
+  {:error, reason} ->
+    IO.puts("Error listing agents: #{inspect(reason)}")
+end
+
+# Now send a command to the agent (using the agent_id obtained above)
 {:ok, execution_id} = Arbor.Core.Gateway.execute_command(
   %{
     type: :execute_agent_command,
@@ -110,8 +169,23 @@ IO.puts("Agent command started: #{execution_id}")
 All Gateway commands return execution IDs for tracking:
 
 ```elixir
+# Example: Spawn an agent and track its execution
+command = %{
+  type: :spawn_agent,
+  params: %{
+    type: :code_analyzer,
+    id: "async_example_agent",
+    working_dir: "/tmp"
+  }
+}
+
+context = %{session_id: session_id}  # Using the session_id from step 1
+options = %{}  # Empty options for now
+
 # Commands return execution IDs, not direct results
 {:ok, execution_id} = Arbor.Core.Gateway.execute_command(command, context, options)
+
+IO.puts("Command execution started with ID: #{execution_id}")
 
 # Currently, result retrieval mechanisms are under development
 # For now, you can monitor telemetry events or check agent status
@@ -120,8 +194,28 @@ All Gateway commands return execution IDs for tracking:
 #### 6. Check Agent Status
 
 ```elixir
+# First, get an agent ID (from previous examples or by listing agents)
+agent_id = "my_analyzer"  # Or use any agent ID from previous steps
+
 # Get detailed agent information
-{:ok, agent_info} = Arbor.Core.HordeSupervisor.get_agent_info(agent_id)
+case Arbor.Core.HordeSupervisor.get_agent_info(agent_id) do
+  {:ok, agent_info} ->
+    IO.inspect(agent_info, label: "Agent Info")
+  {:error, :not_found} ->
+    IO.puts("Agent #{agent_id} not found")
+  {:error, reason} ->
+    IO.puts("Error getting agent info: #{inspect(reason)}")
+end
+
+# List all agents to see available IDs
+case Arbor.Core.HordeSupervisor.list_agents() do
+  {:ok, agents} ->
+    Enum.each(agents, fn agent ->
+      IO.puts("Agent: #{agent.agent_id} - Status: #{agent.status}")
+    end)
+  {:error, reason} ->
+    IO.puts("Error listing agents: #{inspect(reason)}")
+end
 ```
 
 ## Understanding the Architecture
@@ -235,6 +329,7 @@ As Arbor is in alpha stage, several features are not yet implemented:
 4. **Authentication** - No user authentication system
 5. **Result Retrieval** - No built-in mechanism to retrieve async command results
 6. **Agent Implementations** - Agent types exist but have limited functionality
+7. **Agent Registration** - Agents may experience race conditions during startup and take several retries to register successfully
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation status.
 

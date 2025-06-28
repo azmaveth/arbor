@@ -1126,6 +1126,9 @@ defmodule Arbor.Core.Gateway do
   defp normalize_command("analyze_code"), do: :analyze_code
   defp normalize_command("execute_tool"), do: :execute_tool
   defp normalize_command("query_agents"), do: :query_agents
+  defp normalize_command("spawn_agent"), do: :spawn_agent
+  defp normalize_command("get_agent_status"), do: :get_agent_status
+  defp normalize_command("execute_agent_command"), do: :execute_agent_command
   defp normalize_command(command), do: command
 
   defp execute_normalized_command(command, params) do

@@ -152,15 +152,15 @@ config :arbor_persistence, ecto_repos: [Arbor.Persistence.Repo]
 config :arbor_core,
   # Agent registration retry configuration
   agent_retry: [
-    # Number of retry attempts for agent registration
-    retries: 3,
+    # Number of retry attempts for agent registration (increased for CRDT sync)
+    retries: 5,
     # Initial delay in milliseconds, doubles with each retry
-    initial_delay: 250
+    initial_delay: 200
   ],
   # Horde CRDT synchronization configuration
   horde_timing: [
-    # CRDT sync interval in milliseconds (100ms minimum recommended)
-    sync_interval: 100
+    # CRDT sync interval in milliseconds (reduced for faster agent registration)
+    sync_interval: 50
   ]
 
 # Import environment specific config. This must remain at the bottom

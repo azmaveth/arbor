@@ -933,9 +933,23 @@ defmodule Arbor.Core.HordeSupervisor do
 
     case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
       {:ok, _} ->
-        :ok
+        Logger.debug("Agent spec registration successful", agent_id: agent_id)
+        # Immediately verify the registration worked
+        case Horde.Registry.lookup(@registry_name, spec_key) do
+          [] ->
+            Logger.error("CRITICAL: Agent spec disappeared immediately after registration",
+              agent_id: agent_id
+            )
+
+            {:error, :registration_disappeared}
+
+          [{_pid, _value}] ->
+            Logger.debug("Agent spec verified in registry", agent_id: agent_id)
+            :ok
+        end
 
       {:error, {:already_registered, _}} ->
+        Logger.debug("Agent spec already registered, checking agent status", agent_id: agent_id)
         # Check if the agent is already running before allowing update
         case HordeRegistry.lookup_agent_name(agent_id) do
           {:ok, _pid, _metadata} ->
@@ -948,10 +962,15 @@ defmodule Arbor.Core.HordeSupervisor do
 
           {:error, :not_registered} ->
             # Agent spec exists but agent not running - allow update for reconciler
+            Logger.debug("Agent spec exists but agent not running, updating spec",
+              agent_id: agent_id
+            )
+
             Horde.Registry.unregister(@registry_name, spec_key)
 
             case Horde.Registry.register(@registry_name, spec_key, spec_metadata) do
               {:ok, _} ->
+                Logger.debug("Agent spec re-registration successful", agent_id: agent_id)
                 :ok
 
               {:error, reason} ->
@@ -963,6 +982,10 @@ defmodule Arbor.Core.HordeSupervisor do
                 {:error, reason}
             end
         end
+
+      {:error, reason} ->
+        Logger.error("Failed to register agent spec", agent_id: agent_id, reason: reason)
+        {:error, reason}
     end
   end
 
