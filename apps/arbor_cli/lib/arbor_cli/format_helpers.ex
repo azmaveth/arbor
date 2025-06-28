@@ -251,7 +251,7 @@ defmodule ArborCli.FormatHelpers do
   defp to_float(n) when is_integer(n), do: n * 1.0
   defp to_float(n) when is_float(n), do: n
 
-  @spec div_rem(integer(), integer()) :: {integer(), integer()}
+  @spec div_rem(non_neg_integer(), pos_integer()) :: {non_neg_integer(), non_neg_integer()}
   defp div_rem(numerator, denominator) do
     {div(numerator, denominator), rem(numerator, denominator)}
   end

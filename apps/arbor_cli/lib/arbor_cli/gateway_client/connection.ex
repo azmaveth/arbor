@@ -11,7 +11,7 @@ defmodule ArborCli.GatewayClient.Connection do
   @doc """
   Start the connection pool.
   """
-  @spec start_pool(map()) :: {:ok, pid()} | {:error, any()}
+  @spec start_pool(map()) :: {:ok, pid()} | {:error, :missing_configuration}
   def start_pool(config) do
     with {:ok, endpoint} <- Map.fetch(config, :gateway_endpoint),
          {:ok, pool_size} <- Map.fetch(config, :connection_pool_size) do

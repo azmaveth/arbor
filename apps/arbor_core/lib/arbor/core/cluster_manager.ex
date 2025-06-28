@@ -57,7 +57,7 @@ defmodule Arbor.Core.ClusterManager do
   require Logger
 
   # :cpu_sup is an optional dependency (part of :os_mon)
-  @dialyzer {:nowarn_function, get_load_average: 0}
+  # Dialyzer warning suppressed at function level
 
   @type topology :: atom()
   @type node_event :: :nodeup | :nodedown
@@ -762,7 +762,6 @@ defmodule Arbor.Core.ClusterManager do
     end)
   end
 
-  @dialyzer {:nowarn_function, get_load_average: 0}
   defp get_load_average do
     # Check if :cpu_sup module is available (part of :os_mon application)
     case Application.ensure_all_started(:os_mon) do

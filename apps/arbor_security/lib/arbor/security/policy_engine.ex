@@ -58,7 +58,7 @@ defmodule Arbor.Security.PolicyEngine do
       {:ok, _remaining} ->
         :ok
 
-      {:error, :rate_exceeded} ->
+      {:error, :rate_limit_exceeded} ->
         Logger.warning("Rate limit exceeded for #{principal_id} on #{operation}")
 
         :telemetry.execute(

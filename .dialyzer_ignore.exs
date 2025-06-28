@@ -11,5 +11,8 @@
   # NOTE: These warnings appear but may be accepted as defensive programming
   
   # WebSockEx dependency issue - external library
-  ~r/websockex\.ex.*no_return/
+  ~r/websockex\.ex.*no_return/,
+  
+  # OTP :cpu_sup module - optional dependency that may not be available
+  ~r/cpu_sup/
 ]
