@@ -54,9 +54,7 @@ defmodule Arbor.Core.Gateway do
 
   require Logger
 
-  # Gateway uses String.t() execution IDs instead of reference() for distributed compatibility
-  # Suppress callback spec mismatches - our design uses String.t() for distributed systems
-  @dialyzer [{:nowarn_function, get_execution_status: 2}, {:nowarn_function, cancel_execution: 3}]
+  # Gateway uses String.t() execution IDs for distributed compatibility
 
   @typedoc "Information about an available capability"
   @type capability_info :: %{
@@ -147,7 +145,7 @@ defmodule Arbor.Core.Gateway do
   - `{:error, :session_not_found}` - If the session ID is missing from the context.
   - `{:error, {:invalid_command, reason}}` - If the command fails validation.
   """
-  @spec execute_command(Command.t(), map(), any()) ::
+  @spec execute_command(map(), map(), any()) ::
           {:ok, Types.execution_id()} | {:error, term()}
   @impl Arbor.Contracts.Gateway.API
   def execute_command(command, context, _state) do

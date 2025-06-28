@@ -42,7 +42,7 @@ defmodule Arbor.Contracts.Gateway.API do
   """
 
   @type command :: map()
-  @type execution_ref :: reference()
+  @type execution_ref :: String.t()
   @type context :: map()
   @type state :: any()
   @type subscription_ref :: reference()
