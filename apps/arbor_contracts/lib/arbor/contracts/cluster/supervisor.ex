@@ -21,6 +21,8 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
           required(:module) => module(),
           optional(:args) => list(),
           optional(:restart_strategy) => :permanent | :temporary | :transient,
+          optional(:max_restarts) => non_neg_integer(),
+          optional(:max_seconds) => non_neg_integer(),
           optional(:metadata) => map()
         }
 
@@ -38,11 +40,11 @@ defmodule Arbor.Contracts.Cluster.Supervisor do
   @callback get_status() :: {:ok, map()} | {:error, term()}
 
   # Agent management
-  @callback start_agent(agent_spec :: map()) :: {:ok, pid()} | {:error, term()}
+  @callback start_agent(agent_spec()) :: {:ok, pid()} | {:error, supervisor_error()}
   @callback stop_agent(agent_id :: binary(), timeout :: non_neg_integer()) ::
-              :ok | {:error, term()}
-  @callback restart_agent(agent_id :: binary()) :: {:ok, pid()} | {:error, term()}
-  @callback get_agent_info(agent_id :: binary()) :: {:ok, map()} | {:error, term()}
+              :ok | {:error, supervisor_error()}
+  @callback restart_agent(agent_id :: binary()) :: {:ok, pid()} | {:error, supervisor_error()}
+  @callback get_agent_info(agent_id :: binary()) :: {:ok, map()} | {:error, supervisor_error()}
   @callback list_agents() :: {:ok, [map()]} | {:error, term()}
 
   # Agent restoration and updates

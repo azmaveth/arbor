@@ -265,8 +265,8 @@ defmodule Arbor.Core.ClusterEvents do
   Get cluster event broadcasting statistics.
   """
   @spec get_stats() :: %{
-          active_topics: %{binary() => 0},
-          node: node(),
+          active_topics: %{String.t() => 0},
+          node: atom(),
           cluster_id: binary(),
           pubsub_name: Arbor.Core.PubSub
         }
@@ -281,7 +281,13 @@ defmodule Arbor.Core.ClusterEvents do
 
   # Private helpers
 
-  @spec enrich_event(event_type(), event_data()) :: event_data()
+  @spec enrich_event(event_type(), event_data()) :: %{
+          optional(atom()) => any(),
+          event_type: event_type(),
+          timestamp: integer(),
+          node: atom(),
+          cluster_id: binary()
+        }
   defp enrich_event(event_type, event_data) do
     Map.merge(event_data, %{
       event_type: event_type,
@@ -305,7 +311,13 @@ defmodule Arbor.Core.ClusterEvents do
     end
   end
 
-  @spec emit_telemetry(event_type(), event_data()) :: :ok
+  @spec emit_telemetry(event_type(), %{
+          atom() => any(),
+          cluster_id: binary(),
+          event_type: event_type(),
+          node: atom(),
+          timestamp: integer()
+        }) :: :ok
   defp emit_telemetry(event_type, event_data) do
     :telemetry.execute(
       [:arbor, :cluster_events, :broadcast],

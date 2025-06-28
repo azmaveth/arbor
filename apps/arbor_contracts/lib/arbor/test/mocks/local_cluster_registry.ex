@@ -437,7 +437,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   @doc """
   Simulate a node failure for testing.
   """
-  @spec simulate_node_down(node(), state()) :: state()
+  @spec simulate_node_down(node(), state()) :: {:ok, state()}
   def simulate_node_down(node, state) do
     handle_node_down(node, state)
   end
@@ -518,7 +518,14 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   end
 
   @doc "Get registry status for cluster manager"
-  @spec get_registry_status() :: {:ok, map()}
+  @spec get_registry_status() ::
+          {:ok,
+           %{
+             status: :healthy,
+             members: [atom(), ...],
+             count: 0,
+             sync_status: :synchronized
+           }}
   def get_registry_status do
     {:ok,
      %{

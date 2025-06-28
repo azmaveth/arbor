@@ -483,7 +483,15 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:ok, recovery_plan}` - Complete recovery plan
   - `{:error, reason}` - Failed to create recovery plan
   """
-  @spec handle_node_failure_recovery(node(), atom()) :: {:ok, map()} | {:error, term()}
+  @spec handle_node_failure_recovery(node(), atom()) ::
+          {:ok,
+           %{
+             failed_node: node(),
+             failure_reason: atom(),
+             redistribution_plan: redistribution_plan(),
+             recovery_timestamp: integer()
+           }}
+          | {:error, term()}
   def handle_node_failure_recovery(failed_node, reason) do
     with :ok <- handle_node_failure(failed_node, reason),
          {:ok, redistribution_plan} <- get_redistribution_plan_for_node(failed_node) do
@@ -533,7 +541,15 @@ defmodule Arbor.Core.ClusterCoordinator do
   - `{:ok, health_report}` - Detailed cluster health report
   - `{:error, reason}` - Failed to perform health check
   """
-  @spec perform_health_check() :: {:ok, map()} | {:error, term()}
+  @spec perform_health_check() ::
+          {:ok,
+           %{
+             cluster_info: cluster_info(),
+             health_status: health_status(),
+             sync_status: map(),
+             check_timestamp: integer()
+           }}
+          | {:error, term()}
   def perform_health_check do
     with {:ok, cluster_info} <- get_cluster_info(),
          {:ok, health_status} <- get_cluster_health(),
