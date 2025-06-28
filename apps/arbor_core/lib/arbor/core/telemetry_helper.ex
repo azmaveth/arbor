@@ -24,6 +24,7 @@ defmodule Arbor.Core.TelemetryHelper do
   """
   @impl true
   @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+  @dialyzer {:nowarn_function, process: 1}
   def process({:timed_operation, event_prefix, operation_name, func, metadata}) do
     result = timed_operation(event_prefix, operation_name, func, metadata)
     {:ok, result}
@@ -40,7 +41,7 @@ defmodule Arbor.Core.TelemetryHelper do
   Currently no configuration options are supported.
   """
   @impl true
-  @spec configure(options :: keyword()) :: :ok | {:error, term()}
+  @spec configure(options :: keyword()) :: :ok
   def configure(_options) do
     :ok
   end

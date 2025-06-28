@@ -8,12 +8,15 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   import Norm
 
+  @typedoc "Opaque type representing a Norm validation schema"
+  @opaque norm_schema :: map()
+
   @doc """
   Schema for spawn_agent command parameters.
 
   Validates the structure and types of spawn_agent command data.
   """
-  @spec spawn_agent_command() :: any()
+  @spec spawn_agent_command() :: norm_schema()
   def spawn_agent_command do
     selection(
       schema(%{
@@ -27,7 +30,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for spawn_agent parameters.
   """
-  @spec spawn_agent_params() :: any()
+  @spec spawn_agent_params() :: norm_schema()
   def spawn_agent_params do
     selection(
       schema(%{
@@ -43,7 +46,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for valid agent types.
   """
-  @spec agent_type() :: any()
+  @spec agent_type() :: norm_schema()
   def agent_type do
     spec(
       is_atom() and
@@ -69,7 +72,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   Validates the execution context passed with commands.
   """
-  @spec command_context() :: any()
+  @spec command_context() :: norm_schema()
   def command_context do
     selection(
       schema(%{
@@ -86,7 +89,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Schema for command options.
   """
-  @spec command_options() :: any()
+  @spec command_options() :: norm_schema()
   def command_options do
     schema(%{
       # Max 5 minutes
@@ -100,7 +103,7 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
 
   This validates the entire command structure including command, context, and options.
   """
-  @spec gateway_command_execution() :: any()
+  @spec gateway_command_execution() :: norm_schema()
   def gateway_command_execution do
     selection(
       schema(%{

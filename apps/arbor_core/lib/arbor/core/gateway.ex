@@ -96,7 +96,10 @@ defmodule Arbor.Core.Gateway do
   end
 
   @impl Arbor.Contracts.Gateway.Gateway
-  @spec validate_request(request :: any()) :: :ok | {:error, term()}
+  @spec validate_request(request :: any()) ::
+          :ok
+          | {:error,
+             :invalid_request_structure | :invalid_request_type | :invalid_request_payload}
   def validate_request(request) do
     with :ok <- validate_request_structure(request),
          :ok <- validate_request_type(request),

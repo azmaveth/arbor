@@ -64,7 +64,7 @@ defmodule Arbor.Core.ClusterSupervisor do
   end
 
   @impl true
-  @spec get_status() :: {:ok, map()}
+  @spec get_status() :: {:ok, %{status: :healthy, supervisor_impl: module()}}
   def get_status do
     # Return the status of the cluster supervisor
     {:ok, %{status: :healthy, supervisor_impl: get_supervisor_impl()}}

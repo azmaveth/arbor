@@ -562,7 +562,7 @@ defmodule Arbor.Core.ClusterManager do
   # Determines the libcluster topology key based on the application environment.
   # This allows for different cluster discovery strategies in development,
   # testing, and production environments.
-  @spec get_topology_key() :: atom()
+  @spec get_topology_key() :: :arbor | :arbor_dev | :arbor_prod | :arbor_test
   defp get_topology_key do
     # Use application environment or default
     case Application.get_env(:arbor_core, :env, :prod) do
@@ -576,7 +576,7 @@ defmodule Arbor.Core.ClusterManager do
   # Determines the appropriate registry implementation module based on configuration.
   # It allows swapping between the real `HordeRegistry` and a mock implementation
   # for testing purposes.
-  @spec get_registry_impl() :: module()
+  @spec get_registry_impl() :: Arbor.Core.HordeRegistry | Arbor.Test.Mocks.LocalClusterRegistry
   defp get_registry_impl do
     case Application.get_env(:arbor_core, :registry_impl, :auto) do
       :mock ->

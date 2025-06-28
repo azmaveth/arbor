@@ -264,7 +264,12 @@ defmodule Arbor.Core.ClusterEvents do
   @doc """
   Get cluster event broadcasting statistics.
   """
-  @spec get_stats() :: map()
+  @spec get_stats() :: %{
+          active_topics: map(),
+          node: node(),
+          cluster_id: binary(),
+          pubsub_name: atom()
+        }
   def get_stats do
     %{
       active_topics: list_active_topics(),
