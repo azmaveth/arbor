@@ -40,6 +40,12 @@ defmodule Mix.Tasks.Test.Analyze do
   # Mix tasks use Mix environment functions not available during static analysis
   @dialyzer {:nowarn_function, run: 1}
 
+  # TestSuiteAnalyzer is only available in test environment
+  @dialyzer [
+    {:nowarn_function, analyze_with_suite_analyzer: 1},
+    {:nowarn_function, generate_analysis_report: 1}
+  ]
+
   # Note: TestSuiteAnalyzer is in test/support and only available in test environment
 
   @impl Mix.Task

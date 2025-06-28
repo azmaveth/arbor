@@ -56,6 +56,9 @@ defmodule Arbor.Core.ClusterManager do
 
   require Logger
 
+  # :cpu_sup is an optional dependency (part of :os_mon)
+  @dialyzer {:nowarn_function, get_load_average: 0}
+
   @type topology :: atom()
   @type node_event :: :nodeup | :nodedown
 

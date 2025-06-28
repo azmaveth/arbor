@@ -54,6 +54,9 @@ defmodule Arbor.Core.Gateway do
 
   require Logger
 
+  # Gateway uses String.t() execution IDs instead of reference() for distributed compatibility
+  # Suppression handled via module-level attributes later
+
   @typedoc "Information about an available capability"
   @type capability_info :: %{
           name: String.t(),
