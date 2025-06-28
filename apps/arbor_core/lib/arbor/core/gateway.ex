@@ -173,7 +173,7 @@ defmodule Arbor.Core.Gateway do
   """
   # Note: The behavior expects reference() but we use String.t() execution IDs
   # This is an intentional design choice for distributed system compatibility
-  @dialyzer {:nowarn_function, get_execution_status: 2}
+  # Dialyzer warnings are suppressed in .dialyzer_ignore.exs
   @spec get_execution_status(Types.execution_id(), any()) ::
           {:ok, map()} | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
@@ -194,7 +194,7 @@ defmodule Arbor.Core.Gateway do
   - `{:error, :execution_not_found}` - If the execution ID does not exist.
   """
   # Note: The behavior expects reference() but we use String.t() execution IDs
-  @dialyzer {:nowarn_function, cancel_execution: 3}
+  # Dialyzer warnings are suppressed in .dialyzer_ignore.exs
   @spec cancel_execution(Types.execution_id(), any(), any()) ::
           :ok | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
