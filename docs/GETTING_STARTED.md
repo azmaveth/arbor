@@ -180,15 +180,49 @@ Arbor.Core.HordeRegistry.list_agents()
 )
 ```
 
+## Troubleshooting
+
+### Application Startup Issues
+
+If you encounter errors when running `./scripts/dev.sh`:
+
+```elixir
+** (EXIT) already started: #PID<0.288.0>
+```
+
+This is a known issue with the application startup sequence. Current workarounds:
+
+1. **Use Test Mode**: The application works in test mode
+
+   ```bash
+   MIX_ENV=test iex -S mix
+   ```
+
+2. **Kill Existing Processes**: If processes are stuck
+
+   ```bash
+   killall beam.smp
+   ```
+
+3. **Check Database**: Ensure databases exist
+
+   ```bash
+   mix ecto.create
+   createdb arbor_security_dev  # If needed
+   ```
+
+See [TESTING_FINDINGS.md](TESTING_FINDINGS.md) for detailed analysis of startup issues.
+
 ## Current Limitations
 
 As Arbor is in alpha stage, several features are not yet implemented:
 
-1. **CLI** - Command-line interface is incomplete
-2. **Web UI** - No web interface yet
-3. **AI Integration** - LLM integrations not implemented
-4. **Authentication** - No user authentication system
-5. **Persistence** - Limited persistence capabilities
+1. **Application Startup** - Development server has initialization issues
+2. **CLI** - Command-line interface is incomplete
+3. **Web UI** - No web interface yet
+4. **AI Integration** - LLM integrations not implemented
+5. **Authentication** - No user authentication system
+6. **Persistence** - Limited persistence capabilities
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation status.
 

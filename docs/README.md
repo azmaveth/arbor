@@ -7,6 +7,7 @@ Welcome to the comprehensive documentation for **Arbor**, the distributed AI age
 ### 🚀 Getting Started
 - **[Getting Started Guide](GETTING_STARTED.md)** - Get Arbor running and explore its capabilities
 - **[Project Status](PROJECT_STATUS.md)** - Current implementation status and known issues
+- **[Testing Findings](TESTING_FINDINGS.md)** - Results from testing documented procedures
 - **[Development Roadmap](../ROADMAP.md)** - Future development plans and milestones
 - **[Main README](../README.md)** - Project overview, features, and quick start guide
 - **[Development Guide](development.md)** - Comprehensive development setup and workflow

@@ -187,6 +187,14 @@ Arbor is a distributed AI agent orchestration system built on Elixir/OTP. The pr
 
 ## 📋 Known Issues
 
+### Critical Issues
+1. **Application Startup Failure** - Development server cannot start:
+   - `CapabilityStore` process registration conflicts
+   - `Postgrex.TypeManager` registry not found errors
+   - Prevents all IEx console usage and manual testing
+   - Works in test mode but fails in dev mode
+   - See [TESTING_FINDINGS.md](TESTING_FINDINGS.md) for details
+
 ### Technical Debt
 1. **Dialyzer Warnings** - 21 remaining warnings need resolution:
    - Contract supertype mismatches
@@ -200,7 +208,7 @@ Arbor is a distributed AI agent orchestration system built on Elixir/OTP. The pr
    - Edge cases in failover scenarios
    - Performance under extreme load
 
-### Bugs
+### Fixed Bugs
 1. **Memory Leak** - Fixed in `LocalSupervisor` (was missing :DOWN message handling)
 2. **TTL Expiration** - Fixed in `LocalClusterRegistry` (was using DateTime comparison in ETS)
 3. **Process Accumulation** - Fixed in TTL cleanup (was using spawn_link recursion)
