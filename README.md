@@ -7,8 +7,11 @@
 
 > ⚠️ **Alpha Software**: This project is currently in alpha stage (v0.x.x).
 > The API is unstable and may change significantly before v1.0 release.
+> See [PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for current implementation status.
 
-**Arbor** is a production-ready, distributed AI agent orchestration system built on the rock-solid foundation of Elixir/OTP. Designed from the ground up for fault-tolerance, scalability, and security, Arbor enables sophisticated multi-agent AI workflows with enterprise-grade reliability.
+**Arbor** is an ambitious distributed AI agent orchestration system built on the rock-solid foundation of Elixir/OTP. Designed from the ground up for fault-tolerance, scalability, and security, Arbor aims to enable sophisticated multi-agent AI workflows with enterprise-grade reliability.
+
+> **Current State**: Core infrastructure is implemented including distributed agent supervision, capability-based security, and event sourcing. The CLI and AI integrations are still under development.
 
 ## 🌟 Key Features
 

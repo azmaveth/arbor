@@ -1,8 +1,0 @@
-Based on the web search results confirming Horde best practices, provide detailed architectural recommendations for AgentReconciler vs HordeSupervisor conflicts. The search confirmed:
-
-1. **Horde's built-in restart capabilities**: "The process dies in its current node but gets restarted thanks to Horde's supervisor"
-2. **Automatic process redistribution**: "If a node fails then Horde.DynamicSupervisor will redistribute processes among the remaining nodes automatically"
-3. **Singleton recommendations**: "For simple singletons, look at Highlander or HighlanderPG" but for complex scenarios, external reconciler provides control
-4. **Common restart strategy**: "restart: :transient is commonly used in worker specs"
-
-Given these best practices and the current Arbor code, provide concrete implementation recommendations for Step 5.

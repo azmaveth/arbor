@@ -5,6 +5,9 @@ Welcome to the comprehensive documentation for **Arbor**, the distributed AI age
 ## 📚 Documentation Structure
 
 ### 🚀 Getting Started
+- **[Getting Started Guide](GETTING_STARTED.md)** - Get Arbor running and explore its capabilities
+- **[Project Status](PROJECT_STATUS.md)** - Current implementation status and known issues
+- **[Development Roadmap](../ROADMAP.md)** - Future development plans and milestones
 - **[Main README](../README.md)** - Project overview, features, and quick start guide
 - **[Development Guide](development.md)** - Comprehensive development setup and workflow
 - **[Contributing Guidelines](../CONTRIBUTING.md)** - How to contribute, code standards, and processes
@@ -49,9 +52,10 @@ Configuration and style guides for consistent development.
 ## 🚀 Getting Started Paths
 
 ### 👋 New to Arbor?
-1. Start with the **[Main README](../README.md)** for project overview
-2. Follow the **[Development Guide](development.md)** for setup
-3. Read **[Contributing Guidelines](../CONTRIBUTING.md)** to get involved
+1. Start with the **[Getting Started Guide](GETTING_STARTED.md)** for hands-on exploration
+2. Check **[Project Status](PROJECT_STATUS.md)** to understand what's implemented
+3. Follow the **[Development Guide](development.md)** for full setup
+4. Read **[Contributing Guidelines](../CONTRIBUTING.md)** to get involved
 
 ### 🏗️ Understanding the Architecture?
 1. Review **[System Architecture](architecture.md)** for design principles
