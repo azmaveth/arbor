@@ -312,7 +312,7 @@ defmodule Arbor.Core.ClusterEvents do
   end
 
   @spec emit_telemetry(event_type(), %{
-          atom() => any(),
+          optional(atom()) => any(),
           cluster_id: binary(),
           event_type: event_type(),
           node: atom(),

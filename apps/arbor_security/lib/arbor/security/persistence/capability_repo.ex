@@ -50,8 +50,7 @@ defmodule Arbor.Security.Persistence.CapabilityRepo do
   @doc """
   Delete (revoke) a capability.
   """
-  @spec delete_capability(String.t(), atom() | String.t(), String.t()) ::
-          {:ok, any()} | {:error, atom()}
+  @spec delete_capability(String.t(), atom() | String.t(), String.t()) :: :ok | {:error, atom()}
   def delete_capability(capability_id, reason, revoker_id) do
     case Repo.get(SchemaCapability, capability_id) do
       nil ->

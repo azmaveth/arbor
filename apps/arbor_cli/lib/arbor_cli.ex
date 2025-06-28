@@ -43,7 +43,12 @@ defmodule ArborCli do
   @doc """
   Get CLI configuration.
   """
-  @spec config() :: map()
+  @spec config() :: %{
+          gateway_endpoint: String.t(),
+          timeout: non_neg_integer(),
+          output_format: atom(),
+          verbose: boolean()
+        }
   def config do
     %{
       gateway_endpoint: default_gateway_endpoint(),

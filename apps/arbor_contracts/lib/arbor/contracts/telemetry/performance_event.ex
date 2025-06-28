@@ -36,7 +36,7 @@ defmodule Arbor.Contracts.Telemetry.PerformanceEvent do
   Validates a given performance event against its contract.
   """
   @impl Event
-  @spec validate(t()) :: :ok | {:error, term()}
+  @spec validate(Event.t()) :: :ok | {:error, term()}
   def validate(%__MODULE__.Metric{} = event) do
     with :ok <- validate_base_fields(event),
          true <- Map.has_key?(event.measurements, :value),

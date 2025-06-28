@@ -74,7 +74,25 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Convert from contract event to database schema.
   """
-  @spec from_contract(any()) :: %__MODULE__{}
+  @spec from_contract(any()) :: %__MODULE__{
+          __meta__: Ecto.Schema.Metadata.t(),
+          aggregate_id: any(),
+          aggregate_type: binary(),
+          causation_id: any(),
+          correlation_id: any(),
+          data: any(),
+          event_type: binary(),
+          event_version: any(),
+          global_position: any(),
+          id: any(),
+          inserted_at: nil,
+          metadata: any(),
+          occurred_at: any(),
+          stream_id: any(),
+          stream_version: any(),
+          trace_id: any(),
+          updated_at: nil
+        }
   def from_contract(contract_event) do
     %__MODULE__{
       id: contract_event.id,
@@ -97,7 +115,23 @@ defmodule Arbor.Persistence.Schemas.Event do
   @doc """
   Convert from contract event to map for insert_all.
   """
-  @spec to_map(any()) :: map()
+  @spec to_map(any()) :: %{
+          aggregate_id: any(),
+          aggregate_type: binary(),
+          correlation_id: any(),
+          data: any(),
+          event_type: binary(),
+          event_version: any(),
+          id: any(),
+          inserted_at: DateTime.t(),
+          metadata: any(),
+          occurred_at: any(),
+          stream_id: any(),
+          stream_version: any(),
+          trace_id: any(),
+          updated_at: DateTime.t(),
+          causation_id: any()
+        }
   def to_map(contract_event) do
     timestamp = DateTime.utc_now()
 

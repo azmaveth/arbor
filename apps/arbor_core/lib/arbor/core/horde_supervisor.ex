@@ -142,10 +142,6 @@ defmodule Arbor.Core.HordeSupervisor do
       {:error, :already_started} ->
         {:error, :already_started}
 
-      {:error, {:already_registered, _pid}} ->
-        Logger.error("Agent spec already registered", agent_id: agent_id)
-        {:error, :spec_already_registered}
-
       {:error, reason} ->
         {:error, reason}
     end

@@ -38,7 +38,7 @@ defmodule Arbor.Security.Persistence.AuditRepo do
   @doc """
   Query audit events with filters.
   """
-  @spec get_audit_events(keyword()) :: {:ok, [any()]} | {:error, any()}
+  @spec get_audit_events(keyword()) :: {:ok, [any()]}
   def get_audit_events(filters) do
     query = from(e in SchemaAuditEvent)
 

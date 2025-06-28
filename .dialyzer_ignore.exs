@@ -6,5 +6,10 @@
   # Add any deps/ warnings here as they occur
   
   # Regex patterns for warnings that can't be easily suppressed inline
-  # (none currently needed)
+  
+  # AgentBehavior defensive patterns that are unreachable in some implementations
+  # NOTE: These warnings appear but may be accepted as defensive programming
+  
+  # WebSockEx dependency issue - external library
+  ~r/websockex\.ex.*no_return/
 ]

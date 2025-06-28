@@ -23,7 +23,7 @@ defmodule Arbor.Security.FastAuthorizer do
   consistency is acceptable. For operations that modify state
   (grant, revoke, delegate), you must use SecurityKernel.
   """
-  @spec authorize(keyword()) :: {:ok, :authorized} | {:error, term()}
+  @spec authorize(Keyword.t()) :: {:ok, :authorized} | {:error, {:authorization_denied, any()}}
   def authorize(opts) do
     capability = Keyword.fetch!(opts, :capability)
     resource_uri = Keyword.fetch!(opts, :resource_uri)
