@@ -24,11 +24,22 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
 
   alias Arbor.CodeGen.ImplementationGenerator
 
+  # Mix tasks use Mix environment functions not available during static analysis
+  @dialyzer {:nowarn_function, run: 1}
+  @dialyzer {:nowarn_function, shell_info: 1}
+  @dialyzer {:nowarn_function, shell_error: 1}
+
   @impl Mix.Task
   def run(args) do
     # Ensure we are in an umbrella project root
-    unless Mix.Project.umbrella?() do
-      Mix.raise("This task must be run from the root of the Arbor umbrella project.")
+    if function_exported?(Mix.Project, :umbrella?, 0) do
+      unless Mix.Project.umbrella?() do
+        if function_exported?(Mix, :raise, 1) do
+          Mix.raise("This task must be run from the root of the Arbor umbrella project.")
+        else
+          raise "This task must be run from the root of the Arbor umbrella project."
+        end
+      end
     end
 
     case parse_args(args) do
@@ -36,7 +47,12 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
         generate_implementation(contract_module, implementation_module)
 
       {:error, reason} ->
-        Mix.shell().error(reason)
+        if function_exported?(Mix, :shell, 0) do
+          Mix.shell().error(reason)
+        else
+          IO.puts(:stderr, "Error: #{reason}")
+        end
+
         print_help()
     end
   end
@@ -67,33 +83,50 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   end
 
   defp generate_implementation(contract_module, implementation_module) do
-    Mix.shell().info("Generating implementation for #{contract_module}...")
+    shell_info("Generating implementation for #{contract_module}...")
 
     case ImplementationGenerator.generate(contract_module, implementation_module) do
       {:ok, path} ->
-        Mix.shell().info("Created #{path}")
+        shell_info("Created #{path}")
 
       {:error, :contract_not_found} ->
-        Mix.shell().error("Contract module #{contract_module} could not be found or loaded.")
+        shell_error("Contract module #{contract_module} could not be found or loaded.")
 
       {:error, {:file_exists, path}} ->
-        Mix.shell().error("File already exists at #{path}. Aborting.")
+        shell_error("File already exists at #{path}. Aborting.")
 
       {:error, reason} when is_binary(reason) ->
-        Mix.shell().error("Failed to generate implementation: #{reason}")
+        shell_error("Failed to generate implementation: #{reason}")
 
       {:error, reason} ->
-        Mix.shell().error("An unexpected error occurred: #{inspect(reason)}")
+        shell_error("An unexpected error occurred: #{inspect(reason)}")
     end
   end
 
   defp print_help do
-    Mix.shell().info("""
+    shell_info("""
     Usage: mix arbor.gen.impl <ContractModule> <ImplementationModule>
 
     Arguments:
       <ContractModule>        The fully qualified name of the contract (behaviour) module.
       <ImplementationModule>  The fully qualified name of the new implementation module.
     """)
+  end
+
+  # Helper functions to handle Mix environment safely
+  defp shell_info(message) do
+    if function_exported?(Mix, :shell, 0) do
+      Mix.shell().info(message)
+    else
+      IO.puts(message)
+    end
+  end
+
+  defp shell_error(message) do
+    if function_exported?(Mix, :shell, 0) do
+      Mix.shell().error(message)
+    else
+      IO.puts(:stderr, "Error: #{message}")
+    end
   end
 end

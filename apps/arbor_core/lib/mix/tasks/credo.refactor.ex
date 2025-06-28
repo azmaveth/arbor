@@ -19,6 +19,28 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   require Logger
 
+  # Mix tasks use Mix environment functions not available during static analysis
+  @dialyzer {:nowarn_function, run: 1}
+  @dialyzer {:nowarn_function, shell_info: 1}
+  @dialyzer {:nowarn_function, shell_error: 1}
+
+  # Helper functions to handle Mix environment safely
+  defp shell_info(message) do
+    if function_exported?(Mix, :shell, 0) do
+      Mix.shell().info(message)
+    else
+      IO.puts(message)
+    end
+  end
+
+  defp shell_error(message) do
+    if function_exported?(Mix, :shell, 0) do
+      Mix.shell().error(message)
+    else
+      IO.puts(:stderr, "Error: #{message}")
+    end
+  end
+
   # Define constants for our target checks
   @impl_true_check "Arbor.Credo.Check.ImplTrueEnforcement"
   @contract_check "Arbor.Credo.Check.ContractEnforcement"
@@ -47,7 +69,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         ]
       )
 
-    Mix.shell().info("Running Credo to generate issue report...")
+    shell_info("Running Credo to generate issue report...")
 
     case execute_credo() do
       {:ok, issues} ->
@@ -138,7 +160,7 @@ defmodule Mix.Tasks.Credo.Refactor do
       |> Enum.map(fn {file, issues} -> {file, length(issues)} end)
       |> Enum.sort()
 
-    Mix.shell().info("""
+    shell_info("""
 
     =====================================
     Arbor Credo Architecture Analysis
@@ -159,10 +181,10 @@ defmodule Mix.Tasks.Credo.Refactor do
     """)
 
     Enum.each(modules_missing_contracts, fn module ->
-      Mix.shell().info("  • #{module}")
+      shell_info("  • #{module}")
     end)
 
-    Mix.shell().info("""
+    shell_info("""
 
     -------------------------------------
     FILES WITH MISSING @impl true (Top 10)
@@ -173,14 +195,14 @@ defmodule Mix.Tasks.Credo.Refactor do
     |> Enum.take(10)
     |> Enum.each(fn {file, count} ->
       short_file = String.replace(file, ~r/^apps\//, "")
-      Mix.shell().info("  • #{short_file}: #{count} instances")
+      shell_info("  • #{short_file}: #{count} instances")
     end)
 
     if length(files_missing_impl) > 10 do
-      Mix.shell().info("  ... and #{length(files_missing_impl) - 10} more files")
+      shell_info("  ... and #{length(files_missing_impl) - 10} more files")
     end
 
-    Mix.shell().info("""
+    shell_info("""
 
     -------------------------------------
     FILES WITH MISPLACED BEHAVIORS (#{length(misplaced_behaviors)})
@@ -189,10 +211,10 @@ defmodule Mix.Tasks.Credo.Refactor do
 
     Enum.each(misplaced_behaviors, fn {file, count} ->
       short_file = String.replace(file, ~r/^apps\//, "")
-      Mix.shell().info("  • #{short_file}: #{count} @callback definitions")
+      shell_info("  • #{short_file}: #{count} @callback definitions")
     end)
 
-    Mix.shell().info("""
+    shell_info("""
 
     =====================================
     RECOMMENDED ACTION PLAN
@@ -224,7 +246,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     case Jason.encode(report, pretty: true) do
       {:ok, json} ->
         File.write!("credo_analysis.json", json)
-        Mix.shell().info("\nDetailed report saved to: credo_analysis.json")
+        shell_info("\nDetailed report saved to: credo_analysis.json")
 
       {:error, _} ->
         Logger.warning("Could not save detailed report")
@@ -236,16 +258,14 @@ defmodule Mix.Tasks.Credo.Refactor do
     impl_issues = Enum.filter(issues, &(&1["check"] == @impl_true_check))
 
     if Enum.empty?(impl_issues) do
-      Mix.shell().info("No '#{@impl_true_check}' issues found to fix.")
+      shell_info("No '#{@impl_true_check}' issues found to fix.")
       :ok
     else
       total_to_fix = Enum.count(impl_issues)
       plural = if total_to_fix > 1, do: "s", else: ""
       mode_info = if dry_run?, do: "[DRY RUN] ", else: ""
 
-      Mix.shell().info(
-        "#{mode_info}Found #{total_to_fix} missing @impl true issue#{plural} to fix."
-      )
+      shell_info("#{mode_info}Found #{total_to_fix} missing @impl true issue#{plural} to fix.")
 
       impl_issues
       |> Enum.group_by(& &1["filename"])
@@ -254,11 +274,11 @@ defmodule Mix.Tasks.Credo.Refactor do
       end)
 
       if dry_run? do
-        Mix.shell().info(
+        shell_info(
           IO.ANSI.yellow() <> "\nDry run complete. No files were modified." <> IO.ANSI.reset()
         )
       else
-        Mix.shell().info(
+        shell_info(
           IO.ANSI.green() <>
             "\nFixes applied. Please review the changes and run tests." <> IO.ANSI.reset()
         )
@@ -268,7 +288,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   defp process_file_for_impl_fix(filename, file_issues, dry_run?) do
     if dry_run? do
-      Mix.shell().info(
+      shell_info(
         "\n" <> IO.ANSI.yellow() <> "Proposed changes for #{filename}:" <> IO.ANSI.reset()
       )
 
@@ -279,7 +299,7 @@ defmodule Mix.Tasks.Credo.Refactor do
           "  Line #{issue["line_no"]}: Add @impl true before #{issue["trigger"]}"
         end)
 
-      Mix.shell().info(changes_summary)
+      shell_info(changes_summary)
     else
       # Use string-based replacement as fallback to AST transformation
       source_code = File.read!(filename)
@@ -287,12 +307,12 @@ defmodule Mix.Tasks.Credo.Refactor do
 
       if new_code != source_code do
         File.write!(filename, new_code)
-        Mix.shell().info(IO.ANSI.green() <> "Fixed: " <> IO.ANSI.reset() <> filename)
+        shell_info(IO.ANSI.green() <> "Fixed: " <> IO.ANSI.reset() <> filename)
 
         # Run mix format on the file to ensure proper formatting
         System.cmd("mix", ["format", filename], env: [], stderr_to_stdout: true)
       else
-        Mix.shell().info("No changes needed for: #{filename}")
+        shell_info("No changes needed for: #{filename}")
       end
     end
   end
@@ -402,7 +422,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     location_issues = Enum.filter(issues, &(&1["check"] == @location_check))
 
     if Enum.empty?(contract_issues) and Enum.empty?(location_issues) do
-      Mix.shell().info("No modules need contract extraction.")
+      shell_info("No modules need contract extraction.")
       :ok
     else
       target_modules =
@@ -417,9 +437,9 @@ defmodule Mix.Tasks.Credo.Refactor do
         |> Enum.uniq()
         |> Enum.sort()
 
-      Mix.shell().info("Extracting callbacks from #{length(target_modules)} modules...")
+      shell_info("Extracting callbacks from #{length(target_modules)} modules...")
 
-      Mix.shell().info(
+      shell_info(
         "Found #{length(location_issues)} misplaced @callback definitions in #{length(misplaced_files)} files..."
       )
 
@@ -544,30 +564,30 @@ defmodule Mix.Tasks.Credo.Refactor do
   defp save_extraction_report(report, dry_run?) do
     mode_info = if dry_run?, do: "[DRY RUN] ", else: ""
 
-    Mix.shell().info("\n#{mode_info}Contract Extraction Report")
-    Mix.shell().info("=" <> String.duplicate("=", 40))
+    shell_info("\n#{mode_info}Contract Extraction Report")
+    shell_info("=" <> String.duplicate("=", 40))
 
-    Mix.shell().info("Target Modules: #{report.summary.modules_needing_contracts}")
-    Mix.shell().info("Misplaced Callback Files: #{report.summary.misplaced_callback_files}")
-    Mix.shell().info("Total Misplaced Callbacks: #{report.summary.total_misplaced_callbacks}")
+    shell_info("Target Modules: #{report.summary.modules_needing_contracts}")
+    shell_info("Misplaced Callback Files: #{report.summary.misplaced_callback_files}")
+    shell_info("Total Misplaced Callbacks: #{report.summary.total_misplaced_callbacks}")
 
-    Mix.shell().info("\nClassified by Domain:")
+    shell_info("\nClassified by Domain:")
 
     Enum.each(report.classified_modules, fn {domain, modules} ->
-      Mix.shell().info("  #{domain}/: #{length(modules)} modules")
+      shell_info("  #{domain}/: #{length(modules)} modules")
 
       Enum.each(modules, fn mod ->
-        Mix.shell().info("    • #{mod.module} -> #{mod.contract_name}")
+        shell_info("    • #{mod.module} -> #{mod.contract_name}")
       end)
     end)
 
-    Mix.shell().info("\nMisplaced Callbacks:")
+    shell_info("\nMisplaced Callbacks:")
 
     Enum.each(report.misplaced_callbacks, fn file_info ->
-      Mix.shell().info("  #{file_info.file}: #{length(file_info.callbacks)} callbacks")
+      shell_info("  #{file_info.file}: #{length(file_info.callbacks)} callbacks")
 
       Enum.each(file_info.callbacks, fn cb ->
-        Mix.shell().info("    Line #{cb.line}: #{cb.signature}")
+        shell_info("    Line #{cb.line}: #{cb.signature}")
       end)
     end)
 
@@ -575,7 +595,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     case Jason.encode(report, pretty: true) do
       {:ok, json} ->
         File.write!("contract_extraction.json", json)
-        Mix.shell().info("\nDetailed report saved to: contract_extraction.json")
+        shell_info("\nDetailed report saved to: contract_extraction.json")
 
       {:error, _} ->
         Logger.warning("Could not save extraction report")
@@ -591,7 +611,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     location_issues = Enum.filter(issues, &(&1["check"] == @location_check))
 
     if Enum.empty?(contract_issues) and Enum.empty?(location_issues) do
-      Mix.shell().info("No contracts need to be generated.")
+      shell_info("No contracts need to be generated.")
       :ok
     else
       target_modules =
@@ -606,7 +626,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         |> Enum.uniq()
         |> Enum.sort()
 
-      Mix.shell().info("Generating contracts for #{length(target_modules)} modules...")
+      shell_info("Generating contracts for #{length(target_modules)} modules...")
 
       # Extract callbacks from files with misplaced definitions
       extracted_callbacks = extract_callbacks_from_files(misplaced_files)
@@ -632,7 +652,7 @@ defmodule Mix.Tasks.Credo.Refactor do
   defp generate_contracts_by_domain(classified_modules, extracted_callbacks, dry_run?) do
     classified_modules
     |> Enum.map(fn {domain, modules} ->
-      Mix.shell().info("Generating #{length(modules)} contracts in #{domain}/ domain...")
+      shell_info("Generating #{length(modules)} contracts in #{domain}/ domain...")
 
       domain_results =
         modules
@@ -663,7 +683,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
     result =
       if dry_run? do
-        Mix.shell().info("  [DRY RUN] Would create: #{contract_path}")
+        shell_info("  [DRY RUN] Would create: #{contract_path}")
         {:dry_run, contract_path}
       else
         # Ensure directory exists
@@ -671,11 +691,11 @@ defmodule Mix.Tasks.Credo.Refactor do
 
         case File.write(contract_path, contract_content) do
           :ok ->
-            Mix.shell().info("  ✓ Created: #{contract_path}")
+            shell_info("  ✓ Created: #{contract_path}")
             {:created, contract_path}
 
           {:error, reason} ->
-            Mix.shell().error("  ✗ Failed to create #{contract_path}: #{reason}")
+            shell_error("  ✗ Failed to create #{contract_path}: #{reason}")
             {:error, contract_path, reason}
         end
       end
@@ -847,50 +867,44 @@ defmodule Mix.Tasks.Credo.Refactor do
     successful = count_successful_generations(generation_results)
     failed = total_contracts - successful
 
-    Mix.shell().info("\n#{mode_info}Contract Generation Report")
-    Mix.shell().info("=" <> String.duplicate("=", 50))
+    shell_info("\n#{mode_info}Contract Generation Report")
+    shell_info("=" <> String.duplicate("=", 50))
 
-    Mix.shell().info("Target Modules: #{length(target_modules)}")
-    Mix.shell().info("Contracts Generated: #{successful}/#{total_contracts}")
+    shell_info("Target Modules: #{length(target_modules)}")
+    shell_info("Contracts Generated: #{successful}/#{total_contracts}")
 
     if failed > 0 do
-      Mix.shell().info("Failed Generations: #{failed}")
+      shell_info("Failed Generations: #{failed}")
     end
 
-    Mix.shell().info("\nGenerated by Domain:")
+    shell_info("\nGenerated by Domain:")
 
     Enum.each(generation_results, fn {domain, results} ->
       domain_successful = Enum.count(results, &match?(%{result: {:created, _}}, &1))
-      Mix.shell().info("  #{domain}/: #{domain_successful}/#{length(results)} contracts")
+      shell_info("  #{domain}/: #{domain_successful}/#{length(results)} contracts")
 
       Enum.each(results, fn result ->
         case result.result do
           {:created, _path} ->
-            Mix.shell().info(
-              "    ✓ #{result.contract_name} (#{result.callbacks_found} callbacks)"
-            )
+            shell_info("    ✓ #{result.contract_name} (#{result.callbacks_found} callbacks)")
 
           {:dry_run, _path} ->
-            Mix.shell().info(
-              "    → #{result.contract_name} (#{result.callbacks_found} callbacks)"
-            )
+            shell_info("    → #{result.contract_name} (#{result.callbacks_found} callbacks)")
 
           {:error, _path, reason} ->
-            Mix.shell().info("    ✗ #{result.contract_name} - #{reason}")
+            shell_info("    ✗ #{result.contract_name} - #{reason}")
         end
       end)
     end)
 
     if !dry_run? and successful > 0 do
-      Mix.shell().info("\nNext Steps:")
+      shell_info("\nNext Steps:")
 
-      Mix.shell().info(
-        "1. Review generated contracts in apps/arbor_contracts/lib/arbor/contracts/"
-      )
+      shell_info("1. Review generated contracts in apps/arbor_contracts/lib/arbor/contracts/")
 
-      Mix.shell().info("2. Add @behaviour declarations to implementation modules")
-      Mix.shell().info("3. Remove @callback definitions from implementation files")
-      Mix.shell().info("4. Run 'mix credo.refactor' to validate contract compliance")
+      shell_info("2. Add @behaviour declarations to implementation modules")
+      shell_info("3. Remove @callback definitions from implementation files")
+      shell_info("4. Run 'mix credo.refactor' to validate contract compliance")
     end
 
     # Save detailed generation report
@@ -926,7 +940,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     case Jason.encode(report, pretty: true) do
       {:ok, json} ->
         File.write!(filename, json)
-        Mix.shell().info("\nDetailed report saved to: #{filename}")
+        shell_info("\nDetailed report saved to: #{filename}")
 
       {:error, _} ->
         Logger.warning("Could not save generation report")
@@ -942,7 +956,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     location_issues = Enum.filter(issues, &(&1["check"] == @location_check))
 
     if Enum.empty?(contract_issues) and Enum.empty?(location_issues) do
-      Mix.shell().info(
+      shell_info(
         "No implementation migration needed - all modules already use contracts properly."
       )
 
@@ -960,11 +974,9 @@ defmodule Mix.Tasks.Credo.Refactor do
         |> Enum.uniq()
         |> Enum.sort()
 
-      Mix.shell().info(
-        "Migrating #{length(target_modules)} implementation modules to use contracts..."
-      )
+      shell_info("Migrating #{length(target_modules)} implementation modules to use contracts...")
 
-      Mix.shell().info(
+      shell_info(
         "Removing misplaced @callback definitions from #{length(files_with_callbacks)} files..."
       )
 
@@ -1315,67 +1327,67 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Print migration report header with summary statistics
   defp print_migration_header(mode_info, target_modules, files_with_callbacks, stats) do
-    Mix.shell().info("\n#{mode_info}Implementation Migration Report")
-    Mix.shell().info("=" <> String.duplicate("=", 50))
+    shell_info("\n#{mode_info}Implementation Migration Report")
+    shell_info("=" <> String.duplicate("=", 50))
 
-    Mix.shell().info("Target Modules: #{length(target_modules)}")
-    Mix.shell().info("Files with Callbacks: #{length(files_with_callbacks)}")
+    shell_info("Target Modules: #{length(target_modules)}")
+    shell_info("Files with Callbacks: #{length(files_with_callbacks)}")
 
-    Mix.shell().info("\n@behaviour Declarations:")
-    Mix.shell().info("  Added: #{stats.behaviour_success}")
-    Mix.shell().info("  Already Present: #{stats.behaviour_already_present}")
+    shell_info("\n@behaviour Declarations:")
+    shell_info("  Added: #{stats.behaviour_success}")
+    shell_info("  Already Present: #{stats.behaviour_already_present}")
 
-    Mix.shell().info(
+    shell_info(
       "  Failed: #{stats.total_behaviour_results - stats.behaviour_success - stats.behaviour_already_present}"
     )
 
-    Mix.shell().info("\n@callback Removals:")
-    Mix.shell().info("  Files Processed: #{stats.callback_success}")
-    Mix.shell().info("  Failed: #{stats.total_callback_results - stats.callback_success}")
+    shell_info("\n@callback Removals:")
+    shell_info("  Files Processed: #{stats.callback_success}")
+    shell_info("  Failed: #{stats.total_callback_results - stats.callback_success}")
   end
 
   # Print detailed behaviour declaration results
   defp print_behaviour_results(behaviour_results) do
-    Mix.shell().info("\nBehaviour Declaration Results:")
+    shell_info("\nBehaviour Declaration Results:")
 
     Enum.each(behaviour_results, fn result ->
       case result.result do
         {:added, _} ->
-          Mix.shell().info("  ✓ #{result.module} -> #{result.contract}")
+          shell_info("  ✓ #{result.module} -> #{result.contract}")
 
         {:already_present, _} ->
-          Mix.shell().info("  = #{result.module} (already has @behaviour)")
+          shell_info("  = #{result.module} (already has @behaviour)")
 
         {:dry_run, _} ->
-          Mix.shell().info("  → #{result.module} -> #{result.contract}")
+          shell_info("  → #{result.module} -> #{result.contract}")
 
         {:error, reason} ->
-          Mix.shell().info("  ✗ #{result.module} - #{reason}")
+          shell_info("  ✗ #{result.module} - #{reason}")
       end
     end)
   end
 
   # Print detailed callback removal results
   defp print_callback_results(callback_results) do
-    Mix.shell().info("\nCallback Removal Results:")
+    shell_info("\nCallback Removal Results:")
 
     Enum.each(callback_results, fn result ->
       case result.result do
         {:removed, _} ->
-          Mix.shell().info(
+          shell_info(
             "  ✓ #{Path.basename(result.file)}: #{result.callbacks_removed} callbacks removed"
           )
 
         {:no_callbacks, _} ->
-          Mix.shell().info("  = #{Path.basename(result.file)}: no callbacks found")
+          shell_info("  = #{Path.basename(result.file)}: no callbacks found")
 
         {:dry_run, _} ->
-          Mix.shell().info(
+          shell_info(
             "  → #{Path.basename(result.file)}: #{result.callbacks_removed} callbacks to remove"
           )
 
         {:error, reason} ->
-          Mix.shell().info("  ✗ #{Path.basename(result.file)} - #{reason}")
+          shell_info("  ✗ #{Path.basename(result.file)} - #{reason}")
       end
     end)
   end
@@ -1386,33 +1398,33 @@ defmodule Mix.Tasks.Credo.Refactor do
       total_changes = stats.behaviour_success + stats.callback_success
 
       if total_changes > 0 do
-        Mix.shell().info("\nNext Steps:")
-        Mix.shell().info("1. Run 'mix compile' to check for compilation errors")
-        Mix.shell().info("2. Run 'mix credo.refactor' to validate contract compliance")
-        Mix.shell().info("3. Run tests to ensure functionality is preserved")
+        shell_info("\nNext Steps:")
+        shell_info("1. Run 'mix compile' to check for compilation errors")
+        shell_info("2. Run 'mix credo.refactor' to validate contract compliance")
+        shell_info("3. Run tests to ensure functionality is preserved")
       end
     end
   end
 
   # Fix misplaced @behaviour declarations in @moduledoc strings
   defp fix_misplaced_behaviour_declarations(_issues, opts) do
-    Mix.shell().info("🔧 Fixing misplaced @behaviour declarations...")
+    shell_info("🔧 Fixing misplaced @behaviour declarations...")
 
     # Find files with @behaviour inside @moduledoc strings
     files_to_fix = find_files_with_misplaced_behaviours()
 
     if opts[:dry_run] do
-      Mix.shell().info("DRY RUN: Would fix #{length(files_to_fix)} files:")
+      shell_info("DRY RUN: Would fix #{length(files_to_fix)} files:")
 
       Enum.each(files_to_fix, fn {file, contract} ->
-        Mix.shell().info("  #{file} - move @behaviour #{contract}")
+        shell_info("  #{file} - move @behaviour #{contract}")
       end)
     else
       Enum.each(files_to_fix, fn {file, contract} ->
         fix_behaviour_in_file(file, contract)
       end)
 
-      Mix.shell().info("✅ Fixed @behaviour declarations in #{length(files_to_fix)} files")
+      shell_info("✅ Fixed @behaviour declarations in #{length(files_to_fix)} files")
     end
   end
 
@@ -1474,14 +1486,14 @@ defmodule Mix.Tasks.Credo.Refactor do
               )
 
             File.write!(file_path, fixed_content)
-            Mix.shell().info("  ✓ Fixed #{file_path}")
+            shell_info("  ✓ Fixed #{file_path}")
 
           nil ->
-            Mix.shell().error("  ✗ Could not find @moduledoc block in #{file_path}")
+            shell_error("  ✗ Could not find @moduledoc block in #{file_path}")
         end
 
       {:error, reason} ->
-        Mix.shell().error("  ✗ Could not read #{file_path}: #{reason}")
+        shell_error("  ✗ Could not read #{file_path}: #{reason}")
     end
   end
 
@@ -1512,7 +1524,7 @@ defmodule Mix.Tasks.Credo.Refactor do
     case Jason.encode(report, pretty: true) do
       {:ok, json} ->
         File.write!(filename, json)
-        Mix.shell().info("\nDetailed migration report saved to: #{filename}")
+        shell_info("\nDetailed migration report saved to: #{filename}")
 
       {:error, _} ->
         Logger.warning("Could not save migration report")

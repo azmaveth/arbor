@@ -37,6 +37,9 @@ defmodule Mix.Tasks.Test.Analyze do
 
   use Mix.Task
 
+  # Mix tasks use Mix environment functions not available during static analysis
+  @dialyzer {:nowarn_function, run: 1}
+
   # Note: TestSuiteAnalyzer is in test/support and only available in test environment
 
   @impl Mix.Task
@@ -53,7 +56,9 @@ defmodule Mix.Tasks.Test.Analyze do
       )
 
     # Start application for test analysis
-    Mix.Task.run("app.start")
+    if function_exported?(Mix.Task, :run, 1) do
+      Mix.Task.run("app.start")
+    end
 
     IO.puts("\n🔍 Analyzing test suite performance...\n")
 

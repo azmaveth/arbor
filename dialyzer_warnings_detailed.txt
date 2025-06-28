@@ -1,0 +1,103 @@
+     warning: Arbor.Test.Performance.TestSuiteAnalyzer.analyze_test_run/1 is undefined (module Arbor.Test.Performance.TestSuiteAnalyzer is not available or is yet to be defined)
+     warning: Arbor.Test.Performance.TestSuiteAnalyzer.generate_report/1 is undefined (module Arbor.Test.Performance.TestSuiteAnalyzer is not available or is yet to be defined)
+    warning: this clause of defp handle_restore_result/2 is never used
+     warning: :cpu_sup.avg1/0 is undefined (module :cpu_sup is not available or is yet to be defined)
+    warning: this clause of defp handle_restore_result/2 is never used
+     warning: the following clause will never match:
+     warning: the following clause will never match:
+deps/websockex/lib/websockex.ex:77:no_return
+lib/arbor/agents/code_analyzer.ex:40:pattern_match
+lib/arbor/agents/code_analyzer.ex:40:pattern_match_cov
+lib/arbor/contracts/telemetry/performance_event.ex:39:callback_spec_arg_type_mismatch
+supertype of the expected type for the validate/1 callback
+Behaviour callback type:
+lib/arbor/core/agent_reconciler.ex:960:20:pattern_match
+lib/arbor/core/agent_reconciler.ex:1039:16:pattern_match_cov
+lib/arbor/core/agent_reconciler.ex:1082:9:pattern_match_cov
+lib/arbor/core/cluster_manager.ex:770:31:unknown_function
+lib/arbor/core/gateway.ex:174:callback_spec_arg_type_mismatch
+supertype of the expected type for the get_execution_status/2 callback
+Behaviour callback type:
+lib/arbor/core/gateway.ex:193:callback_spec_arg_type_mismatch
+supertype of the expected type for the cancel_execution/3 callback
+Behaviour callback type:
+lib/arbor/core/gateway.ex:1553:16:pattern_match_cov
+lib/arbor/core/gateway_http.ex:81:16:pattern_match_cov
+lib/arbor/core/gateway_http.ex:117:47:call
+The function call will not succeed.
+lib/arbor/core/horde_checkpoint_registry.ex:28:7:callback_arg_type_mismatch
+supertype of the expected type for the start_service/1 callback
+Behaviour callback type:
+lib/arbor/core/horde_checkpoint_registry.ex:83:9:pattern_match_cov
+lib/arbor/core/horde_supervisor.ex:101:7:callback_arg_type_mismatch
+supertype of the expected type for the start_service/1 callback
+Behaviour callback type:
+lib/arbor/core/horde_supervisor.ex:140:30:pattern_match
+lib/arbor/core/horde_supervisor.ex:512:7:no_return
+lib/arbor/core/horde_supervisor.ex:512:7:no_return
+lib/arbor/core/horde_supervisor.ex:513:5:call
+The function call will not succeed.
+lib/arbor/core/sessions/manager.ex:555:11:pattern_match_cov
+lib/arbor/core/sessions/manager.ex:866:19:pattern_match
+lib/arbor/core/sessions/manager.ex:867:22:pattern_match
+lib/arbor/core/stateful_example_agent.ex:10:pattern_match
+lib/arbor/core/stateful_example_agent.ex:10:pattern_match_cov
+lib/arbor/core/stateful_example_agent.ex:218:16:pattern_match
+lib/arbor/core/stateful_example_agent.ex:226:16:pattern_match
+lib/arbor/persistence/repo.ex:25:callback_spec_arg_type_mismatch
+supertype of the expected type for the put_dynamic_repo/1 callback
+Behaviour callback type:
+lib/arbor/security/policy_engine.ex:61:32:pattern_match
+lib/arbor/test/mocks/local_cluster_registry.ex:497:7:callback_arg_type_mismatch
+supertype of the expected type for the start_service/1 callback
+Behaviour callback type:
+lib/arbor/test/mocks/local_supervisor.ex:453:7:callback_arg_type_mismatch
+supertype of the expected type for the start_service/1 callback
+Behaviour callback type:
+lib/arbor_cli/cli.ex:33:7:no_return
+lib/arbor_cli/cli.ex:67:20:call
+The function call will not succeed.
+lib/arbor_cli/cli.ex:75:20:call
+The function call will not succeed.
+lib/arbor_cli/cli.ex:84:17:pattern_match
+lib/arbor_cli/cli.ex:91:20:call
+The function call will not succeed.
+lib/arbor_cli/cli.ex:130:7:no_return
+Function print_error/2 will never be called.
+lib/arbor_cli/gateway_client.ex:65:7:no_return
+lib/arbor_cli/gateway_client.ex:65:28:call
+The function call will not succeed.
+lib/arbor_cli/renderer.ex:275:8:pattern_match_cov
+lib/arbor_cli/renderer.ex:283:8:pattern_match_cov
+lib/arbor_cli/renderer_enhanced.ex:83:32:call
+The function call will not succeed.
+lib/mix/tasks/arbor.gen.impl.ex:1:callback_info_missing
+lib/mix/tasks/arbor.gen.impl.ex:30:24:unknown_function
+lib/mix/tasks/arbor.gen.impl.ex:31:11:unknown_function
+lib/mix/tasks/arbor.gen.impl.ex:39:13:unknown_function
+lib/mix/tasks/arbor.gen.impl.ex:86:13:unknown_function
+lib/mix/tasks/arbor.gen.impl.ex:91:9:unknown_function
+lib/mix/tasks/credo.refactor.ex:1:callback_info_missing
+lib/mix/tasks/credo.refactor.ex:50:9:unknown_function
+lib/mix/tasks/credo.refactor.ex:195:9:unknown_function
+lib/mix/tasks/credo.refactor.ex:227:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:239:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:282:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:405:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:578:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:594:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:635:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:666:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:893:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:929:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:945:11:unknown_function
+lib/mix/tasks/credo.refactor.ex:1211:8:pattern_match
+lib/mix/tasks/credo.refactor.ex:1334:9:unknown_function
+lib/mix/tasks/credo.refactor.ex:1353:15:unknown_function
+lib/mix/tasks/credo.refactor.ex:1378:15:unknown_function
+lib/mix/tasks/credo.refactor.ex:1392:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:1408:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:1484:13:unknown_function
+lib/mix/tasks/credo.refactor.ex:1515:13:unknown_function
+lib/mix/tasks/test.analyze.ex:1:callback_info_missing
+lib/mix/tasks/test.analyze.ex:56:14:unknown_function
