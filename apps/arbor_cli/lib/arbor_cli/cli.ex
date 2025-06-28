@@ -113,7 +113,7 @@ defmodule ArborCli.CLI do
         args = case subcommand do
           :spawn -> [parsed.args[:type]]
           :status -> [parsed.args[:agent_id]]
-          :exec -> [parsed.args[:agent_id], parsed.args[:command] | parsed.unknown]
+          :exec -> [parsed.args[:agent_id], parsed.args[:command]] ++ (parsed.unknown || [])
           :list -> []
         end
 

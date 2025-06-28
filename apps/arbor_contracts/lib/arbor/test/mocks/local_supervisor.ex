@@ -392,6 +392,33 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
     end
   end
 
+  @impl true
+  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
+    # Find the agent_id for this monitor reference
+    {agent_id, _} =
+      Enum.find(state.monitors, fn {_id, monitor_ref} -> monitor_ref == ref end) ||
+        {nil, nil}
+
+    if agent_id do
+      Logger.info("Agent #{agent_id} (#{inspect(pid)}) terminated with reason: #{inspect(reason)}")
+
+      # Clean up agent from state
+      new_agents = Map.delete(state.agents, agent_id)
+      new_monitors = Map.delete(state.monitors, agent_id)
+
+      # Trigger event handler if registered
+      if handler = Map.get(state.event_handlers, :agent_stopped) do
+        spawn(fn -> handler.({:agent_stopped, agent_id, %{reason: reason, pid: pid}}) end)
+      end
+
+      new_state = %{state | agents: new_agents, monitors: new_monitors}
+      {:noreply, new_state}
+    else
+      # Unknown monitor reference, just ignore
+      {:noreply, state}
+    end
+  end
+
   # Private helpers
 
   defp start_agent_process(spec) do

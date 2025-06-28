@@ -112,9 +112,9 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     :ets.new(state.monitors_table, [:bag, :public, :named_table])
     :ets.new(state.ttl_table, [:set, :public, :named_table])
 
-    # Start TTL cleanup process if needed
+    # Start TTL cleanup timer if needed
     if opts[:enable_ttl_cleanup] do
-      spawn_link(fn -> ttl_cleanup_loop(state) end)
+      schedule_ttl_cleanup()
     end
 
     {:ok, state}
@@ -316,8 +316,8 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
   def register_with_ttl(name, pid, ttl, metadata, state) do
     case register_name(name, pid, metadata, state) do
       :ok ->
-        # Schedule expiration
-        expires_at = DateTime.add(DateTime.utc_now(), ttl, :millisecond)
+        # Schedule expiration using monotonic time for reliable comparison
+        expires_at = System.monotonic_time(:millisecond) + ttl
         :ets.insert(state.ttl_table, {name, expires_at})
         :ok
 
@@ -601,11 +601,10 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
     length(names) > 0 or length(groups) > 0
   end
 
-  defp ttl_cleanup_loop(state) do
-    # Check every second
-    Process.sleep(1000)
-
-    now = DateTime.utc_now()
+  @impl true
+  def handle_info(:ttl_cleanup, state) do
+    # Use monotonic time for reliable comparison
+    now = System.monotonic_time(:millisecond)
 
     expired =
       :ets.select(state.ttl_table, [
@@ -616,6 +615,13 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
       unregister_name(name, state)
     end)
 
-    ttl_cleanup_loop(state)
+    # Schedule next cleanup
+    schedule_ttl_cleanup()
+    
+    {:noreply, state}
+  end
+
+  defp schedule_ttl_cleanup do
+    Process.send_after(self(), :ttl_cleanup, 1000)
   end
 end
