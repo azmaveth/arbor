@@ -217,7 +217,7 @@ defmodule Arbor.Core.HordeRegistryApiTest do
 
     test "Registry select handles malformed patterns gracefully", %{} do
       # Test with malformed pattern - should not crash
-      assert_raise _, fn ->
+      assert_raise FunctionClauseError, fn ->
         Horde.Registry.select(Arbor.Core.HordeAgentRegistry, "invalid_pattern")
       end
     end

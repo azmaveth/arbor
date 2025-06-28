@@ -107,7 +107,6 @@ defmodule Arbor.Core.Sessions.Session do
   - `:timeout` - Session timeout in milliseconds
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts) do
     session_id = Keyword.fetch!(opts, :session_id)
 

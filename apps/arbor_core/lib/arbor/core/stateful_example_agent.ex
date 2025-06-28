@@ -50,7 +50,7 @@ defmodule Arbor.Core.StatefulExampleAgent do
 
   # GenServer callbacks
 
-  @impl true
+  @impl GenServer
   def init(args) do
     agent_id = Keyword.get(args, :agent_id)
     _agent_metadata = Keyword.get(args, :agent_metadata, %{})
@@ -111,7 +111,6 @@ defmodule Arbor.Core.StatefulExampleAgent do
     {:ok, state, {:continue, :register_with_supervisor}}
   end
 
-  @impl Arbor.Core.AgentBehavior
   def get_agent_metadata(state) do
     %{
       type: :stateful_example,
@@ -122,14 +121,14 @@ defmodule Arbor.Core.StatefulExampleAgent do
     }
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast(:increment, state) do
     new_state = %{state | counter: state.counter + 1}
     Logger.debug("Incremented counter to #{new_state.counter}")
     {:noreply, new_state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:set_value, key, value}, state) do
     new_data = Map.put(state.data, key, value)
     new_state = %{state | data: new_data}
@@ -137,7 +136,7 @@ defmodule Arbor.Core.StatefulExampleAgent do
     {:noreply, new_state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast(:checkpoint, state) do
     # save_checkpoint always returns :ok according to its spec
     :ok = AgentCheckpoint.save_checkpoint(state.agent_id, state)
@@ -151,31 +150,31 @@ defmodule Arbor.Core.StatefulExampleAgent do
     {:noreply, new_state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:prepare_checkpoint, _from, state) do
     # Extract checkpoint data for migration/restore
     checkpoint_data = extract_checkpoint_data(state)
     {:reply, checkpoint_data, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:checkpoint, state) do
     # Handle automatic checkpoint trigger
     handle_cast(:checkpoint, state)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(msg, state) do
     Logger.debug("StatefulExampleAgent received unexpected message: #{inspect(msg)}")
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def terminate(_reason, state) do
     # Save final checkpoint (registration cleanup handled by HordeSupervisor)
     if state.agent_id do
@@ -188,7 +187,6 @@ defmodule Arbor.Core.StatefulExampleAgent do
 
   # AgentBehavior callback implementations
 
-  @impl Arbor.Core.AgentBehavior
   def extract_state(state) do
     # Return only essential state data (exclude runtime metadata)
     checkpoint_data = %{
@@ -202,7 +200,6 @@ defmodule Arbor.Core.StatefulExampleAgent do
     {:ok, checkpoint_data}
   end
 
-  @impl Arbor.Core.AgentBehavior
   def restore_state(_agent_spec, checkpoint_data) do
     # Reconstruct full state from checkpoint data
     # Use Map.get to safely access keys

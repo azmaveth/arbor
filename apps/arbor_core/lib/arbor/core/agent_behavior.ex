@@ -24,27 +24,23 @@ defmodule Arbor.Core.AgentBehavior do
         end
 
         # Optional: Override to provide agent-specific metadata for registration
-        @impl Arbor.Core.AgentBehavior
         def get_agent_metadata(state) do
           %{capability: :do_stuff}
         end
 
         # Optional: Override extract_state if you need custom logic
-        @impl Arbor.Core.AgentBehavior
         def extract_state(state) do
           # Default implementation returns {:ok, state}
           {:ok, state}
         end
 
         # Optional: Override restore_state if you need custom logic
-        @impl Arbor.Core.AgentBehavior
         def restore_state(agent_spec, restored_state) do
           # Default implementation returns {:ok, restored_state}
           {:ok, restored_state}
         end
 
         # Optional: Override to handle registration result
-        @impl Arbor.Core.AgentBehavior
         def handle_registration_result(state, {:ok, _}) do
           # Registration was successful
           state
@@ -76,7 +72,6 @@ defmodule Arbor.Core.AgentBehavior do
   serializable format.
 
   ## Example
-      @impl Arbor.Core.AgentBehavior
       def extract_state(state) do
         # Only persist the :data field
         {:ok, Map.get(state, :data)}
@@ -112,7 +107,6 @@ defmodule Arbor.Core.AgentBehavior do
   the initial agent spec or perform transformations to reconstruct the full agent state.
 
   ## Example
-      @impl Arbor.Core.AgentBehavior
       def restore_state(current_state, restored_data) do
         new_state = Map.put(current_state, :data, restored_data)
         {:ok, new_state}
@@ -145,7 +139,6 @@ defmodule Arbor.Core.AgentBehavior do
   metadata for agent discovery and interaction.
 
   ## Example
-      @impl Arbor.Core.AgentBehavior
       def get_agent_metadata(state) do
         %{
           type: :file_processor,
@@ -181,7 +174,6 @@ defmodule Arbor.Core.AgentBehavior do
   this to update the agent's state based on the registration outcome.
 
   ## Example
-      @impl Arbor.Core.AgentBehavior
       def handle_registration_result(state, {:ok, _pid}) do
         Map.put(state, :status, :registered)
       end
@@ -205,13 +197,10 @@ defmodule Arbor.Core.AgentBehavior do
     quote do
       # Default implementations
 
-      @impl Arbor.Core.AgentBehavior
       def extract_state(state), do: {:ok, state}
 
-      @impl Arbor.Core.AgentBehavior
       def restore_state(_agent_spec, restored_state), do: {:ok, restored_state}
 
-      @impl Arbor.Core.AgentBehavior
       def get_agent_metadata(_state), do: %{}
 
       @impl true

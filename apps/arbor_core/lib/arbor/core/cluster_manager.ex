@@ -83,7 +83,6 @@ defmodule Arbor.Core.ClusterManager do
   - `:connect_timeout` - Timeout for initial cluster connection (default: 30_000)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end

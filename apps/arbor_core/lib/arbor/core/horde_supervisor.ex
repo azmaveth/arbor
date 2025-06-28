@@ -84,7 +84,6 @@ defmodule Arbor.Core.HordeSupervisor do
   Starts the HordeSupervisor GenServer.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -514,7 +513,7 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @spec extract_agent_state(String.t()) :: {:ok, any()} | {:error, term()}
-  @impl true
+  @impl Arbor.Contracts.Cluster.Supervisor
   def extract_agent_state(agent_id) do
     # Simplified implementation to avoid complex handoff logic
     case HordeRegistry.lookup_agent_name(agent_id) do
@@ -532,7 +531,7 @@ defmodule Arbor.Core.HordeSupervisor do
   end
 
   @spec restore_agent_state(String.t(), map()) :: {:ok, any()} | {:error, term()}
-  @impl true
+  @impl Arbor.Contracts.Cluster.Supervisor
   def restore_agent_state(agent_id, state_data) do
     handle_agent_handoff(agent_id, :takeover, state_data)
   end

@@ -75,12 +75,10 @@ defmodule Arbor.Test.Mocks.TestAgent do
 
   # AgentBehavior implementation
 
-  @impl true
   def extract_state(state) do
     {:ok, Map.take(state, [:agent_id, :value, :started_at, :restart_count])}
   end
 
-  @impl true
   def restore_state(current_state, checkpoint_data) do
     restored_state = %{
       current_state
@@ -93,7 +91,6 @@ defmodule Arbor.Test.Mocks.TestAgent do
     {:ok, restored_state}
   end
 
-  @impl true
   def get_agent_metadata(state) do
     %{
       agent_id: state.agent_id,

@@ -92,7 +92,6 @@ defmodule Arbor.Agents.CodeAnalyzer do
   - `:working_dir` - Safe directory path for analysis (optional, defaults to /tmp)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  @impl true
   def start_link(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
     GenServer.start_link(__MODULE__, args, name: via_name(agent_id))
@@ -163,7 +162,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   # GenServer Callbacks
   # ================================
 
-  @impl true
+  @impl GenServer
   def init(args) do
     agent_id = Keyword.fetch!(args, :agent_id)
     working_dir = Keyword.get(args, :working_dir, "/tmp")
@@ -197,7 +196,6 @@ defmodule Arbor.Agents.CodeAnalyzer do
     end
   end
 
-  @impl Arbor.Core.AgentBehavior
   def get_agent_metadata(state) do
     %{
       type: :code_analyzer,
@@ -208,7 +206,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     }
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:analyze_file, path}, _from, state) do
     with {:ok, safe_path} <- validate_path(path, state.working_dir),
          {:ok, analysis} <- perform_file_analysis(safe_path) do
@@ -237,7 +235,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:analyze_directory, path}, _from, state) do
     with {:ok, safe_path} <- validate_path(path, state.working_dir),
          {:ok, analysis} <- perform_directory_analysis(safe_path) do
@@ -266,7 +264,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:list_files, path}, _from, state) do
     with {:ok, safe_path} <- validate_path(path, state.working_dir),
          {:ok, files} <- list_directory_files(safe_path) do
@@ -283,7 +281,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:exec, command, args}, _from, state) do
     case execute_command(command, args, state) do
       {:ok, _result} = success ->
@@ -306,7 +304,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:get_status, _from, state) do
     status = %{
       agent_id: state.agent_id,

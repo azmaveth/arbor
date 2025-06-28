@@ -248,9 +248,7 @@ defmodule Arbor.Persistence.Integration.DockerFallbackTest do
         assert match?({:docker_unavailable, _}, result)
         {_, reason} = result
         assert String.contains?(reason, "explicitly disabled")
-
-        finally
-
+      after
         case original do
           nil -> System.delete_env("SKIP_TESTCONTAINERS")
           value -> System.put_env("SKIP_TESTCONTAINERS", value)
@@ -274,9 +272,7 @@ defmodule Arbor.Persistence.Integration.DockerFallbackTest do
           {:docker_available, :use_testcontainers} ->
             assert true
         end
-
-        finally
-
+      after
         case original do
           nil -> System.delete_env("SKIP_TESTCONTAINERS")
           value -> System.put_env("SKIP_TESTCONTAINERS", value)
