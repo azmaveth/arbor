@@ -9,6 +9,8 @@
   
   # AgentBehavior defensive patterns that are unreachable in some implementations
   # NOTE: These warnings appear but may be accepted as defensive programming
+  ~r/handle_restore_result.*is never used/,
+  ~r/handle_restore_result.*pattern.*match/,
   
   # WebSockEx dependency issue - external library
   ~r/websockex\.ex.*no_return/,

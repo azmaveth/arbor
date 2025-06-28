@@ -135,25 +135,6 @@ defmodule Arbor.Test.Mocks.LocalCoordinator do
     end)
   end
 
-  @impl true
-  def init(_opts) do
-    state = %__MODULE__{
-      nodes: %{},
-      agents: %{},
-      event_log: [],
-      health_metrics: %{},
-      sync_status: %{
-        last_sync_timestamp: 0,
-        coordinator_nodes: [],
-        sync_conflicts: [],
-        partition_status: %{}
-      },
-      redistribution_plans: []
-    }
-
-    {:ok, state}
-  end
-
   # Node lifecycle management
 
   @spec handle_node_join(map(), any()) :: :ok

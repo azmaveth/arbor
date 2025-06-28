@@ -29,7 +29,7 @@ defmodule ArborCli.CLI do
 
   This function is called by the escript when the `arbor` command is executed.
   """
-  @spec main([String.t()]) :: :ok
+  @spec main([String.t()]) :: no_return()
   def main(args) do
     # Start the application if not already started
     Application.ensure_all_started(:arbor_cli)
@@ -48,7 +48,13 @@ defmodule ArborCli.CLI do
   @doc """
   Parse command line arguments into a structured command.
   """
-  @spec parse_args([String.t()]) :: map()
+  @spec parse_args([String.t()]) :: %{
+          command: [atom(), ...],
+          args: %{atom() => any()},
+          options: %{atom() => any()},
+          flags: %{atom() => boolean() | pos_integer()},
+          unknown: [String.t()]
+        }
   def parse_args(args) do
     spec = command_spec()
 
@@ -79,11 +85,6 @@ defmodule ArborCli.CLI do
         IO.puts(:stderr, "Errors for command '#{Enum.join(command_path, " ")}':")
         Enum.each(errors, &IO.puts(:stderr, "  #{&1}"))
         IO.puts(:stderr, "Use 'arbor --help' for usage information.")
-        System.halt(1)
-
-      {:error, {error_type, error_data}} ->
-        print_error(error_type, error_data)
-        print_help(spec)
         System.halt(1)
 
       other ->
@@ -126,7 +127,7 @@ defmodule ArborCli.CLI do
   @doc """
   Handle command execution results.
   """
-  @spec handle_result({:ok, any()} | {:error, any()}) :: :ok
+  @spec handle_result({:ok, any()} | {:error, any()}) :: no_return()
   def handle_result({:ok, result}) do
     render_enhanced_success(result)
     System.halt(0)
@@ -290,7 +291,7 @@ defmodule ArborCli.CLI do
 
   # Private functions
 
-  @spec command_spec() :: Optimus.spec()
+  @spec command_spec() :: Optimus.t()
   defp command_spec do
     Optimus.new!(
       name: "arbor",
@@ -465,13 +466,7 @@ defmodule ArborCli.CLI do
     end
   end
 
-  @spec print_error(any(), any()) :: :ok
-  defp print_error(error_type, error_data) do
-    IO.puts(:stderr, "Error: #{error_type}")
-    IO.puts(:stderr, "Details: #{inspect(error_data)}")
-  end
-
-  @spec print_help(Optimus.spec()) :: :ok
+  @spec print_help(Optimus.t()) :: :ok
   defp print_help(spec) do
     IO.puts(Optimus.help(spec))
   end
