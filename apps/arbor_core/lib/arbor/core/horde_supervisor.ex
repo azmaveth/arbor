@@ -98,10 +98,15 @@ defmodule Arbor.Core.HordeSupervisor do
   # ================================
 
   @impl SupervisorContract
-  def start_service(config) do
+  def start_service(config) when is_list(config) do
+    # Convert keyword list to map for contract compliance
+    start_service(Enum.into(config, %{}))
+  end
+
+  def start_service(config) when is_map(config) do
     # HordeSupervisor is started as part of the supervision tree
     # This callback is for compatibility with the contract
-    start_link(config)
+    start_link(Enum.to_list(config))
   end
 
   @impl SupervisorContract

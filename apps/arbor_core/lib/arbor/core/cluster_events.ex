@@ -265,7 +265,7 @@ defmodule Arbor.Core.ClusterEvents do
   Get cluster event broadcasting statistics.
   """
   @spec get_stats() :: %{
-          active_topics: map(),
+          active_topics: %{binary() => non_neg_integer()},
           node: node(),
           cluster_id: binary(),
           pubsub_name: atom()

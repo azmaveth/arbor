@@ -37,8 +37,6 @@ defmodule Mix.Tasks.Test.Analyze do
       mix test.analyze --json
   """
 
-  use Mix.Task
-
   # Mix tasks use Mix environment functions not available during static analysis
   @dialyzer {:nowarn_function, run: 1}
 

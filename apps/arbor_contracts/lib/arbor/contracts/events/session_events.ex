@@ -39,7 +39,7 @@ defmodule Arbor.Contracts.Events.SessionEvents do
       field(:timestamp, DateTime.t())
     end
 
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       event = %__MODULE__{
         session_id: Keyword.fetch!(attrs, :session_id),

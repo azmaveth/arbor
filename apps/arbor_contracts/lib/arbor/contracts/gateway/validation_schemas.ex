@@ -132,7 +132,10 @@ defmodule Arbor.Contracts.Gateway.ValidationSchemas do
   @doc """
   Lists all available validation schemas.
   """
-  @spec available_schemas() :: [atom()]
+  @spec available_schemas() :: [
+          :spawn_agent | :command_context | :command_options | :full_execution,
+          ...
+        ]
   def available_schemas do
     [
       :spawn_agent,

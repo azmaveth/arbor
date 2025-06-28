@@ -25,9 +25,14 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
   end
 
   @impl true
-  def start_service(config) do
+  def start_service(config) when is_list(config) do
+    # Convert keyword list to map for contract compliance
+    start_service(Enum.into(config, %{}))
+  end
+
+  def start_service(config) when is_map(config) do
     # Start the checkpoint registry service
-    start_link(config)
+    start_link(Enum.to_list(config))
   end
 
   @impl true
@@ -77,11 +82,11 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
 
           case Horde.Registry.register(@registry_name, checkpoint_key, checkpoint_data) do
             {:ok, _} -> :ok
-            error -> error
+            {:error, {:already_registered, _pid}} -> {:error, :still_registered}
           end
 
-        error ->
-          error
+        {:error, {:already_registered, _pid}} ->
+          {:error, :registration_failed}
       end
 
     {:reply, result, state}

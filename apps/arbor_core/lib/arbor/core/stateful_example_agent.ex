@@ -225,17 +225,13 @@ defmodule Arbor.Core.StatefulExampleAgent do
 
   @spec extract_checkpoint_data(state :: map()) :: map()
   def extract_checkpoint_data(state) do
-    case extract_state(state) do
-      {:ok, data} -> data
-      {:error, _} -> %{}
-    end
+    {:ok, data} = extract_state(state)
+    data
   end
 
   @spec restore_from_checkpoint(checkpoint_data :: map(), current_state :: map()) :: map()
   def restore_from_checkpoint(checkpoint_data, current_state) do
-    case restore_state(current_state, checkpoint_data) do
-      {:ok, state} -> state
-      {:error, _} -> current_state
-    end
+    {:ok, state} = restore_state(current_state, checkpoint_data)
+    state
   end
 end

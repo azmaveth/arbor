@@ -20,7 +20,7 @@ defmodule Arbor.CodeGen.ContractAnalyzer do
   Currently delegates to analyze/1 for contract module analysis.
   """
   @impl true
-  @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+  @spec process(input :: any()) :: {:ok, [map()]} | {:error, :contract_not_found | :invalid_input}
   def process(contract_module) when is_atom(contract_module) do
     analyze(contract_module)
   end
@@ -34,7 +34,7 @@ defmodule Arbor.CodeGen.ContractAnalyzer do
   Currently no configuration options are supported.
   """
   @impl true
-  @spec configure(options :: keyword()) :: :ok | {:error, term()}
+  @spec configure(options :: keyword()) :: :ok
   def configure(_options) do
     :ok
   end

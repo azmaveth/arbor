@@ -17,8 +17,6 @@ defmodule Mix.Tasks.Credo.Refactor do
       # mix credo.refactor --dry-run
   """
 
-  use Mix.Task
-
   require Logger
 
   # Mix tasks use Mix environment functions not available during static analysis

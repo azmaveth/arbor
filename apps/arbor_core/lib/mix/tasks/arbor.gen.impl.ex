@@ -22,8 +22,6 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   in the `arbor_core` app).
   """
 
-  use Mix.Task
-
   alias Arbor.CodeGen.ImplementationGenerator
 
   # Mix tasks use Mix environment functions not available during static analysis

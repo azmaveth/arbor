@@ -56,7 +56,7 @@ defmodule Arbor.Contracts.Agents.Messages do
           timeout: 60_000
         )
     """
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       task = %__MODULE__{
         task_id: attrs[:task_id] || generate_task_id(),
@@ -102,7 +102,7 @@ defmodule Arbor.Contracts.Agents.Messages do
 
     @valid_statuses [:success, :failure, :timeout, :cancelled]
 
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       response = %__MODULE__{
         task_id: Keyword.fetch!(attrs, :task_id),
@@ -142,7 +142,7 @@ defmodule Arbor.Contracts.Agents.Messages do
       field(:limit, pos_integer(), enforce: false)
     end
 
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       query = %__MODULE__{
         query_id: attrs[:query_id] || generate_query_id(),
@@ -206,7 +206,7 @@ defmodule Arbor.Contracts.Agents.Messages do
       field(:constraints, map(), default: %{})
     end
 
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       request = %__MODULE__{
         request_id: attrs[:request_id] || generate_request_id(),
@@ -248,7 +248,7 @@ defmodule Arbor.Contracts.Agents.Messages do
 
     @valid_statuses [:granted, :denied, :pending_approval]
 
-    @spec new(keyword()) :: {:ok, t()} | {:error, term()}
+    @spec new(keyword()) :: {:ok, t()}
     def new(attrs) do
       response = %__MODULE__{
         request_id: Keyword.fetch!(attrs, :request_id),

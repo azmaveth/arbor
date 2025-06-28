@@ -205,7 +205,7 @@ defmodule Arbor.Contracts.Persistence.Snapshot do
   @doc """
   Restore a snapshot from a serialized map.
   """
-  @spec from_map(map()) :: {:ok, t()} | {:error, term()}
+  @spec from_map(map()) :: {:ok, t()}
   def from_map(map) when is_map(map) do
     attrs = parse_snapshot_fields(map)
     # Don't recalculate hash on restore - use stored hash

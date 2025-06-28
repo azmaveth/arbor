@@ -51,7 +51,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   # ================================
 
   @impl Arbor.Contracts.Agents.CodeAnalyzer
-  @spec process(input :: any()) :: {:ok, output :: any()} | {:error, term()}
+  @spec process(input :: any()) :: {:ok, [binary()] | map()} | {:error, term()}
   def process(input) do
     # This is a generic process function that could be used for batch operations
     # or alternative processing modes. For now, it delegates to the appropriate
@@ -72,7 +72,7 @@ defmodule Arbor.Agents.CodeAnalyzer do
   end
 
   @impl Arbor.Contracts.Agents.CodeAnalyzer
-  @spec configure(options :: keyword()) :: :ok | {:error, term()}
+  @spec configure(options :: keyword()) :: :ok
   def configure(options) do
     # Configuration could include setting working directory, max file size, etc.
     # For now, we'll accept any configuration
