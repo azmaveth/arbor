@@ -6,8 +6,6 @@ defmodule Arbor.Security.Application do
   use Application
 
   alias Arbor.Security.{
-    AuditLogger,
-    CapabilityStore,
     Kernel,
     Policies.RateLimiter,
     Repo,
@@ -37,10 +35,8 @@ defmodule Arbor.Security.Application do
           RateLimiter,
           # Start telemetry monitoring
           Telemetry,
-          # Start the security kernel and services
-          Kernel,
-          CapabilityStore,
-          AuditLogger
+          # Start the security kernel (manages CapabilityStore and AuditLogger)
+          Kernel
         ]
       end
 

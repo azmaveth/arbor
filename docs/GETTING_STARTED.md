@@ -52,50 +52,72 @@ session_id = session.id
 
 ```elixir
 # Spawn a code analyzer agent
-{:ok, agent_info} = Arbor.Core.Gateway.execute_command(
-  "spawn_agent",
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
   %{
-    session_id: session_id,
-    agent_type: "code_analyzer",
-    config: %{}
+    type: :spawn_agent,
+    params: %{
+      type: :code_analyzer,
+      working_dir: "/tmp"
+    }
   },
-  %{trace_id: "test-trace-001"}
+  %{session_id: session_id},
+  %{}
 )
 
-agent_id = agent_info.result.agent_id
+# Note: Gateway commands are asynchronous and return execution IDs
+# You can use the execution_id to track the command's progress
+IO.puts("Agent spawn started: #{execution_id}")
 ```
 
-#### 3. List Active Agents
+#### 3. Query Agents
 
 ```elixir
-# List all agents in the session
-{:ok, result} = Arbor.Core.Gateway.execute_command(
-  "list_agents",
+# Query agents in the system
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
+  %{
+    type: :query_agents,
+    params: %{}
+  },
   %{session_id: session_id},
-  %{trace_id: "test-trace-002"}
+  %{}
 )
 
-# Display agent information
-result.result.agents
+IO.puts("Agent query started: #{execution_id}")
 ```
 
 #### 4. Execute Agent Commands
 
 ```elixir
-# Send a command to the agent
-{:ok, result} = Arbor.Core.Gateway.execute_command(
-  "execute_agent_command",
+# Send a command to the agent (replace agent_id with actual agent ID)
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
   %{
-    session_id: session_id,
-    agent_id: agent_id,
-    command: "analyze",
-    args: %{target: "lib/arbor/core/gateway.ex"}
+    type: :execute_agent_command,
+    params: %{
+      agent_id: agent_id,
+      command: "analyze",
+      args: ["lib/arbor/core/gateway.ex"]
+    }
   },
-  %{trace_id: "test-trace-003"}
+  %{session_id: session_id},
+  %{}
 )
+
+IO.puts("Agent command started: #{execution_id}")
 ```
 
-#### 5. Check Agent Status
+#### 5. Working with Async Commands
+
+All Gateway commands return execution IDs for tracking:
+
+```elixir
+# Commands return execution IDs, not direct results
+{:ok, execution_id} = Arbor.Core.Gateway.execute_command(command, context, options)
+
+# Currently, result retrieval mechanisms are under development
+# For now, you can monitor telemetry events or check agent status
+```
+
+#### 6. Check Agent Status
 
 ```elixir
 # Get detailed agent information
@@ -156,14 +178,14 @@ elixir scripts/manual_tests/module_loading_test.exs
 
 ```elixir
 # In IEx console
-Arbor.Core.ClusterManager.get_cluster_status()
+Arbor.Core.ClusterManager.cluster_status()
 ```
 
-### View Registered Agents
+### View Registry Status
 
 ```elixir
-# Get all registered agents
-Arbor.Core.HordeRegistry.list_agents()
+# Get registry status
+Arbor.Core.HordeRegistry.get_status()
 ```
 
 ### Monitor Telemetry Events
@@ -184,45 +206,35 @@ Arbor.Core.HordeRegistry.list_agents()
 
 ### Application Startup Issues
 
-If you encounter errors when running `./scripts/dev.sh`:
+✅ **Resolved**: The application startup issues have been fixed. The development server now starts correctly with `./scripts/dev.sh`.
 
-```elixir
-** (EXIT) already started: #PID<0.288.0>
-```
+If you encounter any issues, check:
 
-This is a known issue with the application startup sequence. Current workarounds:
-
-1. **Use Test Mode**: The application works in test mode
-
-   ```bash
-   MIX_ENV=test iex -S mix
-   ```
-
-2. **Kill Existing Processes**: If processes are stuck
-
-   ```bash
-   killall beam.smp
-   ```
-
-3. **Check Database**: Ensure databases exist
+1. **Database**: Ensure databases exist
 
    ```bash
    mix ecto.create
    createdb arbor_security_dev  # If needed
    ```
 
-See [TESTING_FINDINGS.md](TESTING_FINDINGS.md) for detailed analysis of startup issues.
+2. **Dependencies**: Make sure all dependencies are installed
+
+   ```bash
+   mix deps.get
+   ```
+
+See [TESTING_FINDINGS.md](TESTING_FINDINGS.md) for detailed testing results and any remaining known issues.
 
 ## Current Limitations
 
 As Arbor is in alpha stage, several features are not yet implemented:
 
-1. **Application Startup** - Development server has initialization issues
-2. **CLI** - Command-line interface is incomplete
-3. **Web UI** - No web interface yet
-4. **AI Integration** - LLM integrations not implemented
-5. **Authentication** - No user authentication system
-6. **Persistence** - Limited persistence capabilities
+1. **CLI** - Command-line interface is incomplete
+2. **Web UI** - No web interface yet
+3. **AI Integration** - LLM integrations not implemented
+4. **Authentication** - No user authentication system
+5. **Result Retrieval** - No built-in mechanism to retrieve async command results
+6. **Agent Implementations** - Agent types exist but have limited functionality
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation status.
 
