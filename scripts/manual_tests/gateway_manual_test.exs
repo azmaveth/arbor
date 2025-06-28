@@ -1,11 +1,57 @@
 #!/usr/bin/env elixir
 
 # Manual Testing Script for Arbor Gateway Pattern Implementation
-# Run with: elixir test_gateway.exs
+# Run with: elixir scripts/manual_tests/gateway_manual_test.exs
 
-# Start the application
+# Setup Mix environment and start application
+Mix.start()
+Mix.env(:dev)
+
+# Change to project root directory
+project_root = Path.join([__DIR__, "..", ".."])
+File.cd!(project_root)
+
+# Load project configuration
+if File.exists?("mix.exs") do
+  Code.eval_file("mix.exs")
+  Mix.Project.get!()
+else
+  raise "Could not find mix.exs in #{File.cwd!()}"
+end
+
+# Ensure all dependencies are compiled and started
+Mix.Task.run("deps.loadpaths", [])
+
+# Compile (warnings expected but can be ignored)
+Mix.Task.run("compile", [])
+
+# Start the application with all dependencies
 Application.put_env(:arbor_core, :start_permanent, false)
-Application.ensure_all_started(:arbor_core)
+
+# Completely disable logging for clean output
+Application.put_env(:logger, :level, :emergency)
+Application.put_env(:logger, :backends, [])
+
+# Suppress compiler warnings and database connection errors
+Code.compiler_options(warnings_as_errors: false)
+Application.put_env(:arbor_security, Arbor.Security.Repo, 
+  start_apps_before_migration: [], adapter: Ecto.Adapters.Postgres)
+
+# Start required applications in order (suppressing output)
+Process.flag(:trap_exit, true)
+{:ok, _} = Application.ensure_all_started(:logger)
+{:ok, _} = Application.ensure_all_started(:telemetry)
+
+# Start with fallback configurations to avoid database errors
+Application.put_env(:arbor_persistence, :event_store_impl, :mock)
+Application.put_env(:arbor_security, :persistence_impl, :mock)
+
+{:ok, _} = Application.ensure_all_started(:arbor_contracts)
+{:ok, _} = Application.ensure_all_started(:arbor_security)
+{:ok, _} = Application.ensure_all_started(:arbor_persistence)
+{:ok, _} = Application.ensure_all_started(:arbor_core)
+
+IO.puts("✅ Arbor applications started successfully")
 
 defmodule ArborTester do
   @moduledoc """
@@ -75,8 +121,8 @@ defmodule ArborTester do
         
         # Verify session exists
         case Arbor.Core.Sessions.Manager.get_session(session_id) do
-          {:ok, pid, metadata} ->
-            IO.puts("   ✅ Session found: PID=#{inspect(pid)}, Metadata=#{inspect(metadata)}")
+          {:ok, session_info} ->
+            IO.puts("   ✅ Session found: #{inspect(Map.keys(session_info))}")
           {:error, reason} ->
             IO.puts("   ❌ Session not found: #{reason}")
         end
@@ -87,8 +133,8 @@ defmodule ArborTester do
         
         # Get session state
         case Arbor.Core.Sessions.Manager.get_session(session_id) do
-          {:ok, session_pid, _} ->
-            case Arbor.Core.Sessions.Session.get_state(session_pid) do
+          {:ok, session_info} ->
+            case Arbor.Core.Sessions.Session.get_state(session_info.pid) do
               {:ok, state} ->
                 IO.puts("   ✅ Session state retrieved: uptime=#{state.uptime_seconds}s")
               error ->
