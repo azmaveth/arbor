@@ -400,7 +400,9 @@ defmodule Arbor.Test.Mocks.LocalSupervisor do
         {nil, nil}
 
     if agent_id do
-      Logger.info("Agent #{agent_id} (#{inspect(pid)}) terminated with reason: #{inspect(reason)}")
+      Logger.info(
+        "Agent #{agent_id} (#{inspect(pid)}) terminated with reason: #{inspect(reason)}"
+      )
 
       # Clean up agent from state
       new_agents = Map.delete(state.agents, agent_id)

@@ -617,7 +617,7 @@ defmodule Arbor.Test.Mocks.LocalClusterRegistry do
 
     # Schedule next cleanup
     schedule_ttl_cleanup()
-    
+
     {:noreply, state}
   end
 
