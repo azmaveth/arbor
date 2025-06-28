@@ -58,7 +58,7 @@ defmodule Arbor.Core.Sessions.Session do
   # =====================================================
 
   @impl Arbor.Contracts.Session.Session
-  @spec create_session(params :: map()) :: {:ok, session_id :: binary()} | {:error, term()}
+  @spec create_session(params :: map()) :: {:error, :use_session_manager}
   def create_session(_params) do
     # This should be called on the Manager, not individual sessions
     {:error, :use_session_manager}

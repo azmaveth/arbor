@@ -142,9 +142,9 @@ defmodule Arbor.Core.HordeSupervisor do
       {:error, :already_started} ->
         {:error, :already_started}
 
-      {:error, :sync_failed} ->
-        Logger.error("Failed to register agent spec due to sync issues", agent_id: agent_id)
-        {:error, :spec_sync_failed}
+      {:error, {:already_registered, _pid}} ->
+        Logger.error("Agent spec already registered", agent_id: agent_id)
+        {:error, :spec_already_registered}
 
       {:error, reason} ->
         {:error, reason}

@@ -94,7 +94,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @spec unregister_name(name :: term(), state :: term() | nil) :: :ok
+  @spec unregister_name(name :: binary() | {:agent, any()}, state :: any()) :: :ok
   def unregister_name(name, _state \\ nil) do
     agent_id = extract_agent_id(name)
 
@@ -252,7 +252,8 @@ defmodule Arbor.Core.HordeRegistry do
     {:ok, agent_count}
   end
 
-  @spec monitor(name :: term(), state :: term()) :: {:ok, reference()} | {:error, atom()}
+  @spec monitor(name :: binary() | {:agent, any()}, state :: any()) ::
+          {:ok, reference()} | {:error, :not_registered}
   def monitor(name, _state) do
     case lookup_name(name) do
       {:ok, {pid, _metadata}} ->
@@ -264,7 +265,14 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @spec health_check(state :: term() | nil) :: {:ok, map()}
+  @spec health_check(state :: any()) ::
+          {:ok,
+           %{
+             node_count: non_neg_integer(),
+             nodes: [atom() | {any(), any()}],
+             registration_count: non_neg_integer(),
+             sync_status: :critical | :degraded | :healthy
+           }}
   def health_check(_state \\ nil) do
     members = Horde.Cluster.members(@registry_name)
     {:ok, agent_count} = count(nil)
@@ -340,7 +348,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @spec unregister_agent_name(String.t()) :: :ok | {:error, atom()}
+  @spec unregister_agent_name(String.t()) :: :ok
   def unregister_agent_name(agent_id) do
     unregister_name(agent_id)
   end
@@ -362,7 +370,11 @@ defmodule Arbor.Core.HordeRegistry do
     end)
   end
 
-  @spec get_registry_status() :: map()
+  @spec get_registry_status() :: %{
+          count: non_neg_integer(),
+          members: [atom() | {atom(), atom()}],
+          status: :critical | :degraded | :healthy
+        }
   def get_registry_status do
     members = Horde.Cluster.members(@registry_name)
     {:ok, count} = count(nil)
@@ -446,7 +458,7 @@ defmodule Arbor.Core.HordeRegistry do
     end
   end
 
-  @spec list_agent_groups(String.t()) :: {:ok, [String.t()]} | {:error, atom()}
+  @spec list_agent_groups(String.t()) :: {:ok, [String.t()]}
   def list_agent_groups(agent_id) do
     # TODO (SCALABILITY): This is a full registry scan and will not scale.
     # To optimize, consider storing an agent's group memberships within its own

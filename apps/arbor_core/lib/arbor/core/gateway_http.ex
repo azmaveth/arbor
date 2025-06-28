@@ -27,7 +27,7 @@ defmodule Arbor.Core.GatewayHTTP do
 
   @impl Arbor.Contracts.Gateway.GatewayHTTP
   @spec handle_request(request :: any(), context :: map()) ::
-          {:ok, response :: any()} | {:error, reason :: term()}
+          {:ok, binary()} | {:error, any()}
   def handle_request(request, context) do
     # Convert HTTP request to Gateway request format
     gateway_request = %{
@@ -39,7 +39,7 @@ defmodule Arbor.Core.GatewayHTTP do
   end
 
   @impl Arbor.Contracts.Gateway.GatewayHTTP
-  @spec validate_request(request :: any()) :: :ok | {:error, term()}
+  @spec validate_request(request :: any()) :: :ok | {:error, :invalid_http_request}
   def validate_request(request) do
     # Basic HTTP request validation
     case request do

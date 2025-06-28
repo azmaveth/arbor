@@ -1059,15 +1059,8 @@ defmodule Arbor.Core.AgentReconciler do
       )
 
       # Clean up runtime registry entry first (like HordeSupervisor.stop_agent does)
-      # Only unregister if agent_id is a valid string
-      case agent_id do
-        id when is_binary(id) ->
-          HordeRegistry.unregister_agent_name(id)
-
-        _ ->
-          # Skip unregistration for undefined or invalid agent_id
-          :ok
-      end
+      # agent_id is always a binary based on Dialyzer analysis
+      HordeRegistry.unregister_agent_name(agent_id)
 
       # Terminate the orphaned process
       case DynamicSupervisor.terminate_child(@supervisor_name, pid) do

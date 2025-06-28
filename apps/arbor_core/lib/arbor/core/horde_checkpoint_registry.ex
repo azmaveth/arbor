@@ -84,9 +84,6 @@ defmodule Arbor.Core.HordeCheckpointRegistry do
             {:ok, _} -> :ok
             {:error, {:already_registered, _pid}} -> {:error, :still_registered}
           end
-
-        {:error, {:already_registered, _pid}} ->
-          {:error, :registration_failed}
       end
 
     {:reply, result, state}

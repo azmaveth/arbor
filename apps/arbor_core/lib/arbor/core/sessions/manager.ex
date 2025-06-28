@@ -59,7 +59,7 @@ defmodule Arbor.Core.Sessions.Manager do
   # =====================================================
 
   @impl Arbor.Contracts.Session.Manager
-  @spec create_session(params :: map()) :: {:ok, session_id :: binary()} | {:error, term()}
+  @spec create_session(params :: map()) :: {:ok, struct()} | {:error, term()}
   def create_session(params) do
     # Delegate to the two-arity version with the default manager
     create_session(params, __MODULE__)
@@ -333,7 +333,7 @@ defmodule Arbor.Core.Sessions.Manager do
   ## Returns
   - `{:ok, 0}` - Indicates zero sessions were cleaned up.
   """
-  @spec handle_expired_sessions(pid()) :: {:ok, integer()}
+  @spec handle_expired_sessions(pid()) :: {:ok, 0}
   def handle_expired_sessions(manager_pid) when is_pid(manager_pid) do
     {:ok, 0}
   end
@@ -862,10 +862,8 @@ defmodule Arbor.Core.Sessions.Manager do
           )
 
         _ ->
-          case SessionRegistry.list_all_sessions() do
-            {:ok, sessions} -> Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
-            {:error, _} -> []
-          end
+          sessions = SessionRegistry.list_all_sessions()
+          Enum.map(sessions, fn {_id, pid, _metadata} -> pid end)
       end
 
     # Convert to structs in parallel with timeout

@@ -39,7 +39,7 @@ defmodule Arbor.Contracts.Validation do
   Returns `{:ok, data}` if validation passes or is disabled.
   Returns `{:error, reason}` if validation fails.
   """
-  @spec validate(any(), any()) :: {:ok, any()} | {:error, any()}
+  @spec validate(any(), any()) :: {:ok, any()} | {:error, binary()}
   def validate(data, schema) do
     if enabled?() do
       validate_with_norm(data, schema)

@@ -37,7 +37,7 @@ defmodule Arbor.Persistence.Store do
         }
 
   @impl true
-  @spec init(keyword()) :: {:ok, store_state()} | {:error, term()}
+  @spec init(keyword()) :: {:ok, store_state()}
   def init(opts) do
     backend = Keyword.get(opts, :backend, :in_memory)
 
