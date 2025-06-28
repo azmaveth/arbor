@@ -536,7 +536,8 @@ defmodule Arbor.Core.Sessions.Manager do
       {:ok, info} = Manager.get_session_info(session_id)
       IO.puts("Active agents: \#{length(info.active_agents)}")
   """
-  @spec get_session_info(Types.session_id()) :: {:ok, map()} | {:error, :not_found}
+  @spec get_session_info(Types.session_id()) ::
+          {:ok, %{atom() => any(), metadata: map(), pid: pid()}} | {:error, :not_found}
   def get_session_info(session_id) do
     case get_session(session_id) do
       {:ok, session_data} ->
@@ -544,24 +545,13 @@ defmodule Arbor.Core.Sessions.Manager do
         metadata = Map.drop(session_data, [:id, :pid])
 
         # Get additional info from the session process
-        case Arbor.Core.Sessions.Session.get_state(pid) do
-          {:ok, session_state} ->
-            {:ok,
-             Map.merge(session_state, %{
-               pid: pid,
-               metadata: metadata
-             })}
+        {:ok, session_state} = Arbor.Core.Sessions.Session.get_state(pid)
 
-          _ ->
-            # Fallback if we can't get session state
-            {:ok,
-             %{
-               id: session_id,
-               pid: pid,
-               metadata: metadata,
-               active_agents: []
-             }}
-        end
+        {:ok,
+         Map.merge(session_state, %{
+           pid: pid,
+           metadata: metadata
+         })}
 
       {:error, :not_found} = error ->
         error

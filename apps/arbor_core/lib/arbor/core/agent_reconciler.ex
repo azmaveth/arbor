@@ -219,7 +219,7 @@ defmodule Arbor.Core.AgentReconciler do
   # Arbor.Contracts.Agent.Reconciler callbacks
   #
 
-  @spec reconcile_agents() :: :ok | {:error, term()}
+  @spec reconcile_agents() :: :ok | {:error, {Exception.t(), Exception.stacktrace()}}
   def reconcile_agents do
     do_reconcile_agents()
     :ok

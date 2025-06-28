@@ -141,7 +141,7 @@ defmodule Arbor.Core.TelemetryHelper do
   If validation is successful, the event is emitted via `:telemetry.execute/3`.
   If validation fails, an error is logged and `{:error, reason}` is returned.
   """
-  @spec emit_typed_agent_event(AgentEvent.t()) :: :ok | {:error, term()}
+  @spec emit_typed_agent_event(Arbor.Contracts.Telemetry.Event.t()) :: :ok | {:error, term()}
   def emit_typed_agent_event(event) do
     case AgentEvent.validate(event) do
       :ok ->

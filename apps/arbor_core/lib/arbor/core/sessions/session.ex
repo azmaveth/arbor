@@ -65,7 +65,8 @@ defmodule Arbor.Core.Sessions.Session do
   end
 
   @impl Arbor.Contracts.Session.Session
-  @spec get_session(session_id :: binary()) :: {:ok, map()} | {:error, term()}
+  @spec get_session(session_id :: binary()) ::
+          {:ok, %{atom() => any(), id: any(), pid: pid()}} | {:error, :not_found}
   def get_session(session_id) do
     # Delegate to Manager for session lookup
     Arbor.Core.Sessions.Manager.get_session(session_id)

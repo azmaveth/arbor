@@ -192,7 +192,7 @@ defmodule Arbor.Core.AgentCheckpoint do
   Due to the eventually consistent nature of Horde's CRDT, this function
   includes a retry mechanism for recently saved checkpoints.
   """
-  @spec load_checkpoint(Types.agent_id()) :: {:ok, agent_state()} | {:error, :not_found | term()}
+  @spec load_checkpoint(Types.agent_id()) :: {:ok, any()} | {:error, :not_found | Exception.t()}
   def load_checkpoint(agent_id) when is_binary(agent_id) do
     load_checkpoint_with_retry(agent_id, 5, 100)
   end
