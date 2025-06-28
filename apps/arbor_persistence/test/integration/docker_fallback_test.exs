@@ -45,8 +45,6 @@ defmodule Arbor.Persistence.Integration.DockerFallbackTest do
     test "detect_environment structure is consistent" do
       result = IntegrationCase.detect_environment()
 
-      assert match?({:docker_available, :use_testcontainers} | {:docker_unavailable, _}, result)
-
       case result do
         {:docker_available, :use_testcontainers} ->
           # If Docker is available, that's fine
@@ -56,6 +54,9 @@ defmodule Arbor.Persistence.Integration.DockerFallbackTest do
           # If Docker is unavailable, reason should be a string
           assert is_binary(reason)
           assert String.length(reason) > 0
+
+        _ ->
+          flunk("Unexpected result format: #{inspect(result)}")
       end
     end
   end

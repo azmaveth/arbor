@@ -107,6 +107,8 @@ defmodule Arbor.Core.HordeRegistry do
     :ok
   end
 
+  @spec register_with_ttl(term(), pid(), non_neg_integer(), map(), map()) ::
+          {:error, :not_implemented}
   def register_with_ttl(_name, _pid, _ttl, _metadata, _state) do
     # TTL functionality temporarily disabled
     # Needs distributed timer solution (e.g., using Process.send_after with node tracking)

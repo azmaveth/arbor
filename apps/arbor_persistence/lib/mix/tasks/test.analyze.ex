@@ -1,8 +1,6 @@
 defmodule Mix.Tasks.Test.Analyze do
   @shortdoc "Analyzes test suite performance"
 
-  use Mix.Task
-
   @moduledoc """
   Analyzes test suite performance and provides optimization recommendations.
 
@@ -36,6 +34,8 @@ defmodule Mix.Tasks.Test.Analyze do
       # Get JSON output for CI integration
       mix test.analyze --json
   """
+
+  use Mix.Task
 
   # Mix tasks use Mix environment functions not available during static analysis
   @dialyzer {:nowarn_function, run: 1}

@@ -1,8 +1,6 @@
 defmodule Mix.Tasks.Credo.Refactor do
   @shortdoc "Analyzes and helps refactor Credo architectural issues"
 
-  use Mix.Task
-
   @moduledoc """
   Provides tools to analyze and refactor common Credo architectural issues in Arbor.
 
@@ -16,6 +14,8 @@ defmodule Mix.Tasks.Credo.Refactor do
       # mix credo.refactor --audit-contracts
       # mix credo.refactor --dry-run
   """
+
+  use Mix.Task
 
   require Logger
 
@@ -294,8 +294,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
       # Show a diff-like preview instead of full file
       changes_summary =
-        file_issues
-        |> Enum.map_join("\n", fn issue ->
+        Enum.map_join(file_issues, "\n", fn issue ->
           "  Line #{issue["line_no"]}: Add @impl true before #{issue["trigger"]}"
         end)
 
@@ -385,8 +384,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Domain mapping based on module names and existing contract patterns
   defp get_contract_domain(module_name) do
-    domain_patterns()
-    |> Enum.find_value("core", fn {pattern, domain} ->
+    Enum.find_value(domain_patterns(), "core", fn {pattern, domain} ->
       if String.contains?(module_name, pattern) do
         domain
       end
@@ -655,8 +653,7 @@ defmodule Mix.Tasks.Credo.Refactor do
       shell_info("Generating #{length(modules)} contracts in #{domain}/ domain...")
 
       domain_results =
-        modules
-        |> Enum.map(fn mod_info ->
+        Enum.map(modules, fn mod_info ->
           generate_single_contract(mod_info, extracted_callbacks, dry_run?)
         end)
 
@@ -687,7 +684,7 @@ defmodule Mix.Tasks.Credo.Refactor do
         {:dry_run, contract_path}
       else
         # Ensure directory exists
-        Path.dirname(contract_path) |> File.mkdir_p!()
+        File.mkdir_p!(Path.dirname(contract_path))
 
         case File.write(contract_path, contract_content) do
           :ok ->
@@ -726,8 +723,7 @@ defmodule Mix.Tasks.Credo.Refactor do
       if Enum.empty?(callbacks) do
         generate_placeholder_callbacks(domain, original_module)
       else
-        callbacks
-        |> Enum.map_join("\n", fn cb -> "  @callback #{cb.signature}" end)
+        Enum.map_join(callbacks, "\n", fn cb -> "  @callback #{cb.signature}" end)
       end
 
     # Use the domain-specific template
@@ -999,8 +995,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Add @behaviour declarations to implementation modules
   defp add_behaviour_declarations(target_modules, dry_run?) do
-    target_modules
-    |> Enum.map(fn module_name ->
+    Enum.map(target_modules, fn module_name ->
       # Map module to its contract and file path
       module_info = get_module_file_info(module_name)
       contract_info = get_contract_info_for_module(module_name)
@@ -1027,8 +1022,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Remove @callback definitions from files
   defp remove_misplaced_callbacks(files_with_callbacks, dry_run?) do
-    files_with_callbacks
-    |> Enum.map(fn file_path ->
+    Enum.map(files_with_callbacks, fn file_path ->
       case File.read(file_path) do
         {:ok, content} ->
           callbacks = extract_callbacks_from_content(content)
@@ -1071,19 +1065,19 @@ defmodule Mix.Tasks.Credo.Refactor do
 
     case parts do
       ["Arbor", "Core" | rest] ->
-        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
+        filename = Enum.map_join(rest, "/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/core/#{filename}.ex"
 
       ["Arbor", "Agents" | rest] ->
-        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
+        filename = Enum.map_join(rest, "/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/agents/#{filename}.ex"
 
       ["Arbor", "CodeGen" | rest] ->
-        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
+        filename = Enum.map_join(rest, "/", &Macro.underscore/1)
         "apps/arbor_core/lib/arbor/codegen/#{filename}.ex"
 
       ["Mix", "Tasks" | rest] ->
-        filename = rest |> Enum.map_join("/", &Macro.underscore/1)
+        filename = Enum.map_join(rest, "/", &Macro.underscore/1)
         "apps/arbor_core/lib/mix/tasks/#{filename}.ex"
 
       ["Arbor"] ->
@@ -1202,7 +1196,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # State: searching for @moduledoc
   defp find_moduledoc_end([line | rest], index, :searching) do
-    if is_moduledoc_start?(line) do
+    if moduledoc_start?(line) do
       handle_moduledoc_start(line, rest, index)
     else
       find_moduledoc_end(rest, index + 1, :searching)
@@ -1211,7 +1205,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # State: inside multi-line @moduledoc
   defp find_moduledoc_end([line | rest], index, :inside_doc) do
-    if is_doc_end?(line) do
+    if doc_end?(line) do
       # Found the end
       index
     else
@@ -1226,12 +1220,12 @@ defmodule Mix.Tasks.Credo.Refactor do
   end
 
   # Helper: Check if line starts @moduledoc
-  defp is_moduledoc_start?(line) do
+  defp moduledoc_start?(line) do
     String.match?(line, ~r/^\s*@moduledoc/)
   end
 
   # Helper: Check if line ends a doc block
-  defp is_doc_end?(line) do
+  defp doc_end?(line) do
     String.match?(line, ~r/^\s*"""/)
   end
 
@@ -1248,8 +1242,7 @@ defmodule Mix.Tasks.Credo.Refactor do
 
   # Skip initial blank lines and comments
   defp skip_initial_lines(lines) do
-    lines
-    |> Enum.drop_while(fn line ->
+    Enum.drop_while(lines, fn line ->
       String.trim(line) == "" || String.starts_with?(String.trim(line), "#")
     end)
   end

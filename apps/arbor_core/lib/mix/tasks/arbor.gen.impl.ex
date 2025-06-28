@@ -1,10 +1,6 @@
 defmodule Mix.Tasks.Arbor.Gen.Impl do
   @shortdoc "Generates an implementation for a contract"
 
-  use Mix.Task
-
-  alias Mix.Project
-
   @moduledoc """
   Generates a boilerplate implementation for an Arbor contract (behaviour).
 
@@ -24,7 +20,10 @@ defmodule Mix.Tasks.Arbor.Gen.Impl do
   in the `arbor_core` app).
   """
 
+  use Mix.Task
+
   alias Arbor.CodeGen.ImplementationGenerator
+  alias Mix.Project
 
   # Mix tasks use Mix environment functions not available during static analysis
   @dialyzer {:nowarn_function, run: 1}
