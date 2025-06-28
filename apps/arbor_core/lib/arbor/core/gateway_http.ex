@@ -77,11 +77,6 @@ defmodule Arbor.Core.GatewayHTTP do
         conn
         |> put_resp_content_type("application/json")
         |> send_resp(404, Jason.encode!(%{error: "Session not found"}))
-
-      {:error, reason} ->
-        conn
-        |> put_resp_content_type("application/json")
-        |> send_resp(400, Jason.encode!(%{error: inspect(reason)}))
     end
   end
 

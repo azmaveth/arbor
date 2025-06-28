@@ -202,6 +202,11 @@ defmodule Mix.Tasks.Test.Analyze do
     |> String.slice(0..13)
   end
 
+  # TestSuiteAnalyzer is only available in test environment
+  # Suppress Dialyzer warnings about undefined module
+  @dialyzer {:nowarn_function, analyze_with_suite_analyzer: 1}
+  @dialyzer {:nowarn_function, generate_analysis_report: 1}
+
   defp analyze_with_suite_analyzer(test_results) do
     module = Arbor.Test.Performance.TestSuiteAnalyzer
 

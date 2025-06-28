@@ -171,6 +171,9 @@ defmodule Arbor.Core.Gateway do
   - `{:ok, status}` - A map containing the execution's status information.
   - `{:error, :execution_not_found}` - If the execution ID does not exist.
   """
+  # Note: The behavior expects reference() but we use String.t() execution IDs
+  # This is an intentional design choice for distributed system compatibility
+  @dialyzer {:nowarn_function, get_execution_status: 2}
   @spec get_execution_status(Types.execution_id(), any()) ::
           {:ok, map()} | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
@@ -190,6 +193,8 @@ defmodule Arbor.Core.Gateway do
   - `:ok` - If the cancellation request was successfully processed.
   - `{:error, :execution_not_found}` - If the execution ID does not exist.
   """
+  # Note: The behavior expects reference() but we use String.t() execution IDs
+  @dialyzer {:nowarn_function, cancel_execution: 3}
   @spec cancel_execution(Types.execution_id(), any(), any()) ::
           :ok | {:error, :execution_not_found}
   @impl Arbor.Contracts.Gateway.API
@@ -1549,9 +1554,6 @@ defmodule Arbor.Core.Gateway do
 
       {:error, :not_registered} ->
         {:error, :agent_not_found}
-
-      {:error, reason} ->
-        {:error, {:agent_lookup_failed, reason}}
     end
   end
 

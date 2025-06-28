@@ -956,13 +956,6 @@ defmodule Arbor.Core.AgentReconciler do
               agent_id: agent_id,
               pid: inspect(pid)
             )
-
-          {:error, reason} ->
-            Logger.warning("Failed to register already running agent",
-              agent_id: agent_id,
-              pid: inspect(pid),
-              reason: inspect(reason)
-            )
         end
 
         Logger.debug("Agent already running during restart",
@@ -1035,14 +1028,6 @@ defmodule Arbor.Core.AgentReconciler do
       {:error, :not_registered} ->
         # No registry entry, nothing to clean up
         true
-
-      {:error, reason} ->
-        Logger.warning("Failed to check registry entry for cleanup",
-          agent_id: agent_id,
-          reason: inspect(reason)
-        )
-
-        false
     end
   end
 
