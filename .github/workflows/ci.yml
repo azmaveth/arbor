@@ -17,6 +17,22 @@ jobs:
     name: Test (Elixir ${{ matrix.elixir }} OTP ${{ matrix.otp }})
     runs-on: ubuntu-latest
 
+    # PostgreSQL service for integration tests
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: arbor_test
+          POSTGRES_PASSWORD: arbor_test
+          POSTGRES_DB: arbor_security_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +41,14 @@ jobs:
             otp: '26.1'
           - elixir: '1.16.0'
             otp: '26.2'
+
+    env:
+      # Database configuration for integration tests
+      POSTGRES_HOST: localhost
+      POSTGRES_USER: arbor_test
+      POSTGRES_PASSWORD: arbor_test
+      POSTGRES_DB: arbor_security_test
+      POSTGRES_PORT: 5432
 
     steps:
     - name: Checkout code
@@ -80,8 +104,18 @@ jobs:
     - name: Run Dialyzer type checking
       run: mix dialyzer --format github
 
-    - name: Run tests with coverage
-      run: mix test.ci
+    - name: Create test databases
+      run: |
+        mix ecto.create -r Arbor.Persistence.Repo
+        mix ecto.create -r Arbor.Security.Repo
+
+    - name: Run database migrations
+      run: |
+        mix ecto.migrate -r Arbor.Persistence.Repo
+        mix ecto.migrate -r Arbor.Security.Repo
+
+    - name: Run tests with coverage (including integration tests)
+      run: mix test --include integration --cover
 
     - name: Generate coverage report
       run: mix coveralls.json

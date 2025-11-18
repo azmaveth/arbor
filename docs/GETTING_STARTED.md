@@ -1,6 +1,6 @@
 # Getting Started with Arbor
 
-This guide will help you get Arbor running and explore its current capabilities.
+This guide will help you get Arbor running and explore its capabilities using both the CLI and programmatic API.
 
 ## Prerequisites
 
@@ -22,9 +22,78 @@ cd arbor
 ./scripts/dev.sh
 ```
 
-## Exploring Arbor with IEx
+## Using the Arbor CLI
 
-Since the CLI is still under development, the best way to explore Arbor is through the Elixir interactive shell.
+The Arbor CLI is complete and provides a full-featured interface for managing agents. This is the recommended way to interact with Arbor.
+
+### Basic CLI Commands
+
+```bash
+# Spawn a new agent
+arbor agent spawn code_analyzer --name my-analyzer --working-dir /tmp
+
+# List all agents
+arbor agent list
+
+# List agents with filtering (JSON format example)
+arbor agent list --filter '{"type":"code_analyzer"}' --format json
+
+# Get detailed agent status
+arbor agent status <agent-id>
+
+# Execute a command on an agent
+arbor agent exec <agent-id> analyze_file lib/arbor/core/gateway.ex
+
+# Execute a directory analysis
+arbor agent exec <agent-id> analyze_directory lib/arbor/core
+
+# List files in agent's working directory
+arbor agent exec <agent-id> list_files .
+```
+
+### CLI Features
+
+The CLI provides:
+- ✅ **Automatic session management** - No manual session creation needed
+- ✅ **Rich terminal output** - Colored output with tables and formatting
+- ✅ **Multiple output formats** - table (default), JSON, YAML
+- ✅ **Filtering and searching** - Filter agents by type, status, or other criteria
+- ✅ **Error handling** - Clear error messages with suggestions
+
+### Example Workflow
+
+```bash
+# 1. Start the development server (in one terminal)
+./scripts/dev.sh
+
+# 2. In another terminal, spawn an agent
+$ arbor agent spawn code_analyzer --name my-analyzer
+
+# Output:
+# Agent spawned: code_analyzer_abc123 (type: code_analyzer)
+
+# 3. List agents to verify
+$ arbor agent list
+
+# Output shows table:
+# Agent ID              | Type          | Status  | Uptime
+# -----------------------------------------------------------
+# code_analyzer_abc123  | code_analyzer | active  | 2m
+
+# 4. Execute analysis on a file
+$ arbor agent exec code_analyzer_abc123 analyze_file lib/arbor/core/gateway.ex
+
+# Output shows analysis results
+
+# 5. Check agent status
+$ arbor agent status code_analyzer_abc123
+
+# Shows detailed information including metadata and last activity
+```
+
+## Advanced: Using the Programmatic API
+
+For advanced use cases or when building integrations, you can use the direct Elixir API from IEx.
 
 ### Connect to Running System
 
@@ -34,9 +103,9 @@ In a new terminal:
 ./scripts/console.sh
 ```
 
-**Note**: If the console connection fails with "Could not connect to arbor@localhost", this is a known issue with remote shell connections. Instead, you can use the IEx session directly in the terminal where you started `./scripts/dev.sh`.
+**Note**: If the console connection fails with "Could not connect to arbor@localhost", you can use the IEx session directly in the terminal where you started `./scripts/dev.sh`.
 
-### Basic Operations
+### Basic API Operations
 
 #### 1. Create a Session
 
@@ -59,6 +128,7 @@ session_id = session.id
     type: :spawn_agent,
     params: %{
       type: :code_analyzer,
+      id: "my_analyzer",
       working_dir: "/tmp"
     }
   },
@@ -67,29 +137,13 @@ session_id = session.id
 )
 
 # Note: Gateway commands are asynchronous and return execution IDs
-# You can use the execution_id to track the command's progress
 IO.puts("Agent spawn started: #{execution_id}")
-
-# Alternative: Use the lower-level Gateway API directly
-{:ok, session_struct} = GenServer.call(
-  Arbor.Core.Gateway,
-  {:create_session, [created_by: "user", metadata: %{purpose: "testing"}]}
-)
-
-{:async, execution_id} = GenServer.call(
-  Arbor.Core.Gateway,
-  {:execute, session_struct.session_id, "spawn_agent", %{
-    "type" => "code_analyzer",
-    "id" => "my_analyzer",
-    "working_dir" => "/tmp"
-  }}
-)
 ```
 
 #### 3. Query Agents
 
 ```elixir
-# Query agents in the system
+# Query all agents in the system
 {:ok, execution_id} = Arbor.Core.Gateway.execute_command(
   %{
     type: :query_agents,
@@ -100,61 +154,32 @@ IO.puts("Agent spawn started: #{execution_id}")
 )
 
 IO.puts("Agent query started: #{execution_id}")
+
+# Alternative: Use lower-level API for synchronous results
+case Arbor.Core.HordeSupervisor.list_agents() do
+  {:ok, agents} ->
+    Enum.each(agents, fn agent ->
+      IO.puts("Agent: #{agent.agent_id} - Status: #{agent.status}")
+    end)
+  {:error, reason} ->
+    IO.puts("Error listing agents: #{inspect(reason)}")
+end
 ```
 
 #### 4. Execute Agent Commands
 
-First, you need to get the agent ID from a spawned agent. You can either capture it during spawning or query existing agents:
-
 ```elixir
-# Option 1: Capture agent ID when spawning with explicit ID
-{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
-  %{
-    type: :spawn_agent,
-    params: %{
-      type: :code_analyzer,
-      id: "my_analyzer",  # Specify an explicit ID
-      working_dir: "/tmp"
-    }
-  },
-  %{session_id: session_id},
-  %{}
-)
-
-# Use the ID you specified
+# First, get the agent ID (from spawning or by querying)
 agent_id = "my_analyzer"
 
-# Option 2: Query existing agents to get their IDs
-{:ok, execution_id} = Arbor.Core.Gateway.execute_command(
-  %{
-    type: :query_agents,
-    params: %{}
-  },
-  %{session_id: session_id},
-  %{}
-)
-
-# Alternative: Use the lower-level API to get agent info directly
-case Arbor.Core.HordeSupervisor.list_agents() do
-  {:ok, agents} ->
-    # Get the first agent's ID
-    agent_id = case agents do
-      [agent | _] -> agent.agent_id
-      [] -> nil
-    end
-    IO.puts("Found agent: #{agent_id}")
-  {:error, reason} ->
-    IO.puts("Error listing agents: #{inspect(reason)}")
-end
-
-# Now send a command to the agent (using the agent_id obtained above)
+# Send a command to analyze a file
 {:ok, execution_id} = Arbor.Core.Gateway.execute_command(
   %{
     type: :execute_agent_command,
     params: %{
       agent_id: agent_id,
-      command: "analyze",
-      args: ["lib/arbor/core/gateway.ex"]
+      command: :analyze_file,
+      args: ["/path/to/file.ex"]
     }
   },
   %{session_id: session_id},
@@ -166,7 +191,7 @@ IO.puts("Agent command started: #{execution_id}")
 
 #### 5. Working with Async Commands
 
-All Gateway commands return execution IDs for tracking:
+All Gateway commands are asynchronous and return execution IDs for tracking:
 
 ```elixir
 # Example: Spawn an agent and track its execution
@@ -179,25 +204,24 @@ command = %{
   }
 }
 
-context = %{session_id: session_id}  # Using the session_id from step 1
-options = %{}  # Empty options for now
+context = %{session_id: session_id}
+options = %{}
 
-# Commands return execution IDs, not direct results
+# Commands return execution IDs
 {:ok, execution_id} = Arbor.Core.Gateway.execute_command(command, context, options)
 
 IO.puts("Command execution started with ID: #{execution_id}")
 
-# Currently, result retrieval mechanisms are under development
-# For now, you can monitor telemetry events or check agent status
+# Note: Result retrieval mechanisms are under development
+# For now, use telemetry events or check agent status
 ```
 
 #### 6. Check Agent Status
 
 ```elixir
-# First, get an agent ID (from previous examples or by listing agents)
-agent_id = "my_analyzer"  # Or use any agent ID from previous steps
-
 # Get detailed agent information
+agent_id = "my_analyzer"
+
 case Arbor.Core.HordeSupervisor.get_agent_info(agent_id) do
   {:ok, agent_info} ->
     IO.inspect(agent_info, label: "Agent Info")
@@ -205,16 +229,6 @@ case Arbor.Core.HordeSupervisor.get_agent_info(agent_id) do
     IO.puts("Agent #{agent_id} not found")
   {:error, reason} ->
     IO.puts("Error getting agent info: #{inspect(reason)}")
-end
-
-# List all agents to see available IDs
-case Arbor.Core.HordeSupervisor.list_agents() do
-  {:ok, agents} ->
-    Enum.each(agents, fn agent ->
-      IO.puts("Agent: #{agent.agent_id} - Status: #{agent.status}")
-    end)
-  {:error, reason} ->
-    IO.puts("Error listing agents: #{inspect(reason)}")
 end
 ```
 
@@ -225,30 +239,52 @@ end
 1. **Gateway** - Central entry point for all operations
    - Manages sessions and command routing
    - Provides unified API
+   - Async execution model with tracking
 
 2. **Sessions** - Coordination contexts for agents
    - Manages agent lifecycle
    - Tracks resources and capabilities
+   - Distributed across cluster
 
 3. **Agents** - Autonomous processes with specific capabilities
    - Run in supervised processes
    - Can checkpoint and restore state
+   - Distributed via Horde supervision
 
 4. **Security** - Capability-based access control
    - Fine-grained permissions
    - Audit logging
+   - ⚠️ Currently using in-memory mocks (production persistence in progress)
+
+### Available Agent Types
+
+#### CodeAnalyzer (Production-Ready)
+Analyzes Elixir code files and directories.
+
+**Commands**:
+- `analyze_file <path>` - Analyze a single file (LOC, language, complexity)
+- `analyze_directory <path>` - Analyze all files in a directory
+- `list_files <path>` - List files (with security restrictions)
+
+**Security Features**:
+- Path traversal protection
+- File size limits (10MB)
+- Working directory isolation
 
 ## Running Tests
 
 ```bash
-# Run fast test suite
-./scripts/test.sh --fast
+# Run intelligent test dispatcher (context-aware)
+mix test
 
-# Run full test suite
-./scripts/test.sh
+# Run fast test suite only
+mix test --only fast
 
 # Run specific test file
 mix test test/arbor/core/gateway_test.exs
+
+# Run full test suite with coverage
+./scripts/test.sh --coverage
 ```
 
 ## Manual Testing Scripts
@@ -259,8 +295,11 @@ Explore the manual test scripts for examples:
 # List available manual tests
 ls scripts/manual_tests/
 
-# Run gateway manual test
-elixir scripts/manual_tests/gateway_manual_test.exs
+# Run gateway integration test
+elixir scripts/manual_tests/gateway_integration_test.exs
+
+# Run CLI integration test
+elixir scripts/manual_tests/cli_integration_test.exs
 
 # Run module loading test
 elixir scripts/manual_tests/module_loading_test.exs
@@ -268,24 +307,16 @@ elixir scripts/manual_tests/module_loading_test.exs
 
 ## Monitoring the System
 
-### Check Cluster Status
+### Using IEx Console
 
 ```elixir
-# In IEx console
+# Check cluster status
 Arbor.Core.ClusterManager.cluster_status()
-```
 
-### View Registry Status
-
-```elixir
 # Get registry status
 Arbor.Core.HordeRegistry.get_status()
-```
 
-### Monitor Telemetry Events
-
-```elixir
-# Attach to telemetry events
+# Monitor telemetry events
 :telemetry.attach(
   "print-agent-events",
   [:arbor, :agent, :started],
@@ -298,51 +329,98 @@ Arbor.Core.HordeRegistry.get_status()
 
 ## Troubleshooting
 
-### Application Startup Issues
+### Common Issues
 
-✅ **Resolved**: The application startup issues have been fixed. The development server now starts correctly with `./scripts/dev.sh`.
+#### Database Connection Errors
 
-If you encounter any issues, check:
+If you see database-related errors:
 
-1. **Database**: Ensure databases exist
+```bash
+# Create databases
+mix ecto.create
+createdb arbor_security_dev  # If needed
+```
 
-   ```bash
-   mix ecto.create
-   createdb arbor_security_dev  # If needed
-   ```
+#### Missing Dependencies
 
-2. **Dependencies**: Make sure all dependencies are installed
+```bash
+mix deps.get
+mix compile
+```
 
-   ```bash
-   mix deps.get
-   ```
+#### Application Startup
 
-See [TESTING_FINDINGS.md](TESTING_FINDINGS.md) for detailed testing results and any remaining known issues.
+✅ **Resolved**: Application startup issues have been fixed as of June 2025. The development server should start reliably with `./scripts/dev.sh`.
 
-## Current Limitations
+If you encounter issues:
+1. Check that PostgreSQL is running
+2. Verify Elixir/OTP versions (1.15.7+/26.1+)
+3. Run `./scripts/setup.sh` again
 
-As Arbor is in alpha stage, several features are not yet implemented:
+### Known Issues
 
-1. **CLI** - Command-line interface is incomplete
-2. **Web UI** - No web interface yet
-3. **AI Integration** - LLM integrations not implemented
-4. **Authentication** - No user authentication system
-5. **Result Retrieval** - No built-in mechanism to retrieve async command results
-6. **Agent Implementations** - Agent types exist but have limited functionality
-7. **Agent Registration** - Agents may experience race conditions during startup and take several retries to register successfully
+1. **Agent Registration Race Conditions**
+   - Agents may take multiple retries to register successfully during high load
+   - Workaround: The system automatically retries
+   - Fix scheduled for Priority 1.3
 
-See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation status.
+2. **Security Persistence** ⚠️ **Production Blocker**
+   - CapabilityStore and AuditLogger use in-memory storage
+   - All security data lost on restart
+   - Not suitable for production use
+   - Fix in progress (Priority 1.2)
+
+3. **Scalability Limits**
+   - Registry scans won't scale beyond ~1K agents
+   - Fix scheduled for Priority 1.4
+
+See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed status and [PLAN_UPDATED.md](../PLAN_UPDATED.md) for roadmap.
+
+## Current Development Status
+
+As of November 2025, Arbor is in **alpha stage (v0.2.0-dev)**:
+
+**✅ Complete**:
+- CLI with full agent management commands
+- Core infrastructure and distributed supervision
+- Agent spawning, querying, and execution
+- CodeAnalyzer production agent
+- Gateway pattern and session management
+
+**🚧 In Progress**:
+- Persistent security layer (Priority 1.2 - Critical)
+- Agent registration stability improvements
+- Scalability enhancements
+
+**❌ Not Yet Implemented**:
+- Interactive CLI mode
+- Configuration file support
+- Web UI
+- AI integration (LLM adapters)
+- Additional agent types
+- Authentication/authorization
 
 ## Next Steps
 
-1. **Explore the Code** - Browse the `/apps` directory to understand the architecture
-2. **Run Tests** - Use the test suite to see examples of usage
-3. **Read the Docs** - Check `/docs` for architecture and design documentation
-4. **Try Manual Tests** - Run scripts in `/scripts/manual_tests` for hands-on exploration
+### For Users
+
+1. **Try the CLI** - Use `arbor agent spawn` to create your first agent
+2. **Run Tests** - Explore the test suite for usage examples
+3. **Read Architecture Docs** - Check `/docs/arbor` for detailed design docs
+4. **Experiment with Manual Tests** - Run scripts in `/scripts/manual_tests`
+
+### For Developers
+
+1. **Read CLAUDE.md** - Development guidelines and conventions
+2. **Review PLAN_UPDATED.md** - Current roadmap and priorities
+3. **Check PROJECT_STATUS.md** - Detailed implementation status
+4. **Join Development** - See Priority 1.2 for critical work items
 
 ## Getting Help
 
 - **Documentation**: See the `/docs` directory
+- **Planning**: [PLAN_UPDATED.md](../PLAN_UPDATED.md) - Development roadmap
+- **Status**: [PROJECT_STATUS.md](PROJECT_STATUS.md) - Current implementation state
 - **Issues**: [GitHub Issues](https://github.com/azmaveth/arbor/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/azmaveth/arbor/discussions)
 
@@ -350,6 +428,11 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed implementation status.
 
 We welcome contributions! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
+Current priorities:
+- **Priority 1.2**: Implement persistent security layer (CapabilityStore, AuditLogger)
+- **Priority 1.3**: Resolve agent registration race conditions
+- **Priority 1.4**: Improve registry scalability
+
 ---
 
-*Remember: Arbor is alpha software. APIs and features will change as development progresses.*
+*Arbor is alpha software under active development. The CLI is production-ready, but core security persistence is needed before production deployment. See [PLAN_UPDATED.md](../PLAN_UPDATED.md) for timeline.*
