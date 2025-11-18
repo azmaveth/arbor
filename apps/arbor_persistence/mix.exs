@@ -32,6 +32,7 @@ defmodule Arbor.Persistence.MixProject do
   defp deps do
     [
       {:arbor_contracts, in_umbrella: true},
+      {:arbor_core, in_umbrella: true, only: :test},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
       {:jason, "~> 1.4"},
