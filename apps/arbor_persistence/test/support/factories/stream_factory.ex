@@ -36,7 +36,6 @@ defmodule Arbor.Persistence.StreamFactory do
   """
 
   import Arbor.Persistence.FactoryHelpers
-  import Arbor.Persistence.AgentFactory
   import Arbor.Persistence.FastCase, only: [unique_stream_id: 1, build_test_event: 2]
 
   alias Arbor.Contracts.Events.Event

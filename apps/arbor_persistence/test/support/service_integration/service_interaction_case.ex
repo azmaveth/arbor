@@ -46,11 +46,9 @@ defmodule Arbor.Test.ServiceInteractionCase do
 
   import Arbor.Persistence.FastCase, only: [unique_stream_id: 1]
   import Arbor.Persistence.CommandFactory
-  import Arbor.Persistence.FactoryHelpers
 
   alias Arbor.Contracts.Client.Command
   alias Arbor.Core.Gateway
-  alias Phoenix.PubSub
 
   using do
     quote do
