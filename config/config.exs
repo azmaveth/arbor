@@ -146,6 +146,7 @@ config :arbor_persistence, Arbor.Persistence.Repo,
 
 # Configure Ecto repositories
 config :arbor_persistence, ecto_repos: [Arbor.Persistence.Repo]
+config :arbor_security, ecto_repos: [Arbor.Security.Repo]
 
 # Configure Arbor Core distributed system timing parameters
 # These defaults work well for production but can be overridden per environment

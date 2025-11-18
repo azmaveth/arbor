@@ -490,15 +490,19 @@ defmodule Arbor.Security.Kernel do
 
   defp start_capability_store(CapabilityStore) do
     # Start the capability store if it's not already running
+    # In dev/prod mode, it will use Arbor.Security.Persistence.CapabilityRepo (PostgreSQL)
+    # In test mode with :use_mock, it will use CapabilityStore.PostgresDB (mock Agent)
     case Process.whereis(CapabilityStore) do
       nil ->
-        # Start the database module if not already running
-        case Process.whereis(CapabilityStore.PostgresDB) do
-          nil ->
-            {:ok, _db_pid} = CapabilityStore.PostgresDB.start_link([])
+        # Only start mock DB if we're in test mode AND use_mock is enabled
+        if Application.get_env(:arbor_security, :use_mock_db, false) do
+          case Process.whereis(CapabilityStore.PostgresDB) do
+            nil ->
+              {:ok, _db_pid} = CapabilityStore.PostgresDB.start_link([])
 
-          _pid ->
-            :ok
+            _pid ->
+              :ok
+          end
         end
 
         CapabilityStore.start_link([])
@@ -510,15 +514,19 @@ defmodule Arbor.Security.Kernel do
 
   defp start_audit_logger(AuditLogger) do
     # Start the audit logger if it's not already running
+    # In dev/prod mode, it will use Arbor.Security.Persistence.AuditRepo (PostgreSQL)
+    # In test mode with :use_mock, it will use AuditLogger.PostgresDB (mock Agent)
     case Process.whereis(AuditLogger) do
       nil ->
-        # Start the database module if not already running
-        case Process.whereis(AuditLogger.PostgresDB) do
-          nil ->
-            {:ok, _db_pid} = AuditLogger.PostgresDB.start_link([])
+        # Only start mock DB if we're in test mode AND use_mock is enabled
+        if Application.get_env(:arbor_security, :use_mock_db, false) do
+          case Process.whereis(AuditLogger.PostgresDB) do
+            nil ->
+              {:ok, _db_pid} = AuditLogger.PostgresDB.start_link([])
 
-          _pid ->
-            :ok
+            _pid ->
+              :ok
+          end
         end
 
         AuditLogger.start_link([])
