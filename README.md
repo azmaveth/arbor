@@ -1,3 +1,9 @@
+# This repository has moved
+
+This project has moved to [trust-arbor/arbor](https://github.com/trust-arbor/arbor). Development continues there.
+
+---
+
 # Arbor - Distributed AI Agent Orchestration System
 
 [![CI](https://github.com/azmaveth/arbor/workflows/CI/badge.svg)](https://github.com/azmaveth/arbor/actions/workflows/ci.yml)
